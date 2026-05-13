@@ -2,12 +2,12 @@
 
 ## Project Structure & Module Organization
 
-This repository is in the planning stage. `prd.md` describes MiniAgent: a multi-agent bridge for Codex, Claude Code, and chat channels such as Lark, QQ, Telegram, and WeChat.
+This repository is in the planning stage. `prd.md` describes MiniAgent: a multi-agent bridge for Codex CLI, Claude Code, Trae CLI, and chat channels such as Lark, QQ, Telegram, and WeChat.
 
 Expected implementation layout:
 
 - `src/`: application source code.
-- `src/server/`: Hono API, agent orchestration, channel adapters, cron tasks, and persistence logic.
+- `src/server/`: Hono API, agent runtime adapters, channel adapters, cron tasks, and persistence logic.
 - `src/client/`: React UI, Tailwind CSS 4 styles, Markdown/card rendering, and tabbed conversation views.
 - `src/shared/`: shared TypeScript types, constants, and validation schemas.
 - `tests/`: unit and integration tests mirroring `src/`.
