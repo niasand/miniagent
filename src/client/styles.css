@@ -2,9 +2,9 @@
 
 @theme {
   --color-app: #f5f7f7;
-  --color-background: #f7faf8;
+  --color-background: #ffffff;
   --color-surface: #ffffff;
-  --color-muted: #eef3f1;
+  --color-muted: #f0f7f6;
   --color-foreground: #1b1d1f;
   --color-muted-foreground: #687076;
   --color-border: #d9dedb;
@@ -13,23 +13,6 @@
   --color-ink: #17211f;
   --color-ring: #4a9c91;
   --shadow-elevated: 0 18px 55px rgba(21, 31, 35, 0.12);
-}
-
-@media (prefers-color-scheme: dark) {
-  @theme {
-    --color-app: #111716;
-    --color-background: #111716;
-    --color-surface: #18201f;
-    --color-muted: #202b29;
-    --color-foreground: #edf3f1;
-    --color-muted-foreground: #9da9a5;
-    --color-border: #2d3a37;
-    --color-primary: #3fbbb0;
-    --color-primary-foreground: #07110f;
-    --color-ink: #edf3f1;
-    --color-ring: #58c8bc;
-    --shadow-elevated: 0 18px 55px rgba(0, 0, 0, 0.32);
-  }
 }
 
 * {
@@ -54,7 +37,7 @@ input {
 
 .bg-app {
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--color-surface) 82%, transparent), var(--color-app)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(245, 247, 247, 0.94)),
     repeating-linear-gradient(
       90deg,
       color-mix(in srgb, var(--color-primary) 6%, transparent) 0,
@@ -65,14 +48,119 @@ input {
     var(--color-app);
 }
 
+.app-shell {
+  min-height: 100vh;
+  padding: 18px 18px 84px;
+}
+
+.deck {
+  display: grid;
+  grid-template-columns: 280px minmax(420px, 1fr) 340px;
+  gap: 14px;
+  height: calc(100vh - 120px);
+  min-height: 720px;
+}
+
 .panel-solid {
   min-width: 0;
   border: 1px solid color-mix(in srgb, var(--color-border) 92%, transparent);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--color-surface) 90%, transparent);
+  background: var(--color-surface);
   box-shadow:
     0 1px 0 color-mix(in srgb, white 72%, transparent) inset,
     var(--shadow-elevated);
+}
+
+.deck .panel-solid {
+  overflow: hidden;
+}
+
+.session-list {
+  height: calc(100% - 47px);
+  overflow: auto;
+}
+
+.agent-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 9px;
+  align-items: center;
+  padding: 10px 11px;
+  border-bottom: 1px solid rgba(217, 222, 219, 0.7);
+}
+
+.agent-row.active {
+  background: rgba(20, 125, 115, 0.07);
+}
+
+.agent-row:last-child {
+  border-bottom: 0;
+}
+
+.avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 800;
+  background: #e8f2f0;
+  color: var(--color-primary);
+  border: 1px solid rgba(20, 125, 115, 0.16);
+  flex: 0 0 auto;
+}
+
+.tight {
+  display: grid;
+  gap: 6px;
+}
+
+.messages {
+  min-height: 0;
+  overflow: auto;
+  padding: 18px;
+}
+
+.message {
+  max-width: 760px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 13px;
+  margin-bottom: 12px;
+}
+
+.message.agent {
+  border-left: 3px solid var(--color-primary);
+}
+
+.message.user {
+  margin-left: auto;
+  border-left: 3px solid #2563a9;
+}
+
+.right-section {
+  padding: 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.right-section:last-child {
+  border-bottom: 0;
+}
+
+.log-line {
+  display: grid;
+  grid-template-columns: 72px 96px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(217, 222, 219, 0.6);
+  font-size: 12px;
+}
+
+.log-line:last-child {
+  border-bottom: 0;
 }
 
 .prose-mini {
@@ -136,50 +224,18 @@ input {
 }
 
 @media (max-width: 1180px) {
-  .command-deck-panels {
-    gap: 10px;
-  }
-
-  .right-rail-panel,
-  .right-rail-handle {
-    display: none !important;
-  }
-
-  .session-panel {
-    flex: 0 0 250px !important;
-    min-width: 220px !important;
-  }
-
-  .conversation-panel {
-    flex: 1 1 0 !important;
-    min-width: 0 !important;
+  .deck {
+    grid-template-columns: 1fr;
+    height: auto;
   }
 }
 
-@media (max-width: 760px) {
-  .command-deck-panels {
-    flex-direction: column !important;
-    min-height: 0 !important;
-    height: auto !important;
-    overflow: visible !important;
+@media (max-width: 640px) {
+  .app-shell {
+    padding: 12px 12px 92px;
   }
 
-  .session-panel,
-  .conversation-panel {
-    flex: none !important;
-    width: 100% !important;
-    min-width: 0 !important;
-  }
-
-  .session-panel {
-    height: 240px !important;
-  }
-
-  .conversation-panel {
-    min-height: 620px;
-  }
-
-  .session-resize-handle {
-    display: none !important;
+  .deck {
+    min-height: 0;
   }
 }

@@ -1,41 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Command } from "cmdk";
 import {
-  Bot,
   Boxes,
-  ChevronRight,
   CircleDot,
-  GitBranch,
-  History,
-  Maximize2,
-  MessageSquareText,
-  Play,
-  Plus,
-  RotateCcw,
-  Search,
-  Send,
-  Sparkles,
-  Square,
-  Waypoints,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "react-resizable-panels";
 import remarkGfm from "remark-gfm";
-import { fetchAgents } from "./api/agents.js";
 import { createHandoff } from "./api/handoff.js";
 import { sendSessionMessage } from "./api/messages.js";
-import { startSessionRun } from "./api/runtime.js";
 import { createSession } from "./api/sessions.js";
 import { fetchWorkspace } from "./api/workspace.js";
 import { Badge } from "./components/ui/badge.js";
 import { Button } from "./components/ui/button.js";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.js";
 import { fallbackWorkspace } from "./data/mock-workspace.js";
 import { cn } from "./lib/utils.js";
 import { useWorkspaceStore } from "./state/workspace-store.js";
-import type { WorkspaceAgentHealthStatus, WorkspaceAgentRuntime, WorkspaceAgentType, WorkspaceSessionSummary } from "../shared/workspace.js";
+import type { WorkspaceAgentType, WorkspaceSessionSummary } from "../shared/workspace.js";
 
 const statusTone = {
   running: "green",
@@ -49,8 +30,6 @@ const statusTone = {
 export default function App() {
   const selectedSessionId = useWorkspaceStore((state) => state.selectedSessionId);
   const defaultAgentType = useWorkspaceStore((state) => state.defaultAgentType);
-  const commandOpen = useWorkspaceStore((state) => state.commandOpen);
-  const setCommandOpen = useWorkspaceStore((state) => state.setCommandOpen);
   const setSelectedSessionId = useWorkspaceStore((state) => state.setSelectedSessionId);
   const setDefaultAgentType = useWorkspaceStore((state) => state.setDefaultAgentType);
   const queryClient = useQueryClient();
@@ -62,12 +41,6 @@ export default function App() {
     initialData: fallbackWorkspace,
     refetchInterval: 1_500,
     retry: 1,
-  });
-  const agents = useQuery({
-    queryKey: ["agents"],
-    queryFn: fetchAgents,
-    retry: 1,
-    staleTime: 30_000,
   });
   const snapshot = workspace.data.sessions.length > 0 ? workspace.data : fallbackWorkspace;
   const selected =
@@ -105,97 +78,64 @@ export default function App() {
       setSelectedSessionId(response.sessionId);
     },
   });
-  const startRun = useMutation({
-    mutationFn: (sessionId: string) => startSessionRun(sessionId),
-    onSuccess: (response) => {
-      queryClient.setQueryData(["workspace", response.workspace.selectedSessionId], response.workspace);
-    },
-  });
 
   return (
     <main className="min-h-screen bg-app text-foreground">
-      <div className="flex min-h-screen flex-col p-4 md:p-[18px]">
+      <div className="app-shell">
         <Topbar
-          defaultAgentType={defaultAgentType}
-          agents={agents.data?.agents ?? []}
           creatingSession={newSession.isPending}
           onSelectDefaultAgent={setDefaultAgentType}
-          onOpenCommand={() => setCommandOpen(true)}
           onNewSession={() => newSession.mutate()}
         />
-        <PanelGroup orientation="horizontal" className="command-deck-panels min-h-[720px] flex-1 gap-3 overflow-hidden">
-          <Panel defaultSize={21} minSize={18} maxSize={28} className="session-panel min-w-[232px]">
-            <Sidebar sessions={snapshot.sessions} selected={selected} />
-          </Panel>
-          <ResizeGrip className="session-resize-handle" />
-          <Panel defaultSize={52} minSize={38} className="conversation-panel min-w-0">
-            <Conversation
-              selected={selected}
-              messages={snapshot.messages}
-              keyEvents={snapshot.keyEvents}
-              draft={draft}
-              sendError={sendMessage.error?.message}
-              sending={sendMessage.isPending}
-              onDraftChange={setDraft}
-              onSend={() => {
-                const text = draft.trim();
-                if (text) {
-                  sendMessage.mutate({ sessionId: selected.id, text });
-                }
-              }}
-            />
-          </Panel>
-          <ResizeGrip className="right-rail-handle" />
-          <Panel defaultSize={27} minSize={22} maxSize={34} className="right-rail-panel min-w-[300px]">
-            <RightRail
-              selected={selected}
-              outboxRows={snapshot.outboxRows}
-              keyEvents={snapshot.keyEvents}
-              handoffError={handoff.error?.message}
-              handoffPendingTarget={handoff.isPending ? handoff.variables?.targetAgentType ?? null : null}
-              onHandoff={(targetAgentType) => handoff.mutate({ sessionId: selected.id, targetAgentType })}
-            />
-          </Panel>
-        </PanelGroup>
+        <div className="deck">
+          <Sidebar sessions={snapshot.sessions} selected={selected} />
+          <Conversation
+            selected={selected}
+            messages={snapshot.messages}
+            draft={draft}
+            sendError={sendMessage.error?.message}
+            sending={sendMessage.isPending}
+            onDraftChange={setDraft}
+            onSend={() => {
+              const text = draft.trim();
+              if (text) {
+                sendMessage.mutate({ sessionId: selected.id, text });
+              }
+            }}
+          />
+          <RightRail
+            selected={selected}
+            outboxRows={snapshot.outboxRows}
+            handoffError={handoff.error?.message}
+            handoffPendingTarget={handoff.isPending ? handoff.variables?.targetAgentType ?? null : null}
+            onHandoff={(targetAgentType) => handoff.mutate({ sessionId: selected.id, targetAgentType })}
+          />
+        </div>
       </div>
-      {commandOpen ? (
-        <CommandPalette
-          startError={startRun.error?.message}
-          starting={startRun.isPending}
-          onClose={() => setCommandOpen(false)}
-          onStartSession={() => startRun.mutate(selected.id)}
-        />
-      ) : null}
     </main>
   );
 }
 
 function Topbar({
-  defaultAgentType,
-  agents,
   creatingSession,
   onSelectDefaultAgent,
-  onOpenCommand,
   onNewSession,
 }: {
-  defaultAgentType: WorkspaceAgentType;
-  agents: WorkspaceAgentRuntime[];
   creatingSession: boolean;
   onSelectDefaultAgent: (agentType: WorkspaceAgentType) => void;
-  onOpenCommand: () => void;
   onNewSession: () => void;
 }) {
-  const agentButtons: Array<{ agentType: WorkspaceAgentType; label: string; icon: React.ReactNode }> = [
-    { agentType: "codex", label: "Codex CLI", icon: <Bot className="h-4 w-4" /> },
-    { agentType: "claude", label: "Claude Code", icon: <Sparkles className="h-4 w-4" /> },
-    { agentType: "trae", label: "Trae CLI", icon: <Waypoints className="h-4 w-4" /> },
+  const agentButtons: Array<{ agentType: WorkspaceAgentType; label: string }> = [
+    { agentType: "codex", label: "Codex CLI" },
+    { agentType: "claude", label: "Claude Code" },
+    { agentType: "trae", label: "Trae CLI" },
   ];
 
   return (
-    <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
-      <div className="flex min-w-0 items-center gap-3">
-        <div className="grid h-9 w-9 place-items-center rounded-[8px] bg-ink text-white shadow-elevated">
-          <Boxes className="h-5 w-5" />
+    <header className="mb-[14px] flex flex-wrap items-center justify-between gap-4">
+      <div className="flex min-w-0 items-center gap-[11px]">
+        <div className="grid h-[34px] w-[34px] place-items-center rounded-[8px] bg-ink text-white shadow-elevated">
+          <Boxes className="h-[18px] w-[18px]" />
         </div>
         <div className="min-w-0">
           <h1 className="text-lg font-semibold leading-tight">MiniAgent</h1>
@@ -207,44 +147,17 @@ function Topbar({
           <Button
             key={agent.agentType}
             size="sm"
-            variant={defaultAgentType === agent.agentType ? "primary" : "default"}
             onClick={() => onSelectDefaultAgent(agent.agentType)}
           >
-            {agent.icon}
             {agent.label}
-            <span
-              className={cn("h-2 w-2 rounded-full", agentHealthDot(runtimeStatus(agents, agent.agentType)))}
-              title={runtimeStatus(agents, agent.agentType)}
-            />
           </Button>
         ))}
-        <Button size="icon" aria-label="Open command palette" onClick={onOpenCommand}>
-          <Search className="h-4 w-4" />
-        </Button>
         <Button size="sm" variant="primary" disabled={creatingSession} onClick={onNewSession}>
-          <Plus className="h-4 w-4" />
           {creatingSession ? "Creating..." : "New Session"}
         </Button>
       </div>
     </header>
   );
-}
-
-function runtimeStatus(agents: WorkspaceAgentRuntime[], agentType: WorkspaceAgentType): WorkspaceAgentHealthStatus {
-  return agents.find((agent) => agent.agentType === agentType)?.status ?? "unknown";
-}
-
-function agentHealthDot(status: WorkspaceAgentHealthStatus): string {
-  if (status === "healthy") {
-    return "bg-green-500";
-  }
-  if (status === "auth_required") {
-    return "bg-amber-500";
-  }
-  if (status === "missing" || status === "failed") {
-    return "bg-red-500";
-  }
-  return "bg-muted-foreground/40";
 }
 
 function Sidebar({
@@ -257,29 +170,22 @@ function Sidebar({
   const setSelectedSessionId = useWorkspaceStore((state) => state.setSelectedSessionId);
 
   return (
-    <aside className="panel-solid flex h-full min-h-0 flex-col overflow-hidden">
+    <aside className="panel-solid sidebar flex h-full min-h-0 flex-col overflow-hidden">
       <SectionHeader title="Sessions">
         <Badge tone="green">
           <CircleDot className="h-3 w-3 fill-current" />
           3 active
         </Badge>
       </SectionHeader>
-      <div className="min-h-0 flex-1 overflow-auto p-2">
+      <div className="session-list">
         {sessions.map((session) => (
           <button
             key={session.id}
-            className={cn(
-              "mb-2 grid w-full grid-cols-[34px_1fr_auto] items-center gap-3 rounded-[8px] border p-2.5 text-left transition-colors",
-              selected.id === session.id
-                ? "border-primary/25 bg-primary/10"
-                : "border-transparent bg-transparent hover:border-border hover:bg-muted/70",
-            )}
+            className={cn("agent-row w-full border-0 bg-transparent text-left", selected.id === session.id && "active")}
             onClick={() => setSelectedSessionId(session.id)}
           >
-            <span className="grid h-8 w-8 place-items-center rounded-[7px] bg-ink text-xs font-semibold text-white">
-              {session.initials}
-            </span>
-            <span className="min-w-0">
+            <span className="avatar">{session.initials}</span>
+            <span className="tight min-w-0">
               <strong className="block truncate text-sm">{session.title}</strong>
               <span className="block truncate text-xs text-muted-foreground">
                 {session.agent} - {session.workspace}
@@ -296,7 +202,6 @@ function Sidebar({
 function Conversation({
   selected,
   messages,
-  keyEvents,
   draft,
   sendError,
   sending,
@@ -305,7 +210,6 @@ function Conversation({
 }: {
   selected: WorkspaceSessionSummary;
   messages: typeof fallbackWorkspace.messages;
-  keyEvents: typeof fallbackWorkspace.keyEvents;
   draft: string;
   sendError?: string;
   sending: boolean;
@@ -313,55 +217,36 @@ function Conversation({
   onSend: () => void;
 }) {
   return (
-    <section className="panel-solid grid h-full min-h-0 grid-rows-[auto_1fr_auto] overflow-hidden">
+    <section className="panel-solid main conversation grid h-full min-h-0 grid-rows-[auto_1fr_auto] overflow-hidden">
       <SectionHeader
         title={selected.title}
         subtitle="session_01J - run_08Q - global_seq 18,442"
-        icon={<MessageSquareText className="h-4 w-4" />}
       >
         <div className="flex flex-wrap justify-end gap-2">
           <Badge tone="green">EventStore synced</Badge>
           <Badge tone="amber">Context 72%</Badge>
         </div>
       </SectionHeader>
-      <Tabs defaultValue="stream" className="grid min-h-0 grid-rows-[auto_1fr]">
-        <div className="flex items-center justify-between border-b border-border px-4 py-2">
-          <TabsList>
-            <TabsTrigger value="stream">Stream</TabsTrigger>
-            <TabsTrigger value="events">Events</TabsTrigger>
-          </TabsList>
-          <Button size="sm">
-            <Maximize2 className="h-4 w-4" />
-            Focus
-          </Button>
-        </div>
-        <TabsContent value="stream" className="min-h-0 overflow-auto p-4">
-          {messages.map((message, index) => (
-            <motion.article
-              key={message.id}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.18, delay: index * 0.04 }}
-              className={cn(
-                "mb-3 max-w-[760px] rounded-[8px] border bg-surface/80 p-3 shadow-sm",
-                message.role === "user" ? "ml-auto border-l-[3px] border-l-blue-600" : "border-l-[3px] border-l-primary",
-              )}
-            >
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <strong className="text-sm">{message.author}</strong>
-                {message.badge ? <Badge tone={message.badge === "success" ? "green" : "blue"}>{message.badge}</Badge> : null}
-                {message.time ? <span className="text-xs text-muted-foreground">{message.time}</span> : null}
-              </div>
-              <div className="prose-mini">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.markdown}</ReactMarkdown>
-              </div>
-            </motion.article>
-          ))}
-        </TabsContent>
-        <TabsContent value="events" className="min-h-0 overflow-auto p-4">
-          <EventTable rows={keyEvents} />
-        </TabsContent>
-      </Tabs>
+      <div className="messages">
+        {messages.map((message, index) => (
+          <motion.article
+            key={message.id}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.18, delay: index * 0.04 }}
+            className={cn("message", message.role === "user" ? "user" : "agent")}
+          >
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <strong>{message.author}</strong>
+              {message.badge ? <Badge tone={message.badge === "success" ? "green" : "blue"}>{message.badge}</Badge> : null}
+              {message.time ? <span className="text-xs text-muted-foreground">{message.time}</span> : null}
+            </div>
+            <div className="prose-mini">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.markdown}</ReactMarkdown>
+            </div>
+          </motion.article>
+        ))}
+      </div>
       <div className="grid grid-cols-[1fr_auto] gap-3 border-t border-border bg-surface/95 p-3">
         <div className="grid gap-1">
           <textarea
@@ -372,7 +257,6 @@ function Conversation({
           {sendError ? <p className="text-xs text-red-600">{sendError}</p> : null}
         </div>
         <Button variant="primary" className="h-14" disabled={sending || draft.trim().length === 0} onClick={onSend}>
-          <Send className="h-4 w-4" />
           {sending ? "Sending..." : "Send"}
         </Button>
       </div>
@@ -383,14 +267,12 @@ function Conversation({
 function RightRail({
   selected,
   outboxRows,
-  keyEvents,
   handoffError,
   handoffPendingTarget,
   onHandoff,
 }: {
   selected: WorkspaceSessionSummary;
   outboxRows: typeof fallbackWorkspace.outboxRows;
-  keyEvents: typeof fallbackWorkspace.keyEvents;
   handoffError?: string;
   handoffPendingTarget: WorkspaceAgentType | null;
   onHandoff: (targetAgentType: WorkspaceAgentType) => void;
@@ -403,7 +285,7 @@ function RightRail({
   const handoffTargets = allHandoffTargets.filter((target) => target.agentType !== selected.agentType);
 
   return (
-    <aside className="panel-solid h-full min-h-0 overflow-auto">
+    <aside className="panel-solid rightbar h-full min-h-0 overflow-auto">
       <RightSection title="RuntimeSupervisor" badge={<Badge tone="green">healthy</Badge>}>
         <Metric label="stdout batch window" value="126ms" progress={56} />
       </RightSection>
@@ -411,14 +293,13 @@ function RightRail({
         <Progress tone="amber" value={72} />
         <p className="text-xs text-muted-foreground">Next compact at 85% - last pack 14 minutes ago</p>
         <Button size="sm">
-          <RotateCcw className="h-4 w-4" />
           Compact now
         </Button>
       </RightSection>
       <RightSection title="Outbox" badge={<Badge tone="blue">8 pending</Badge>}>
         <div className="space-y-2">
           {outboxRows.map(([seq, target, status]) => (
-            <div key={seq} className="grid grid-cols-[58px_56px_1fr] gap-2 rounded-[7px] bg-muted px-2 py-2 text-xs">
+            <div key={seq} className="log-line">
               <span className="font-mono text-muted-foreground">{seq}</span>
               <span>{target}</span>
               <span className="truncate text-muted-foreground">{status}</span>
@@ -434,14 +315,10 @@ function RightRail({
             disabled={handoffPendingTarget !== null}
             onClick={() => onHandoff(target.agentType)}
           >
-            <GitBranch className="h-4 w-4" />
             {handoffPendingTarget === target.agentType ? "Creating..." : `Handoff to ${target.label}`}
           </Button>
         ))}
         {handoffError ? <p className="text-xs text-red-600">{handoffError}</p> : null}
-      </RightSection>
-      <RightSection title="Key Events" badge={<Badge>live</Badge>}>
-        <EventTable rows={keyEvents} compact />
       </RightSection>
     </aside>
   );
@@ -482,7 +359,7 @@ function RightSection({
   children: React.ReactNode;
 }) {
   return (
-    <section className="grid gap-3 border-b border-border p-3 last:border-b-0">
+    <section className="right-section grid gap-3 border-b border-border p-3 last:border-b-0">
       <div className="flex items-center justify-between gap-3">
         <strong className="text-sm">{title}</strong>
         {badge}
@@ -514,93 +391,6 @@ function Progress({ value, tone = "default" }: { value: number; tone?: "default"
         )}
         style={{ width: `${value}%` }}
       />
-    </div>
-  );
-}
-
-function EventTable({ rows, compact = false }: { rows: typeof fallbackWorkspace.keyEvents; compact?: boolean }) {
-  return (
-    <div className="overflow-hidden rounded-[8px] border border-border">
-      <table className="w-full border-collapse text-left text-xs">
-        <tbody>
-          {rows.map(([seq, type, detail]) => (
-            <tr key={`${seq}-${type}`} className="border-b border-border last:border-b-0">
-              <td className="w-16 px-2 py-2 font-mono text-muted-foreground">{seq}</td>
-              <td className="px-2 py-2 font-medium">{type}</td>
-              {!compact ? <td className="px-2 py-2 text-muted-foreground">{detail}</td> : null}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function ResizeGrip({ className }: { className?: string }) {
-  return (
-    <PanelResizeHandle
-      className={cn(
-        "hidden w-1 rounded-full bg-transparent transition-colors hover:bg-primary/30 data-[separator-active]:bg-primary/40 lg:block",
-        className,
-      )}
-    />
-  );
-}
-
-function CommandPalette({
-  startError,
-  starting,
-  onClose,
-  onStartSession,
-}: {
-  startError?: string;
-  starting: boolean;
-  onClose: () => void;
-  onStartSession: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-start justify-center bg-black/30 px-4 pt-[12vh]" onClick={onClose}>
-      <Command
-        className="w-full max-w-xl overflow-hidden rounded-[8px] border border-border bg-surface shadow-elevated"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 border-b border-border px-3">
-          <Search className="h-4 w-4 text-muted-foreground" />
-          <Command.Input
-            className="h-11 flex-1 bg-transparent text-sm outline-none"
-            placeholder="Search sessions, commands, handoff targets..."
-          />
-        </div>
-        <Command.List className="max-h-[320px] overflow-auto p-2">
-          <Command.Empty className="px-3 py-6 text-center text-sm text-muted-foreground">No results</Command.Empty>
-          <Command.Group heading="Actions" className="command-group">
-            <Command.Item
-              className="command-item"
-              aria-disabled={starting}
-              onSelect={() => {
-                if (!starting) {
-                  onStartSession();
-                }
-              }}
-            >
-              <Play className="h-4 w-4" />
-              {starting ? "Starting selected session" : "Start selected session"}
-              <ChevronRight className="ml-auto h-4 w-4" />
-            </Command.Item>
-            <Command.Item className="command-item">
-              <Square className="h-4 w-4" />
-              Stop active run
-              <ChevronRight className="ml-auto h-4 w-4" />
-            </Command.Item>
-            <Command.Item className="command-item">
-              <History className="h-4 w-4" />
-              Open raw event history
-              <ChevronRight className="ml-auto h-4 w-4" />
-            </Command.Item>
-          </Command.Group>
-          {startError ? <p className="px-3 pb-2 text-xs text-red-600">{startError}</p> : null}
-        </Command.List>
-      </Command>
     </div>
   );
 }
