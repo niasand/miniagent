@@ -15,15 +15,12 @@ Expected implementation layout:
 
 ## Build, Test, and Development Commands
 
-No package manifest or build tooling exists yet. When the Node/TypeScript project is scaffolded, document exact commands here. Recommended defaults:
-
 - `npm install`: install dependencies.
-- `npm run dev`: run the local server, expected default port `7272`.
-- `npm test`: run the test suite.
-- `npm run lint`: run TypeScript, ESLint, and formatting checks.
-- `npm run build`: create a production build.
+- `npm test`: run the Vitest suite.
+- `npm run typecheck`: run TypeScript without emitting files.
+- `npm run db:migrate`: apply SQLite migrations to `MINIAGENT_DB_PATH`, or `data/miniagent.sqlite` by default.
 
-Keep commands reproducible; document any global tool requirement.
+No production server or frontend build exists yet. Add exact commands here when those modules land.
 
 ## Coding Style & Naming Conventions
 

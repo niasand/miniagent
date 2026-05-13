@@ -21,6 +21,7 @@ Core rules:
 - Enums: stored as `TEXT` with application-level validation, plus `CHECK` constraints where practical.
 - Deletes: prefer soft-delete or terminal states. Do not physically delete history in normal flows.
 - Replay cursor: `events.global_seq` is the only canonical replay cursor for Projectors, Web reconnect, and recovery scans.
+- Migration tracking: the runner owns a small `schema_migrations` table outside the domain model.
 
 ## 3. Relationship Overview
 
@@ -443,6 +444,8 @@ Batching strategy:
 - Feishu delivery receives a second throttling layer in Delivery, independent of EventStore batching.
 
 ## 8. First Migration Order
+
+The migration runner creates `schema_migrations` before applying domain migrations.
 
 1. `agent_profiles`
 2. `agent_defaults`
