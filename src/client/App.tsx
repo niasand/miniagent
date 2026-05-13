@@ -23,6 +23,7 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "react-resizable-panels";
 import remarkGfm from "remark-gfm";
+import { fetchAgents } from "./api/agents.js";
 import { createHandoff } from "./api/handoff.js";
 import { sendSessionMessage } from "./api/messages.js";
 import { createSession } from "./api/sessions.js";
@@ -33,7 +34,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.j
 import { fallbackWorkspace } from "./data/mock-workspace.js";
 import { cn } from "./lib/utils.js";
 import { useWorkspaceStore } from "./state/workspace-store.js";
-import type { WorkspaceAgentType, WorkspaceSessionSummary } from "../shared/workspace.js";
+import type { WorkspaceAgentHealthStatus, WorkspaceAgentRuntime, WorkspaceAgentType, WorkspaceSessionSummary } from "../shared/workspace.js";
 
 const statusTone = {
   running: "green",
@@ -59,6 +60,12 @@ export default function App() {
     queryFn: () => fetchWorkspace(selectedSessionId),
     initialData: fallbackWorkspace,
     retry: 1,
+  });
+  const agents = useQuery({
+    queryKey: ["agents"],
+    queryFn: fetchAgents,
+    retry: 1,
+    staleTime: 30_000,
   });
   const snapshot = workspace.data.sessions.length > 0 ? workspace.data : fallbackWorkspace;
   const selected =
@@ -102,6 +109,7 @@ export default function App() {
       <div className="flex min-h-screen flex-col p-4 md:p-[18px]">
         <Topbar
           defaultAgentType={defaultAgentType}
+          agents={agents.data?.agents ?? []}
           creatingSession={newSession.isPending}
           onSelectDefaultAgent={setDefaultAgentType}
           onOpenCommand={() => setCommandOpen(true)}
@@ -149,18 +157,20 @@ export default function App() {
 
 function Topbar({
   defaultAgentType,
+  agents,
   creatingSession,
   onSelectDefaultAgent,
   onOpenCommand,
   onNewSession,
 }: {
   defaultAgentType: WorkspaceAgentType;
+  agents: WorkspaceAgentRuntime[];
   creatingSession: boolean;
   onSelectDefaultAgent: (agentType: WorkspaceAgentType) => void;
   onOpenCommand: () => void;
   onNewSession: () => void;
 }) {
-  const agents: Array<{ agentType: WorkspaceAgentType; label: string; icon: React.ReactNode }> = [
+  const agentButtons: Array<{ agentType: WorkspaceAgentType; label: string; icon: React.ReactNode }> = [
     { agentType: "codex", label: "Codex CLI", icon: <Bot className="h-4 w-4" /> },
     { agentType: "claude", label: "Claude Code", icon: <Sparkles className="h-4 w-4" /> },
     { agentType: "trae", label: "Trae CLI", icon: <Waypoints className="h-4 w-4" /> },
@@ -178,7 +188,7 @@ function Topbar({
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-end gap-2">
-        {agents.map((agent) => (
+        {agentButtons.map((agent) => (
           <Button
             key={agent.agentType}
             size="sm"
@@ -187,6 +197,10 @@ function Topbar({
           >
             {agent.icon}
             {agent.label}
+            <span
+              className={cn("h-2 w-2 rounded-full", agentHealthDot(runtimeStatus(agents, agent.agentType)))}
+              title={runtimeStatus(agents, agent.agentType)}
+            />
           </Button>
         ))}
         <Button size="icon" aria-label="Open command palette" onClick={onOpenCommand}>
@@ -199,6 +213,23 @@ function Topbar({
       </div>
     </header>
   );
+}
+
+function runtimeStatus(agents: WorkspaceAgentRuntime[], agentType: WorkspaceAgentType): WorkspaceAgentHealthStatus {
+  return agents.find((agent) => agent.agentType === agentType)?.status ?? "unknown";
+}
+
+function agentHealthDot(status: WorkspaceAgentHealthStatus): string {
+  if (status === "healthy") {
+    return "bg-green-500";
+  }
+  if (status === "auth_required") {
+    return "bg-amber-500";
+  }
+  if (status === "missing" || status === "failed") {
+    return "bg-red-500";
+  }
+  return "bg-muted-foreground/40";
 }
 
 function Sidebar({

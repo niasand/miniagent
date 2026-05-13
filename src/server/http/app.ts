@@ -6,9 +6,15 @@ import { HandoffService } from "../handoff/handoff-service.js";
 import type { AuditActorType } from "../audit/audit-log-store.js";
 import { UserMessageService } from "../messages/user-message-service.js";
 import type { AgentType } from "../runtime/types.js";
+import { RuntimeAdapterRegistry } from "../runtime/registry.js";
 import { SessionStore } from "../sessions/session-store.js";
 import { createWorkspaceSnapshot } from "../workspace/workspace-service.js";
-import type { CreateHandoffResponse, CreateSessionResponse, SendMessageResponse } from "../../shared/workspace.js";
+import type {
+  AgentsResponse,
+  CreateHandoffResponse,
+  CreateSessionResponse,
+  SendMessageResponse,
+} from "../../shared/workspace.js";
 
 export type AppBindings = {
   Variables: {
@@ -16,8 +22,15 @@ export type AppBindings = {
   };
 };
 
-export function createApp(db: SqliteDatabase) {
+export type AppOptions = {
+  runtimeRegistry?: RuntimeAdapterRegistry;
+  defaultWorkspacePath?: string;
+};
+
+export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
   const app = new Hono<AppBindings>();
+  const runtimeRegistry = options.runtimeRegistry ?? new RuntimeAdapterRegistry();
+  const defaultWorkspacePath = options.defaultWorkspacePath ?? process.cwd();
 
   app.use("*", async (context, next) => {
     context.set("db", db);
@@ -38,6 +51,27 @@ export function createApp(db: SqliteDatabase) {
       }),
     ),
   );
+
+  app.get("/api/agents", async (context) => {
+    const agents = await Promise.all(
+      runtimeRegistry.list().map(async (adapter) => {
+        const probe = await adapter.probe();
+        return {
+          agentType: adapter.agentType,
+          label: adapter.displayName,
+          status: probe.status,
+          command: probe.command,
+          version: probe.version,
+          message: probe.message,
+          checkedAt: probe.checkedAt,
+          capabilities: adapter.capabilities(),
+        };
+      }),
+    );
+    const response: AgentsResponse = { agents };
+
+    return context.json(response);
+  });
 
   app.post("/api/sessions", async (context) => {
     const db = context.get("db");
@@ -65,7 +99,7 @@ export function createApp(db: SqliteDatabase) {
     const session = new SessionStore(db).createSession({
       title: title?.trim() || `${displayAgent(agentType)} session`,
       agentType,
-      workspacePath: workspacePath?.trim() || process.cwd(),
+      workspacePath: workspacePath?.trim() || defaultWorkspacePath,
       channelType: "web",
     });
     const response: CreateSessionResponse = {

@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { createApp } from "../../src/server/http/app.js";
 import { EventStore } from "../../src/server/events/event-store.js";
 import { MessageProjector, WebOutboxProjector } from "../../src/server/events/projectors.js";
+import { ClaudeRuntimeAdapter } from "../../src/server/runtime/adapters/claude-adapter.js";
+import { CodexRuntimeAdapter } from "../../src/server/runtime/adapters/codex-adapter.js";
+import { TraeRuntimeAdapter } from "../../src/server/runtime/adapters/trae-adapter.js";
+import type { CommandResult, CommandRunner } from "../../src/server/runtime/command-runner.js";
+import { RuntimeAdapterRegistry } from "../../src/server/runtime/registry.js";
 import { SessionStore } from "../../src/server/sessions/session-store.js";
 import { createTestDatabase } from "../support/db.js";
 
@@ -39,13 +44,38 @@ describe("HTTP app", () => {
       new MessageProjector(testDb.db).projectNextBatch();
       new WebOutboxProjector(testDb.db).projectNextBatch();
 
-      const app = createApp(testDb.db);
+      const app = createApp(testDb.db, {
+        defaultWorkspacePath: "/tmp/miniagent-default",
+        runtimeRegistry: new RuntimeAdapterRegistry([
+          new CodexRuntimeAdapter({ commandRunner: runner({ exitCode: 0, stdout: "codex 1.0.0", stderr: "" }) }),
+          new ClaudeRuntimeAdapter({
+            commandRunner: runner({ exitCode: 1, stdout: "", stderr: "authentication required" }),
+          }),
+          new TraeRuntimeAdapter({
+            commandRunner: runner({
+              exitCode: null,
+              stdout: "",
+              stderr: "",
+              errorCode: "ENOENT",
+              errorMessage: "not found",
+            }),
+          }),
+        ]),
+      });
 
       const healthResponse = await app.request("/api/health");
       await expect(healthResponse.json()).resolves.toEqual({
         ok: true,
         service: "miniagent",
       });
+
+      const agentsResponse = await app.request("/api/agents");
+      const agents = await agentsResponse.json();
+      expect(agents.agents.map((agent: { agentType: string; status: string }) => [agent.agentType, agent.status])).toEqual([
+        ["codex", "healthy"],
+        ["claude", "auth_required"],
+        ["trae", "missing"],
+      ]);
 
       const workspaceResponse = await app.request("/api/workspace");
       const workspace = await workspaceResponse.json();
@@ -200,3 +230,9 @@ describe("HTTP app", () => {
     }
   });
 });
+
+function runner(result: CommandResult): CommandRunner {
+  return {
+    run: () => result,
+  };
+}

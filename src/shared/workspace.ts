@@ -1,5 +1,6 @@
 export type WorkspaceAgentType = "codex" | "claude" | "trae";
 export type WorkspaceAgentLabel = "Codex" | "Claude" | "Trae";
+export type WorkspaceAgentHealthStatus = "unknown" | "healthy" | "missing" | "auth_required" | "failed";
 export type WorkspaceActorType = "web_user" | "feishu_user" | "system" | "agent";
 
 export type WorkspaceSessionStatus = "running" | "compact" | "queued" | "idle" | "archived" | "failed";
@@ -68,4 +69,19 @@ export type CreateSessionRequest = {
 export type CreateSessionResponse = {
   sessionId: string;
   workspace: WorkspaceSnapshot;
+};
+
+export type WorkspaceAgentRuntime = {
+  agentType: WorkspaceAgentType;
+  label: string;
+  status: WorkspaceAgentHealthStatus;
+  command: string;
+  version: string | null;
+  message: string | null;
+  checkedAt: string;
+  capabilities: Record<string, boolean>;
+};
+
+export type AgentsResponse = {
+  agents: WorkspaceAgentRuntime[];
 };
