@@ -24,8 +24,10 @@ The important rule: runtime output is stored before it is displayed or delivered
 ## 2. Architectural Principles
 
 - EventStore first: all Agent output, state changes, delivery results, compact events, and handoff events are append-only events.
+- Replay by cursor: `events.global_seq` is the canonical cursor for Projectors, Web reconnect, and recovery.
 - Outbox for side effects: Web pushes and Feishu card updates are queued, retried, and idempotent.
 - Supervisor over adapters: RuntimeSupervisor owns process lifecycle; adapters only translate CLI-specific behavior.
+- Hot path stays thin: RuntimeSupervisor appends batched runtime events only; Projectors create read models and Outbox work asynchronously.
 - Session, Run, and Task stay separate: a Session is long-lived, an AgentRun is one process execution, and a Task is one trigger source.
 - Renderer and Delivery stay separate: Renderer creates view models; Delivery talks to external platforms.
 - ContextPack is the only portable context unit for compact, resume, and handoff.
@@ -63,7 +65,8 @@ Responsibilities:
 
 - RuntimeSupervisor manages process start, stdin writes, stdout/stderr reads, heartbeat, timeout, cancellation, stop, exit code, and cleanup.
 - AgentRuntimeAdapter provides `probe`, `capabilities`, `createLaunchSpec`, `encodeInput`, `decodeOutput`, and `classifyError`.
-- Supervisor appends decoded RuntimeEvents into EventStore.
+- Supervisor batches raw stdout/stderr chunks into semantic RuntimeEvents, then appends them into EventStore.
+- Supervisor does not render cards, update projected messages, or enqueue Outbox records.
 
 Adapters for MVP:
 
@@ -78,10 +81,10 @@ Owns EventStore, Outbox, Projectors, and replay.
 Responsibilities:
 
 - Store append-only events.
-- Maintain projector offsets.
-- Enqueue delivery work in Outbox.
+- Maintain projector offsets by `events.global_seq`.
+- Let Projectors consume EventStore asynchronously and enqueue delivery work in Outbox.
 - Rebuild projections after restart or bug fixes.
-- Let Web reconnect by fetching missing events.
+- Let Web reconnect by fetching events after the client's last seen `global_seq`.
 
 ### Rendering
 
@@ -144,15 +147,15 @@ Responsibilities:
 3. Sessions module resolves or creates a Session.
 4. RuntimeSupervisor creates an AgentRun.
 5. AgentRuntimeAdapter launches the chosen CLI Agent.
-6. Runtime events are appended to EventStore.
-7. Projectors produce messages and card view models.
-8. Outbox queues Web and Feishu delivery work.
+6. Runtime events are batched and appended to EventStore.
+7. Projectors asynchronously consume events by `global_seq`.
+8. Projectors produce messages, card view models, and Outbox work.
 9. Delivery workers send updates and append delivery events.
 
 ### UI Reconnect
 
-1. Client sends last seen event ID or seq.
-2. Server queries EventStore.
+1. Client sends last seen `global_seq`.
+2. Server queries EventStore for newer events in that session.
 3. Server returns missed events and current projections.
 4. Live stream resumes from the latest event.
 
@@ -207,6 +210,8 @@ No live UI state should depend only on memory.
 - Retrying a run creates a new AgentRun.
 - Handoff creates a new Session.
 - Agent output is appended to EventStore before delivery.
+- Projectors, not RuntimeSupervisor, create messages and Outbox work from EventStore.
+- `events.global_seq` is monotonic and never reused.
 - Outbox delivery is idempotent.
 - Projected messages are rebuildable from EventStore.
 - Compact never deletes raw events or messages.
@@ -222,6 +227,7 @@ Start with tests around interfaces, not real CLIs.
 - Fake AgentRuntimeAdapter tests for stdout/stderr parsing, crash, overflow, permission prompt, and cancel.
 - EventStore tests for append order, run seq uniqueness, replay, and projector offsets.
 - Outbox tests for idempotency key, retry, lease timeout, and dead-letter state.
+- SQLite tests for WAL startup pragmas, conditional lease claiming, and batched text_delta writes.
 - ContextPack tests for source event range, schema version, and restart payload.
 - Security tests for workspace allowlist and secret redaction.
 - Integration test: fake Feishu input -> fake Agent output -> EventStore -> Outbox -> delivery success.
@@ -233,13 +239,14 @@ Real Codex CLI, Claude Code, and Trae CLI tests should be adapter smoke tests be
 1. Shared enums and schema validation.
 2. SQLite migrations for EventStore, Outbox, Session, AgentRun, Task, ContextPack, and AuditLog.
 3. State machine module with unit tests.
-4. EventStore append/query and projector cursor.
-5. Outbox enqueue/worker/retry/idempotency.
-6. RuntimeSupervisor with fake adapter.
-7. Codex, Claude, and Trae adapters.
-8. ContextBudget and ContextPack generation.
-9. Web UI event replay and live stream.
-10. Feishu adapter and card delivery.
+4. EventStore append/query with `global_seq` replay cursor.
+5. Projector pipeline from EventStore to messages and Outbox.
+6. Outbox enqueue/worker/retry/idempotency with conditional lease claiming.
+7. RuntimeSupervisor with fake adapter and text_delta batching.
+8. Codex, Claude, and Trae adapters.
+9. ContextBudget and ContextPack generation.
+10. Web UI event replay and live stream.
+11. Feishu adapter and card delivery.
 
 ## 9. Open Decisions
 

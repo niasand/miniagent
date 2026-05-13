@@ -20,6 +20,7 @@ Core rules:
 - JSON columns: stored as `TEXT` containing validated JSON.
 - Enums: stored as `TEXT` with application-level validation, plus `CHECK` constraints where practical.
 - Deletes: prefer soft-delete or terminal states. Do not physically delete history in normal flows.
+- Replay cursor: `events.global_seq` is the only canonical replay cursor for Projectors, Web reconnect, and recovery scans.
 
 ## 3. Relationship Overview
 
@@ -141,8 +142,8 @@ Represents one Agent process execution.
 | `launch_spec_json` | TEXT | Command, args, cwd, env summary |
 | `pid` | INTEGER NULL | Local process ID while active |
 | `context_pack_id` | TEXT NULL | ContextPack injected at start |
-| `first_event_seq` | INTEGER NULL | First runtime event seq |
-| `last_event_seq` | INTEGER NULL | Last runtime event seq |
+| `first_global_seq` | INTEGER NULL | First runtime event cursor |
+| `last_global_seq` | INTEGER NULL | Last runtime event cursor |
 | `heartbeat_at` | TEXT NULL | RuntimeSupervisor heartbeat |
 | `started_at` | TEXT NULL |  |
 | `stopped_at` | TEXT NULL |  |
@@ -166,11 +167,12 @@ Append-only runtime log. This table is the source of truth.
 
 | Column | Type | Notes |
 | --- | --- | --- |
-| `id` | TEXT PK | Event ID |
+| `global_seq` | INTEGER PK AUTOINCREMENT | Canonical global replay cursor |
+| `id` | TEXT UNIQUE | Stable event ID for references and idempotency |
 | `session_id` | TEXT | Parent session |
 | `run_id` | TEXT NULL | Parent run, null for pure system events |
 | `task_id` | TEXT NULL | Triggering task |
-| `seq` | INTEGER | Monotonic within `run_id`; system events use session-local seq |
+| `run_seq` | INTEGER NULL | Monotonic within `run_id`; null for pure system events |
 | `type` | TEXT | Event type |
 | `payload_json` | TEXT | Structured payload |
 | `schema_version` | INTEGER | Payload schema version |
@@ -191,9 +193,9 @@ Important event types:
 
 Recommended indexes:
 
-- `idx_events_session_created`
-- `idx_events_run_seq` unique on `(run_id, seq)` where `run_id IS NOT NULL`
-- `idx_events_type_created`
+- `idx_events_session_global_seq` on `(session_id, global_seq)`
+- `idx_events_run_seq` unique on `(run_id, run_seq)` where `run_id IS NOT NULL`
+- `idx_events_type_global_seq` on `(type, global_seq)`
 - `idx_events_correlation`
 
 ### `messages`
@@ -220,6 +222,7 @@ Delivery queue for Web and chat platforms.
 | `id` | TEXT PK | Outbox ID |
 | `session_id` | TEXT | Parent session |
 | `event_id` | TEXT NULL | Source event |
+| `event_global_seq` | INTEGER NULL | Source event cursor |
 | `channel_type` | TEXT | `web`, `feishu`, future channels |
 | `target_ref` | TEXT | Web connection, Feishu card/message target |
 | `kind` | TEXT | `web_event`, `feishu_card_create`, `feishu_card_update`, `feishu_text` |
@@ -231,6 +234,7 @@ Delivery queue for Web and chat platforms.
 | `next_attempt_at` | TEXT NULL | Retry scheduling |
 | `locked_by` | TEXT NULL | Worker ID |
 | `locked_at` | TEXT NULL | Lease timestamp |
+| `lease_expires_at` | TEXT NULL | Lease timeout for crash recovery |
 | `provider_message_id` | TEXT NULL | Feishu or channel message ID |
 | `last_error` | TEXT NULL | Redacted error |
 | `created_at` | TEXT |  |
@@ -250,8 +254,8 @@ Tracks incremental projections.
 | Column | Type | Notes |
 | --- | --- | --- |
 | `projector_name` | TEXT PK | `messages`, `session_view`, `context_budget`, `feishu_card` |
-| `last_event_id` | TEXT NULL | Last processed event |
-| `last_event_created_at` | TEXT NULL | Replay cursor |
+| `last_global_seq` | INTEGER | Last processed `events.global_seq`; default `0` |
+| `last_event_id` | TEXT NULL | Last processed event ID for debugging |
 | `updated_at` | TEXT |  |
 
 ### `context_packs`
@@ -388,6 +392,7 @@ Invariants:
 - `idempotency_key` is globally unique.
 - Delivery failures append events; they do not mutate source events.
 - A `dead` item remains queryable and can be manually requeued.
+- Workers claim work with a conditional update on status and lease fields; never use read-then-update claiming.
 
 ## 6. Transaction Rules
 
@@ -395,14 +400,49 @@ Use a single SQLite transaction for these operations:
 
 - Create task + append `task_created`.
 - Start run + update session active run + append `run_started`.
-- Append runtime event + enqueue outbox entries derived from that event.
+- Append runtime event only; do not render or enqueue Outbox records on the RuntimeSupervisor hot path.
+- Project event batch + advance projector offset + enqueue Outbox records derived from projected view changes.
 - Finish run + update session + append terminal event.
 - Create ContextPack + update session current pack + append `context_pack_created`.
 - Handoff source session + target session + task + audit log.
 
 Never emit Web/Feishu side effects before the related database transaction commits.
 
-## 7. First Migration Order
+## 7. SQLite Write, Lease, And Batching Rules
+
+SQLite is acceptable for MVP, but the write path must stay short and predictable.
+
+Required pragmas at startup:
+
+```sql
+PRAGMA journal_mode = WAL;
+PRAGMA foreign_keys = ON;
+PRAGMA busy_timeout = 5000;
+PRAGMA synchronous = NORMAL;
+```
+
+Write strategy:
+
+- Keep RuntimeSupervisor writes limited to EventStore appends and run/session status transitions.
+- Projectors run asynchronously from `events.global_seq` and create messages, context updates, and Outbox entries.
+- Use short transactions; never perform network calls or Agent process I/O inside a database transaction.
+- If write contention appears, introduce a single writer queue before changing storage engines.
+
+Outbox lease strategy:
+
+- Claim due work with one conditional `UPDATE ... WHERE status IN (...) AND lease_expires_at < now RETURNING ...` style operation, or the SQLite equivalent inside a transaction.
+- A worker must refresh or release its lease for long sends.
+- Expired `sending` rows return to `pending` and can be retried.
+- `dead` rows remain queryable and require manual or explicit system requeue.
+
+Batching strategy:
+
+- RuntimeSupervisor must coalesce raw stdout/stderr chunks before appending `text_delta` events.
+- Default batching target: 50-200 ms or a bounded byte size, whichever comes first.
+- Store raw chunk-level output only in debug mode; default EventStore rows should be semantically useful deltas.
+- Feishu delivery receives a second throttling layer in Delivery, independent of EventStore batching.
+
+## 8. First Migration Order
 
 1. `agent_profiles`
 2. `agent_defaults`
