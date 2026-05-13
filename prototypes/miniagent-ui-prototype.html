@@ -1,0 +1,994 @@
+<!--
+MiniAgent UI prototype. Four variants of the main control surface, switchable via ?variant=A/B/C/D.
+Throwaway artifact for choosing layout direction before building the real React app.
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MiniAgent UI Prototype</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f5f7f7;
+        --panel: #ffffff;
+        --panel-2: #f0f7f6;
+        --ink: #1b1d1f;
+        --muted: #687076;
+        --line: #d9dedb;
+        --teal: #147d73;
+        --blue: #2563a9;
+        --amber: #b46f13;
+        --red: #b4232f;
+        --green: #238551;
+        --shadow: 0 18px 55px rgba(21, 31, 35, 0.12);
+        --radius: 8px;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          linear-gradient(180deg, rgba(255,255,255,.82), rgba(245,247,247,.94)),
+          repeating-linear-gradient(90deg, rgba(20,125,115,.045) 0, rgba(20,125,115,.045) 1px, transparent 1px, transparent 72px),
+          var(--bg);
+        color: var(--ink);
+        letter-spacing: 0;
+      }
+
+      button, input, textarea, select {
+        font: inherit;
+        letter-spacing: 0;
+      }
+
+      .app { min-height: 100vh; padding: 18px 18px 84px; }
+
+      .variant {
+        min-height: calc(100vh - 102px);
+        display: none;
+      }
+
+      .variant.active { display: block; }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 14px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        min-width: 0;
+      }
+
+      .brand-mark {
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        display: grid;
+        place-items: center;
+        background: #17211f;
+        color: #f7faf8;
+        box-shadow: var(--shadow);
+      }
+
+      .brand h1 {
+        margin: 0;
+        font-size: 18px;
+        line-height: 1.15;
+        font-weight: 760;
+      }
+
+      .brand p {
+        margin: 2px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .btn {
+        height: 34px;
+        border: 1px solid var(--line);
+        background: rgba(255,255,255,.72);
+        color: var(--ink);
+        border-radius: 7px;
+        padding: 0 11px;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        box-shadow: 0 1px 0 rgba(255,255,255,.8) inset;
+      }
+
+      .btn.primary {
+        background: #17211f;
+        color: #ffffff;
+        border-color: #17211f;
+      }
+
+      .btn.icon { width: 34px; padding: 0; justify-content: center; }
+
+      .panel {
+        background: rgba(255,255,255,.88);
+        border: 1px solid rgba(217,222,219,.92);
+        border-radius: var(--radius);
+        box-shadow: 0 1px 0 rgba(255,255,255,.72) inset;
+        min-width: 0;
+      }
+
+      .panel.solid { background: var(--panel); box-shadow: var(--shadow); }
+
+      .section-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 12px 13px 9px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .section-title h2, .section-title h3 {
+        margin: 0;
+        font-size: 12px;
+        text-transform: uppercase;
+        color: #414a4f;
+        font-weight: 780;
+      }
+
+      .muted { color: var(--muted); }
+      .tiny { font-size: 11px; }
+      .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 22px;
+        padding: 2px 7px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: #364043;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+
+      .pill.green { color: var(--green); border-color: rgba(35,133,81,.25); background: rgba(35,133,81,.08); }
+      .pill.amber { color: var(--amber); border-color: rgba(180,111,19,.28); background: rgba(180,111,19,.08); }
+      .pill.blue { color: var(--blue); border-color: rgba(37,99,169,.25); background: rgba(37,99,169,.08); }
+      .pill.red { color: var(--red); border-color: rgba(180,35,47,.24); background: rgba(180,35,47,.08); }
+
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: currentColor;
+        flex: 0 0 auto;
+      }
+
+      .progress {
+        height: 6px;
+        background: #e8ece9;
+        border-radius: 999px;
+        overflow: hidden;
+      }
+
+      .progress > span { display: block; height: 100%; border-radius: inherit; background: var(--teal); }
+      .progress.blue > span { background: var(--blue); }
+      .progress.amber > span { background: var(--amber); }
+      .progress.red > span { background: var(--red); }
+
+      .metric {
+        display: grid;
+        gap: 5px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(255,255,255,.64);
+      }
+
+      .metric strong { font-size: 22px; line-height: 1; }
+
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .stack { display: grid; gap: 10px; }
+      .tight { display: grid; gap: 6px; }
+
+      .avatar {
+        width: 28px;
+        height: 28px;
+        border-radius: 7px;
+        display: grid;
+        place-items: center;
+        font-size: 12px;
+        font-weight: 800;
+        background: #e8f2f0;
+        color: var(--teal);
+        border: 1px solid rgba(20,125,115,.16);
+        flex: 0 0 auto;
+      }
+
+      .agent-row {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 9px;
+        align-items: center;
+        padding: 10px 11px;
+        border-bottom: 1px solid rgba(217,222,219,.7);
+      }
+
+      .agent-row.active { background: rgba(20,125,115,.07); }
+      .agent-row:last-child { border-bottom: 0; }
+
+      .log-line {
+        display: grid;
+        grid-template-columns: 72px 96px 1fr;
+        gap: 10px;
+        align-items: start;
+        padding: 8px 10px;
+        border-bottom: 1px solid rgba(217,222,219,.6);
+        font-size: 12px;
+      }
+
+      .log-line:last-child { border-bottom: 0; }
+
+      .timeline-item {
+        position: relative;
+        padding: 0 0 16px 22px;
+        border-left: 1px solid #d7dedb;
+      }
+
+      .timeline-item::before {
+        content: "";
+        position: absolute;
+        left: -5px;
+        top: 2px;
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--teal);
+        border: 2px solid #ffffff;
+      }
+
+      .code {
+        border: 1px solid #d8dfdc;
+        border-radius: 8px;
+        background: #17211f;
+        color: #e7f5ef;
+        padding: 12px;
+        font-size: 12px;
+        line-height: 1.55;
+        overflow: hidden;
+      }
+
+      .switcher {
+        position: fixed;
+        left: 50%;
+        bottom: 18px;
+        transform: translateX(-50%);
+        z-index: 100;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid rgba(255,255,255,.18);
+        background: rgba(23,33,31,.94);
+        color: #ffffff;
+        border-radius: 999px;
+        padding: 8px;
+        box-shadow: 0 18px 60px rgba(0,0,0,.26);
+      }
+
+      .switcher button {
+        width: 34px;
+        height: 34px;
+        border: 0;
+        border-radius: 999px;
+        background: rgba(255,255,255,.1);
+        color: #ffffff;
+        cursor: pointer;
+      }
+
+      .switcher .label {
+        min-width: 220px;
+        text-align: center;
+        font-size: 12px;
+        font-weight: 760;
+      }
+
+      .variant-tabs {
+        display: flex;
+        gap: 4px;
+        padding-right: 4px;
+      }
+
+      .variant-tabs a {
+        color: #d7e4e0;
+        text-decoration: none;
+        font-size: 11px;
+        border-radius: 999px;
+        padding: 6px 8px;
+      }
+
+      .variant-tabs a.active { background: rgba(255,255,255,.16); color: #fff; }
+
+      /* Variant A */
+      .deck {
+        display: grid;
+        grid-template-columns: 280px minmax(420px, 1fr) 340px;
+        gap: 14px;
+        height: calc(100vh - 120px);
+        min-height: 720px;
+      }
+
+      .deck .sidebar, .deck .rightbar, .deck .main {
+        overflow: hidden;
+      }
+
+      .session-list { overflow: auto; height: calc(100% - 47px); }
+
+      .conversation {
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        height: 100%;
+      }
+
+      .messages { padding: 18px; overflow: auto; }
+
+      .message {
+        max-width: 760px;
+        border: 1px solid var(--line);
+        background: rgba(255,255,255,.72);
+        border-radius: 8px;
+        padding: 13px;
+        margin-bottom: 12px;
+      }
+
+      .message.agent { border-left: 3px solid var(--teal); }
+      .message.user { margin-left: auto; border-left: 3px solid var(--blue); }
+
+      .composer {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        padding: 12px;
+        border-top: 1px solid var(--line);
+        background: rgba(255,255,255,.94);
+      }
+
+      .composer textarea {
+        height: 54px;
+        resize: none;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px 11px;
+        background: #fff;
+        color: var(--ink);
+      }
+
+      .right-section { padding: 12px; border-bottom: 1px solid var(--line); }
+      .right-section:last-child { border-bottom: 0; }
+
+      /* Variant B */
+      .ops-grid {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        gap: 14px;
+        min-height: calc(100vh - 120px);
+      }
+
+      .ops-metrics {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(130px, 1fr));
+        gap: 10px;
+      }
+
+      .ops-body {
+        display: grid;
+        grid-template-columns: 1.1fr 1.55fr .95fr;
+        gap: 14px;
+        min-height: 680px;
+      }
+
+      .lane {
+        min-height: 152px;
+        border: 1px solid var(--line);
+        background: rgba(255,255,255,.62);
+        border-radius: 8px;
+        padding: 10px;
+      }
+
+      .lane + .lane { margin-top: 10px; }
+
+      .event-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+
+      .event-table th, .event-table td {
+        border-bottom: 1px solid rgba(217,222,219,.72);
+        padding: 9px 8px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      .event-table th { color: #586266; font-size: 11px; text-transform: uppercase; }
+
+      /* Variant C */
+      .feishu-grid {
+        display: grid;
+        grid-template-columns: 340px minmax(380px, 1fr) 380px;
+        gap: 14px;
+        min-height: calc(100vh - 120px);
+      }
+
+      .phone {
+        width: 100%;
+        max-width: 340px;
+        margin: 0 auto;
+        min-height: 690px;
+        border-radius: 28px;
+        border: 10px solid #1b1d1f;
+        background: #eef3f2;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .phone-top {
+        height: 38px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        color: #657076;
+        background: #fff;
+        border-bottom: 1px solid #dce4e1;
+      }
+
+      .card-preview {
+        margin: 12px;
+        border-radius: 12px;
+        border: 1px solid #d8dfdc;
+        background: #fff;
+        overflow: hidden;
+      }
+
+      .card-header {
+        padding: 12px;
+        background: linear-gradient(135deg, #147d73, #2563a9);
+        color: #fff;
+      }
+
+      .card-body { padding: 12px; display: grid; gap: 10px; }
+
+      .command-list button {
+        width: 100%;
+        justify-content: flex-start;
+        margin-bottom: 8px;
+      }
+
+      .builder-row {
+        display: grid;
+        grid-template-columns: 160px 1fr auto;
+        gap: 10px;
+        align-items: center;
+        padding: 10px;
+        border-bottom: 1px solid rgba(217,222,219,.7);
+      }
+
+      /* Variant D */
+      .matrix {
+        display: grid;
+        grid-template-columns: 1fr 360px;
+        gap: 14px;
+        min-height: calc(100vh - 120px);
+      }
+
+      .matrix-main {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        gap: 14px;
+      }
+
+      .agent-cards {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(220px, 1fr));
+        gap: 12px;
+      }
+
+      .agent-card {
+        padding: 14px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: rgba(255,255,255,.75);
+        display: grid;
+        gap: 12px;
+      }
+
+      .board {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(180px, 1fr));
+        gap: 10px;
+        align-items: start;
+      }
+
+      .column {
+        min-height: 520px;
+        background: rgba(255,255,255,.58);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px;
+      }
+
+      .task-card {
+        padding: 10px;
+        border: 1px solid #d9dedb;
+        background: #fff;
+        border-radius: 8px;
+        margin-top: 8px;
+        display: grid;
+        gap: 7px;
+      }
+
+      @media (max-width: 1180px) {
+        .deck, .ops-body, .feishu-grid, .matrix {
+          grid-template-columns: 1fr;
+          height: auto;
+        }
+
+        .ops-metrics { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
+        .agent-cards, .board { grid-template-columns: 1fr; }
+      }
+
+      @media (max-width: 640px) {
+        .app { padding: 12px 12px 92px; }
+        .topbar { align-items: flex-start; flex-direction: column; }
+        .toolbar { justify-content: flex-start; }
+        .ops-metrics { grid-template-columns: 1fr; }
+        .log-line { grid-template-columns: 1fr; }
+        .builder-row { grid-template-columns: 1fr; }
+        .switcher { width: calc(100% - 18px); }
+        .switcher .label { min-width: 0; flex: 1; }
+        .variant-tabs { display: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <div class="topbar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M5 12h14M12 5v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M7 7h10v10H7z" stroke="currentColor" stroke-width="1.6" opacity=".7"/>
+            </svg>
+          </div>
+          <div>
+            <h1>MiniAgent</h1>
+            <p>Local multi-agent control plane · prototype</p>
+          </div>
+        </div>
+        <div class="toolbar">
+          <button class="btn">Codex CLI</button>
+          <button class="btn">Claude Code</button>
+          <button class="btn">Trae CLI</button>
+          <button class="btn primary">New Session</button>
+        </div>
+      </div>
+
+      <section id="variant-a" class="variant" data-label="A — Command Deck">
+        <div class="deck">
+          <aside class="panel solid sidebar">
+            <div class="section-title">
+              <h2>Sessions</h2>
+              <span class="pill green"><span class="dot"></span> 3 active</span>
+            </div>
+            <div class="session-list">
+              <div class="agent-row active">
+                <div class="avatar">CX</div>
+                <div class="tight">
+                  <strong>MiniAgent PRD hardening</strong>
+                  <span class="muted tiny">Codex · /Documents/MiniAgent</span>
+                </div>
+                <span class="pill green">running</span>
+              </div>
+              <div class="agent-row">
+                <div class="avatar">CL</div>
+                <div class="tight">
+                  <strong>Feishu card renderer</strong>
+                  <span class="muted tiny">Claude · handoff from Codex</span>
+                </div>
+                <span class="pill amber">compact</span>
+              </div>
+              <div class="agent-row">
+                <div class="avatar">TR</div>
+                <div class="tight">
+                  <strong>Runtime adapter smoke test</strong>
+                  <span class="muted tiny">Trae · queued by cron</span>
+                </div>
+                <span class="pill blue">queued</span>
+              </div>
+              <div class="agent-row">
+                <div class="avatar">CX</div>
+                <div class="tight">
+                  <strong>SQLite migration draft</strong>
+                  <span class="muted tiny">Codex · idle</span>
+                </div>
+                <span class="pill">idle</span>
+              </div>
+              <div class="agent-row">
+                <div class="avatar">CL</div>
+                <div class="tight">
+                  <strong>EventStore replay review</strong>
+                  <span class="muted tiny">Claude · archived</span>
+                </div>
+                <span class="pill">archived</span>
+              </div>
+            </div>
+          </aside>
+
+          <section class="panel solid main conversation">
+            <div class="section-title">
+              <div class="tight">
+                <h2>MiniAgent PRD hardening</h2>
+                <span class="muted tiny mono">session_01J · run_08Q · global_seq 18,442</span>
+              </div>
+              <div class="row">
+                <span class="pill green">EventStore synced</span>
+                <span class="pill amber">Context 72%</span>
+              </div>
+            </div>
+            <div class="messages">
+              <article class="message user">
+                <div class="row"><strong>You</strong><span class="muted tiny">09:41</span></div>
+                <p>Review the PRD again and strengthen the architecture before implementation.</p>
+              </article>
+              <article class="message agent">
+                <div class="row"><strong>Codex CLI</strong><span class="pill blue">streaming</span></div>
+                <p>The hot path should stay thin. RuntimeSupervisor now appends batched runtime events only; Projectors create read models and Outbox work asynchronously.</p>
+                <div class="code mono">text_delta batch: 126ms · 1.7 KB<br/>event: runtime_output_appended<br/>cursor: global_seq=18442</div>
+              </article>
+              <article class="message agent">
+                <div class="row"><strong>Tool trace</strong><span class="pill green">success</span></div>
+                <p><span class="mono">git diff --check</span> completed. No whitespace errors.</p>
+              </article>
+            </div>
+            <div class="composer">
+              <textarea>Ask Codex to turn the data model into migrations...</textarea>
+              <button class="btn primary">Send</button>
+            </div>
+          </section>
+
+          <aside class="panel solid rightbar">
+            <div class="right-section stack">
+              <div class="row"><strong>RuntimeSupervisor</strong><span class="pill green">healthy</span></div>
+              <div class="metric">
+                <div class="row"><span class="muted tiny">stdout batch window</span><strong>126ms</strong></div>
+                <div class="progress"><span style="width: 56%"></span></div>
+              </div>
+            </div>
+            <div class="right-section stack">
+              <div class="row"><strong>ContextPack</strong><span class="pill amber">warning</span></div>
+              <div class="progress amber"><span style="width: 72%"></span></div>
+              <span class="muted tiny">Next compact at 85% · last pack 14 minutes ago</span>
+              <button class="btn">Compact now</button>
+            </div>
+            <div class="right-section stack">
+              <div class="row"><strong>Outbox</strong><span class="pill blue">8 pending</span></div>
+              <div class="log-line"><span class="mono">18,440</span><span>Feishu</span><span>card_update pending</span></div>
+              <div class="log-line"><span class="mono">18,441</span><span>Web</span><span>event sent</span></div>
+              <div class="log-line"><span class="mono">18,442</span><span>Feishu</span><span>lease acquired</span></div>
+            </div>
+            <div class="right-section stack">
+              <div class="row"><strong>Handoff</strong><span class="pill">available</span></div>
+              <button class="btn">Handoff to Claude</button>
+              <button class="btn">Handoff to Trae</button>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="variant-b" class="variant" data-label="B — Ops Board">
+        <div class="ops-grid">
+          <div class="ops-metrics">
+            <div class="metric"><span class="muted tiny">Global Seq</span><strong>18,442</strong><span class="pill green">replay stable</span></div>
+            <div class="metric"><span class="muted tiny">Active Runs</span><strong>3</strong><span class="pill blue">1 queued</span></div>
+            <div class="metric"><span class="muted tiny">Outbox</span><strong>27</strong><span class="pill amber">8 pending</span></div>
+            <div class="metric"><span class="muted tiny">Context Risk</span><strong>72%</strong><span class="pill amber">warning</span></div>
+            <div class="metric"><span class="muted tiny">SQLite</span><strong>WAL</strong><span class="pill green">busy 0ms</span></div>
+            <div class="metric"><span class="muted tiny">Feishu</span><strong>OK</strong><span class="pill green">throttled</span></div>
+          </div>
+
+          <div class="ops-body">
+            <section class="panel solid">
+              <div class="section-title"><h2>Agent Lanes</h2><span class="pill">state machine</span></div>
+              <div style="padding:12px">
+                <div class="lane">
+                  <div class="row"><strong>Codex CLI</strong><span class="pill green">running</span></div>
+                  <p class="muted tiny">session_01J · RuntimeSupervisor · PID 88214</p>
+                  <div class="progress"><span style="width:64%"></span></div>
+                </div>
+                <div class="lane">
+                  <div class="row"><strong>Claude Code</strong><span class="pill amber">compacting</span></div>
+                  <p class="muted tiny">ContextPack ready · waiting restart</p>
+                  <div class="progress amber"><span style="width:85%"></span></div>
+                </div>
+                <div class="lane">
+                  <div class="row"><strong>Trae CLI</strong><span class="pill blue">queued</span></div>
+                  <p class="muted tiny">cron task waiting for session lock</p>
+                  <div class="progress blue"><span style="width:28%"></span></div>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel solid">
+              <div class="section-title"><h2>Event Ledger</h2><span class="pill green">append only</span></div>
+              <table class="event-table">
+                <thead><tr><th>Seq</th><th>Type</th><th>Run</th><th>Payload</th></tr></thead>
+                <tbody>
+                  <tr><td class="mono">18442</td><td><span class="pill blue">text_delta</span></td><td>run_08Q</td><td>batched output, 1.7 KB, 126ms</td></tr>
+                  <tr><td class="mono">18441</td><td><span class="pill green">delivery_sent</span></td><td>run_08Q</td><td>web_event idempotency key accepted</td></tr>
+                  <tr><td class="mono">18440</td><td><span class="pill amber">delivery_queued</span></td><td>run_08Q</td><td>feishu_card_update lease_expires_at +30s</td></tr>
+                  <tr><td class="mono">18439</td><td><span class="pill">tool_call_finished</span></td><td>run_08Q</td><td>git diff --check, exit 0</td></tr>
+                  <tr><td class="mono">18438</td><td><span class="pill green">context_budget_changed</span></td><td>run_08Q</td><td>healthy -> warning, estimate 72%</td></tr>
+                  <tr><td class="mono">18437</td><td><span class="pill">run_heartbeat</span></td><td>run_08Q</td><td>pid 88214, rss 148 MB</td></tr>
+                </tbody>
+              </table>
+            </section>
+
+            <section class="panel solid">
+              <div class="section-title"><h2>Delivery Queue</h2><span class="pill amber">lease view</span></div>
+              <div style="padding:12px" class="stack">
+                <div class="metric"><div class="row"><strong>feishu_card_update</strong><span class="pill amber">sending</span></div><span class="muted tiny mono">lease expires 09:48:42 · attempt 2/8</span></div>
+                <div class="metric"><div class="row"><strong>web_event</strong><span class="pill green">sent</span></div><span class="muted tiny mono">global_seq 18441 · 28ms</span></div>
+                <div class="metric"><div class="row"><strong>feishu_text</strong><span class="pill red">dead</span></div><span class="muted tiny mono">rate limit exhausted · manual requeue</span></div>
+                <div class="metric"><div class="row"><strong>card_snapshot</strong><span class="pill">pending</span></div><span class="muted tiny mono">idempotency card:session_01J:18442</span></div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section id="variant-c" class="variant" data-label="C — Feishu Workflow">
+        <div class="feishu-grid">
+          <aside class="phone" aria-label="Feishu card preview">
+            <div class="phone-top">Feishu · MiniAgent</div>
+            <div class="card-preview">
+              <div class="card-header">
+                <strong>Codex is running</strong>
+                <div class="tiny" style="margin-top:4px;opacity:.86">session_01J · global_seq 18,442</div>
+              </div>
+              <div class="card-body">
+                <div class="row"><span>Context</span><span class="pill amber">72%</span></div>
+                <div class="progress amber"><span style="width:72%"></span></div>
+                <div class="code mono">RuntimeSupervisor appended batched text_delta. Projector queued Feishu update.</div>
+                <button class="btn">Handoff to Claude</button>
+                <button class="btn">Compact now</button>
+              </div>
+            </div>
+            <div class="card-preview">
+              <div class="card-body">
+                <strong>Command shortcuts</strong>
+                <div class="command-list">
+                  <button class="btn">/agent list</button>
+                  <button class="btn">/agent handoff trae</button>
+                  <button class="btn">/context status</button>
+                  <button class="btn">/task new cron</button>
+                </div>
+              </div>
+            </div>
+          </aside>
+
+          <section class="panel solid">
+            <div class="section-title"><h2>Card Builder</h2><span class="pill blue">renderer output</span></div>
+            <div>
+              <div class="builder-row"><strong>Header</strong><span>Agent status, session title, cursor</span><span class="pill green">ready</span></div>
+              <div class="builder-row"><strong>Body</strong><span>Markdown stream, tool trace, ContextPack warning</span><span class="pill amber">throttled</span></div>
+              <div class="builder-row"><strong>Actions</strong><span>Stop, compact, handoff, raw history</span><span class="pill blue">4 buttons</span></div>
+              <div class="builder-row"><strong>Delivery</strong><span>Outbox lease, retry, idempotency key</span><span class="pill green">safe</span></div>
+              <div class="builder-row"><strong>Overflow</strong><span>Split card if content exceeds Feishu constraints</span><span class="pill">P2</span></div>
+            </div>
+            <div style="padding:14px" class="stack">
+              <h3 style="margin:0;font-size:14px">Event to card projection</h3>
+              <div class="code mono">Projector(feishu_card)<br/>last_global_seq=18437 -> 18442<br/>enqueue outbox: feishu_card_update<br/>idempotency=session_01J:card:18442</div>
+            </div>
+          </section>
+
+          <aside class="panel solid">
+            <div class="section-title"><h2>Channel Ops</h2><span class="pill green">Feishu MVP</span></div>
+            <div style="padding:12px" class="stack">
+              <div class="timeline-item">
+                <strong>Incoming command</strong>
+                <p class="muted tiny mono">/agent handoff claude</p>
+              </div>
+              <div class="timeline-item">
+                <strong>AuditLog</strong>
+                <p class="muted tiny">actor feishu_user:ou_xxx requested handoff</p>
+              </div>
+              <div class="timeline-item">
+                <strong>ContextPack</strong>
+                <p class="muted tiny">source event range 17780-18442</p>
+              </div>
+              <div class="timeline-item">
+                <strong>Target session</strong>
+                <p class="muted tiny">Claude Code created with source_session_id</p>
+              </div>
+              <div class="metric">
+                <div class="row"><span>Rate limit budget</span><strong>68%</strong></div>
+                <div class="progress blue"><span style="width:68%"></span></div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="variant-d" class="variant" data-label="D — Agent Matrix">
+        <div class="matrix">
+          <div class="matrix-main">
+            <div class="agent-cards">
+              <article class="agent-card">
+                <div class="row"><div class="avatar">CX</div><span class="pill green">healthy</span></div>
+                <h2 style="margin:0;font-size:18px">Codex CLI</h2>
+                <span class="muted tiny">Strong default for repo edits and architecture docs.</span>
+                <div class="progress"><span style="width:72%"></span></div>
+                <button class="btn primary">New Codex Session</button>
+              </article>
+              <article class="agent-card">
+                <div class="row"><div class="avatar">CL</div><span class="pill amber">auth check</span></div>
+                <h2 style="margin:0;font-size:18px">Claude Code</h2>
+                <span class="muted tiny">Preferred for long-context review and prose-heavy tasks.</span>
+                <div class="progress amber"><span style="width:43%"></span></div>
+                <button class="btn">Handoff selected</button>
+              </article>
+              <article class="agent-card">
+                <div class="row"><div class="avatar">TR</div><span class="pill blue">available</span></div>
+                <h2 style="margin:0;font-size:18px">Trae CLI</h2>
+                <span class="muted tiny">Reserved for UI implementation and editor workflows.</span>
+                <div class="progress blue"><span style="width:58%"></span></div>
+                <button class="btn">Run smoke test</button>
+              </article>
+            </div>
+
+            <div class="board">
+              <section class="column">
+                <div class="row"><strong>Scheduled</strong><span class="pill">4</span></div>
+                <div class="task-card"><strong>Daily summary</strong><span class="muted tiny">cron · 23:30 Asia/Shanghai</span><span class="pill">system</span></div>
+                <div class="task-card"><strong>Adapter probe</strong><span class="muted tiny">Codex, Claude, Trae</span><span class="pill blue">scheduled</span></div>
+              </section>
+              <section class="column">
+                <div class="row"><strong>Running</strong><span class="pill green">3</span></div>
+                <div class="task-card"><strong>Architecture review</strong><span class="muted tiny">Codex · global_seq 18442</span><span class="pill green">running</span></div>
+                <div class="task-card"><strong>Feishu card preview</strong><span class="muted tiny">Claude · compacting</span><span class="pill amber">warning</span></div>
+              </section>
+              <section class="column">
+                <div class="row"><strong>Outbox</strong><span class="pill amber">8</span></div>
+                <div class="task-card"><strong>Card update</strong><span class="muted tiny">lease expires in 21s</span><span class="pill amber">sending</span></div>
+                <div class="task-card"><strong>Web event</strong><span class="muted tiny">session replay cursor</span><span class="pill green">sent</span></div>
+              </section>
+              <section class="column">
+                <div class="row"><strong>Review</strong><span class="pill">5</span></div>
+                <div class="task-card"><strong>Migration schema</strong><span class="muted tiny">needs state tests</span><span class="pill">draft</span></div>
+                <div class="task-card"><strong>Workspace policy</strong><span class="muted tiny">allowlist required</span><span class="pill red">security</span></div>
+              </section>
+            </div>
+          </div>
+
+          <aside class="panel solid">
+            <div class="section-title"><h2>Decision Inspector</h2><span class="pill">selected task</span></div>
+            <div style="padding:14px" class="stack">
+              <div class="metric">
+                <span class="muted tiny">Task</span>
+                <strong style="font-size:18px">Architecture review</strong>
+                <span class="muted tiny">Source: Web · Agent: Codex CLI · Workspace: /Documents/MiniAgent</span>
+              </div>
+              <div class="tight">
+                <div class="row"><span>Session state</span><span class="pill green">running</span></div>
+                <div class="row"><span>Run state</span><span class="pill green">running</span></div>
+                <div class="row"><span>Context</span><span class="pill amber">warning</span></div>
+                <div class="row"><span>Outbox</span><span class="pill blue">pending</span></div>
+              </div>
+              <div class="code mono">handoff_target = claude<br/>source_context_pack_id = ctx_01J<br/>dedupe_key = web:task:18442</div>
+              <button class="btn primary">Open Session</button>
+              <button class="btn">Create ContextPack</button>
+              <button class="btn">Archive after handoff</button>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <div class="switcher" role="navigation" aria-label="Prototype variant switcher">
+      <button id="prev" title="Previous variant" aria-label="Previous variant">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="variant-tabs" id="variantTabs"></div>
+      <div class="label" id="variantLabel">A — Command Deck</div>
+      <button id="next" title="Next variant" aria-label="Next variant">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+
+    <script>
+      const variants = [
+        { key: "A", id: "variant-a" },
+        { key: "B", id: "variant-b" },
+        { key: "C", id: "variant-c" },
+        { key: "D", id: "variant-d" }
+      ];
+
+      function currentKey() {
+        const params = new URLSearchParams(location.search);
+        const key = (params.get("variant") || "A").toUpperCase();
+        return variants.some(v => v.key === key) ? key : "A";
+      }
+
+      function setVariant(key) {
+        const active = variants.find(v => v.key === key) || variants[0];
+        variants.forEach(v => {
+          document.getElementById(v.id).classList.toggle("active", v.key === active.key);
+        });
+        const el = document.getElementById(active.id);
+        document.getElementById("variantLabel").textContent = el.dataset.label;
+        document.querySelectorAll("[data-switch-key]").forEach(node => {
+          node.classList.toggle("active", node.dataset.switchKey === active.key);
+        });
+        const params = new URLSearchParams(location.search);
+        params.set("variant", active.key);
+        history.replaceState(null, "", `${location.pathname}?${params.toString()}`);
+      }
+
+      function move(delta) {
+        const key = currentKey();
+        const index = variants.findIndex(v => v.key === key);
+        const next = variants[(index + delta + variants.length) % variants.length];
+        setVariant(next.key);
+      }
+
+      const tabs = document.getElementById("variantTabs");
+      variants.forEach(v => {
+        const section = document.getElementById(v.id);
+        const link = document.createElement("a");
+        link.href = `?variant=${v.key}`;
+        link.dataset.switchKey = v.key;
+        link.textContent = v.key;
+        link.title = section.dataset.label;
+        link.addEventListener("click", event => {
+          event.preventDefault();
+          setVariant(v.key);
+        });
+        tabs.appendChild(link);
+      });
+
+      document.getElementById("prev").addEventListener("click", () => move(-1));
+      document.getElementById("next").addEventListener("click", () => move(1));
+      window.addEventListener("keydown", event => {
+        const target = event.target;
+        const editing = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+        if (editing) return;
+        if (event.key === "ArrowLeft") move(-1);
+        if (event.key === "ArrowRight") move(1);
+      });
+
+      setVariant(currentKey());
+    </script>
+  </body>
+</html>
