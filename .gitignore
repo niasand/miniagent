@@ -21,7 +21,7 @@ id_rsa*
 id_ed25519*
 
 # Local databases and generated runtime data
-data/
+/data/
 *.db
 *.db-*
 *.sqlite
