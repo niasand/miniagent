@@ -469,6 +469,24 @@ export class SessionStore {
     return row ? mapTaskRow(row) : null;
   }
 
+  getNextQueuedTask(sessionId: string): TaskRecord | null {
+    const row = this.db
+      .prepare(
+        `
+        SELECT *
+        FROM tasks
+        WHERE session_id = ?
+          AND status = 'queued'
+          AND run_id IS NULL
+        ORDER BY queued_at ASC, created_at ASC, id ASC
+        LIMIT 1
+      `,
+      )
+      .get(sessionId) as TaskRow | undefined;
+
+    return row ? mapTaskRow(row) : null;
+  }
+
   getRun(id: string): AgentRunRecord | null {
     const row = this.db.prepare("SELECT * FROM agent_runs WHERE id = ?").get(id) as AgentRunRow | undefined;
     return row ? mapAgentRunRow(row) : null;

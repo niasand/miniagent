@@ -85,3 +85,10 @@ export type WorkspaceAgentRuntime = {
 export type AgentsResponse = {
   agents: WorkspaceAgentRuntime[];
 };
+
+export type StartRunResponse = {
+  taskId: string;
+  runId: string;
+  status: string;
+  workspace: WorkspaceSnapshot;
+};

@@ -7,6 +7,9 @@ import type { AuditActorType } from "../audit/audit-log-store.js";
 import { UserMessageService } from "../messages/user-message-service.js";
 import type { AgentType } from "../runtime/types.js";
 import { RuntimeAdapterRegistry } from "../runtime/registry.js";
+import type { RuntimeProcessFactory } from "../runtime/process.js";
+import { RuntimeService } from "../runtime/runtime-service.js";
+import { RuntimeSupervisor } from "../runtime/runtime-supervisor.js";
 import { SessionStore } from "../sessions/session-store.js";
 import { createWorkspaceSnapshot } from "../workspace/workspace-service.js";
 import type {
@@ -14,6 +17,7 @@ import type {
   CreateHandoffResponse,
   CreateSessionResponse,
   SendMessageResponse,
+  StartRunResponse,
 } from "../../shared/workspace.js";
 
 export type AppBindings = {
@@ -24,6 +28,7 @@ export type AppBindings = {
 
 export type AppOptions = {
   runtimeRegistry?: RuntimeAdapterRegistry;
+  processFactory?: RuntimeProcessFactory;
   defaultWorkspacePath?: string;
 };
 
@@ -31,6 +36,15 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
   const app = new Hono<AppBindings>();
   const runtimeRegistry = options.runtimeRegistry ?? new RuntimeAdapterRegistry();
   const defaultWorkspacePath = options.defaultWorkspacePath ?? process.cwd();
+  const eventStore = new EventStore(db);
+  const sessionStore = new SessionStore(db, eventStore);
+  const runtimeSupervisor = new RuntimeSupervisor({
+    adapterRegistry: runtimeRegistry,
+    eventStore,
+    sessionStore,
+    processFactory: options.processFactory,
+  });
+  const runtimeService = new RuntimeService(db, runtimeSupervisor);
 
   app.use("*", async (context, next) => {
     context.set("db", db);
@@ -208,6 +222,33 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
       }
       if (message.includes("target agent")) {
         return context.json({ error: message }, 400);
+      }
+      return context.json({ error: message }, 500);
+    }
+  });
+
+  app.post("/api/sessions/:sessionId/runs/start", (context) => {
+    const db = context.get("db");
+
+    try {
+      const result = runtimeService.startNextQueuedTask(context.req.param("sessionId"));
+      projectReadModelsUntilIdle(db);
+
+      const response: StartRunResponse = {
+        taskId: result.task.id,
+        runId: result.run.id,
+        status: result.run.status,
+        workspace: createWorkspaceSnapshot(db, { selectedSessionId: context.req.param("sessionId") }),
+      };
+
+      return context.json(response, 201);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Runtime start failed";
+      if (message.startsWith("Session not found")) {
+        return context.json({ error: message }, 404);
+      }
+      if (message.includes("No queued task") || message.includes("active run")) {
+        return context.json({ error: message }, 409);
       }
       return context.json({ error: message }, 500);
     }

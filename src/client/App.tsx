@@ -26,6 +26,7 @@ import remarkGfm from "remark-gfm";
 import { fetchAgents } from "./api/agents.js";
 import { createHandoff } from "./api/handoff.js";
 import { sendSessionMessage } from "./api/messages.js";
+import { startSessionRun } from "./api/runtime.js";
 import { createSession } from "./api/sessions.js";
 import { fetchWorkspace } from "./api/workspace.js";
 import { Badge } from "./components/ui/badge.js";
@@ -103,6 +104,12 @@ export default function App() {
       setSelectedSessionId(response.sessionId);
     },
   });
+  const startRun = useMutation({
+    mutationFn: (sessionId: string) => startSessionRun(sessionId),
+    onSuccess: (response) => {
+      queryClient.setQueryData(["workspace", response.workspace.selectedSessionId], response.workspace);
+    },
+  });
 
   return (
     <main className="min-h-screen bg-app text-foreground">
@@ -150,7 +157,14 @@ export default function App() {
           </Panel>
         </PanelGroup>
       </div>
-      {commandOpen ? <CommandPalette onClose={() => setCommandOpen(false)} /> : null}
+      {commandOpen ? (
+        <CommandPalette
+          startError={startRun.error?.message}
+          starting={startRun.isPending}
+          onClose={() => setCommandOpen(false)}
+          onStartSession={() => startRun.mutate(selected.id)}
+        />
+      ) : null}
     </main>
   );
 }
@@ -527,7 +541,17 @@ function ResizeGrip() {
   );
 }
 
-function CommandPalette({ onClose }: { onClose: () => void }) {
+function CommandPalette({
+  startError,
+  starting,
+  onClose,
+  onStartSession,
+}: {
+  startError?: string;
+  starting: boolean;
+  onClose: () => void;
+  onStartSession: () => void;
+}) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-start justify-center bg-black/30 px-4 pt-[12vh]" onClick={onClose}>
       <Command
@@ -544,9 +568,17 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
         <Command.List className="max-h-[320px] overflow-auto p-2">
           <Command.Empty className="px-3 py-6 text-center text-sm text-muted-foreground">No results</Command.Empty>
           <Command.Group heading="Actions" className="command-group">
-            <Command.Item className="command-item">
+            <Command.Item
+              className="command-item"
+              aria-disabled={starting}
+              onSelect={() => {
+                if (!starting) {
+                  onStartSession();
+                }
+              }}
+            >
               <Play className="h-4 w-4" />
-              Start selected session
+              {starting ? "Starting selected session" : "Start selected session"}
               <ChevronRight className="ml-auto h-4 w-4" />
             </Command.Item>
             <Command.Item className="command-item">
@@ -560,6 +592,7 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
               <ChevronRight className="ml-auto h-4 w-4" />
             </Command.Item>
           </Command.Group>
+          {startError ? <p className="px-3 pb-2 text-xs text-red-600">{startError}</p> : null}
         </Command.List>
       </Command>
     </div>

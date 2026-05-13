@@ -6,7 +6,9 @@ import { ClaudeRuntimeAdapter } from "../../src/server/runtime/adapters/claude-a
 import { CodexRuntimeAdapter } from "../../src/server/runtime/adapters/codex-adapter.js";
 import { TraeRuntimeAdapter } from "../../src/server/runtime/adapters/trae-adapter.js";
 import type { CommandResult, CommandRunner } from "../../src/server/runtime/command-runner.js";
+import type { RuntimeProcess, RuntimeProcessExit, RuntimeProcessFactory } from "../../src/server/runtime/process.js";
 import { RuntimeAdapterRegistry } from "../../src/server/runtime/registry.js";
+import type { RuntimeOutputChunk } from "../../src/server/runtime/types.js";
 import { SessionStore } from "../../src/server/sessions/session-store.js";
 import { createTestDatabase } from "../support/db.js";
 
@@ -46,6 +48,7 @@ describe("HTTP app", () => {
 
       const app = createApp(testDb.db, {
         defaultWorkspacePath: "/tmp/miniagent-default",
+        processFactory: new EchoProcessFactory(),
         runtimeRegistry: new RuntimeAdapterRegistry([
           new CodexRuntimeAdapter({ commandRunner: runner({ exitCode: 0, stdout: "codex 1.0.0", stderr: "" }) }),
           new ClaudeRuntimeAdapter({
@@ -163,6 +166,29 @@ describe("HTTP app", () => {
         "Follow up on the migration",
       );
 
+      const startRunResponse = await app.request("/api/sessions/session-1/runs/start", {
+        method: "POST",
+      });
+      expect(startRunResponse.status).toBe(201);
+
+      const started = await startRunResponse.json();
+      expect(started).toMatchObject({
+        taskId: message.taskId,
+        runId: expect.any(String),
+        status: "succeeded",
+        workspace: expect.objectContaining({
+          selectedSessionId: "session-1",
+        }),
+      });
+      expect(started.workspace.messages.map((item: { markdown: string }) => item.markdown)).toContain(
+        "echo: Follow up on the migration",
+      );
+
+      const noQueuedRunResponse = await app.request("/api/sessions/session-1/runs/start", {
+        method: "POST",
+      });
+      expect(noQueuedRunResponse.status).toBe(409);
+
       const emptyMessageResponse = await app.request("/api/sessions/session-1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -235,4 +261,47 @@ function runner(result: CommandResult): CommandRunner {
   return {
     run: () => result,
   };
+}
+
+class EchoProcessFactory implements RuntimeProcessFactory {
+  spawn(): RuntimeProcess {
+    return new EchoProcess();
+  }
+}
+
+class EchoProcess implements RuntimeProcess {
+  readonly pid = 12345;
+  private outputHandler: ((chunk: RuntimeOutputChunk) => void) | null = null;
+  private exitHandler: ((exit: RuntimeProcessExit) => void) | null = null;
+
+  write(input: string): void {
+    this.outputHandler?.({
+      stream: "stdout",
+      text: `echo: ${input.trim()}`,
+      receivedAt: "2026-05-13T00:00:00.000Z",
+    });
+    this.exitHandler?.({
+      exitCode: 0,
+      signal: null,
+      message: null,
+      exitedAt: "2026-05-13T00:00:01.000Z",
+    });
+  }
+
+  stop(signal = "SIGTERM"): void {
+    this.exitHandler?.({
+      exitCode: null,
+      signal,
+      message: signal,
+      exitedAt: "2026-05-13T00:00:01.000Z",
+    });
+  }
+
+  onOutput(handler: (chunk: RuntimeOutputChunk) => void): void {
+    this.outputHandler = handler;
+  }
+
+  onExit(handler: (exit: RuntimeProcessExit) => void): void {
+    this.exitHandler = handler;
+  }
 }
