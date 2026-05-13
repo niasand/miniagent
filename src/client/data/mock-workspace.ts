@@ -1,14 +1,6 @@
-export type SessionSummary = {
-  id: string;
-  title: string;
-  agent: "Codex" | "Claude" | "Trae";
-  initials: string;
-  workspace: string;
-  status: "running" | "compact" | "queued" | "idle" | "archived";
-  handoff?: string;
-};
+import type { WorkspaceMessage, WorkspaceSnapshot, WorkspaceSessionSummary } from "../../shared/workspace.js";
 
-export const sessions: SessionSummary[] = [
+export const sessions: WorkspaceSessionSummary[] = [
   {
     id: "session-prd",
     title: "MiniAgent PRD hardening",
@@ -52,7 +44,7 @@ export const sessions: SessionSummary[] = [
   },
 ];
 
-export const messages = [
+export const messages: WorkspaceMessage[] = [
   {
     id: "m1",
     role: "user",
@@ -66,7 +58,7 @@ export const messages = [
     author: "Codex CLI",
     badge: "streaming",
     markdown:
-      "The hot path should stay thin. RuntimeSupervisor now appends batched runtime events only; Projectors create read models and Outbox work asynchronously.\n\n```text\ntext_delta batch: 126ms · 1.7 KB\nevent: runtime_output_appended\ncursor: global_seq=18442\n```",
+      "The hot path should stay thin. RuntimeSupervisor now appends batched runtime events only; Projectors create read models and Outbox work asynchronously.\n\n```text\ntext_delta batch: 126ms - 1.7 KB\nevent: runtime_output_appended\ncursor: global_seq=18442\n```",
   },
   {
     id: "m3",
@@ -77,15 +69,22 @@ export const messages = [
   },
 ];
 
-export const outboxRows = [
+export const outboxRows: WorkspaceSnapshot["outboxRows"] = [
   ["18,440", "Feishu", "card_update pending"],
   ["18,441", "Web", "event sent"],
   ["18,442", "Feishu", "lease acquired"],
 ];
 
-export const keyEvents = [
+export const keyEvents: WorkspaceSnapshot["keyEvents"] = [
   ["18,439", "run_started", "CodexRuntimeAdapter"],
   ["18,440", "text_delta", "batch 1.7 KB"],
   ["18,441", "delivery_queued", "web_event"],
   ["18,442", "run_heartbeat", "healthy"],
 ];
+
+export const fallbackWorkspace: WorkspaceSnapshot = {
+  sessions,
+  messages,
+  outboxRows,
+  keyEvents,
+};

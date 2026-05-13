@@ -22,12 +22,14 @@ import { motion } from "motion/react";
 import ReactMarkdown from "react-markdown";
 import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "react-resizable-panels";
 import remarkGfm from "remark-gfm";
+import { fetchWorkspace } from "./api/workspace.js";
 import { Badge } from "./components/ui/badge.js";
 import { Button } from "./components/ui/button.js";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.js";
-import { keyEvents, messages, outboxRows, sessions, type SessionSummary } from "./data/mock-workspace.js";
+import { fallbackWorkspace } from "./data/mock-workspace.js";
 import { cn } from "./lib/utils.js";
 import { useWorkspaceStore } from "./state/workspace-store.js";
+import type { WorkspaceSessionSummary } from "../shared/workspace.js";
 
 const statusTone = {
   running: "green",
@@ -35,6 +37,7 @@ const statusTone = {
   queued: "blue",
   idle: "default",
   archived: "default",
+  failed: "red",
 } as const;
 
 export default function App() {
@@ -44,9 +47,12 @@ export default function App() {
 
   const workspace = useQuery({
     queryKey: ["workspace"],
-    queryFn: async () => ({ sessions, messages, outboxRows, keyEvents }),
+    queryFn: fetchWorkspace,
+    initialData: fallbackWorkspace,
+    retry: 1,
   });
-  const selected = workspace.data?.sessions.find((session) => session.id === selectedSessionId) ?? sessions[0];
+  const snapshot = workspace.data.sessions.length > 0 ? workspace.data : fallbackWorkspace;
+  const selected = snapshot.sessions.find((session) => session.id === selectedSessionId) ?? snapshot.sessions[0];
 
   return (
     <main className="min-h-screen bg-app text-foreground">
@@ -54,15 +60,15 @@ export default function App() {
         <Topbar onOpenCommand={() => setCommandOpen(true)} />
         <PanelGroup orientation="horizontal" className="command-deck-panels min-h-[720px] flex-1 gap-3 overflow-hidden">
           <Panel defaultSize={21} minSize={18} maxSize={28} className="min-w-[244px]">
-            <Sidebar sessions={sessions} selected={selected} />
+            <Sidebar sessions={snapshot.sessions} selected={selected} />
           </Panel>
           <ResizeGrip />
           <Panel defaultSize={52} minSize={38} className="min-w-[420px]">
-            <Conversation selected={selected} />
+            <Conversation selected={selected} messages={snapshot.messages} keyEvents={snapshot.keyEvents} />
           </Panel>
           <ResizeGrip />
           <Panel defaultSize={27} minSize={22} maxSize={34} className="min-w-[320px]">
-            <RightRail />
+            <RightRail outboxRows={snapshot.outboxRows} keyEvents={snapshot.keyEvents} />
           </Panel>
         </PanelGroup>
       </div>
@@ -108,7 +114,13 @@ function Topbar({ onOpenCommand }: { onOpenCommand: () => void }) {
   );
 }
 
-function Sidebar({ sessions, selected }: { sessions: SessionSummary[]; selected: SessionSummary }) {
+function Sidebar({
+  sessions,
+  selected,
+}: {
+  sessions: WorkspaceSessionSummary[];
+  selected: WorkspaceSessionSummary;
+}) {
   const setSelectedSessionId = useWorkspaceStore((state) => state.setSelectedSessionId);
 
   return (
@@ -148,7 +160,15 @@ function Sidebar({ sessions, selected }: { sessions: SessionSummary[]; selected:
   );
 }
 
-function Conversation({ selected }: { selected: SessionSummary }) {
+function Conversation({
+  selected,
+  messages,
+  keyEvents,
+}: {
+  selected: WorkspaceSessionSummary;
+  messages: typeof fallbackWorkspace.messages;
+  keyEvents: typeof fallbackWorkspace.keyEvents;
+}) {
   return (
     <section className="panel-solid grid h-full min-h-0 grid-rows-[auto_1fr_auto] overflow-hidden">
       <SectionHeader
@@ -196,7 +216,7 @@ function Conversation({ selected }: { selected: SessionSummary }) {
           ))}
         </TabsContent>
         <TabsContent value="events" className="min-h-0 overflow-auto p-4">
-          <EventTable />
+          <EventTable rows={keyEvents} />
         </TabsContent>
       </Tabs>
       <div className="grid grid-cols-[1fr_auto] gap-3 border-t border-border bg-surface/95 p-3">
@@ -213,7 +233,13 @@ function Conversation({ selected }: { selected: SessionSummary }) {
   );
 }
 
-function RightRail() {
+function RightRail({
+  outboxRows,
+  keyEvents,
+}: {
+  outboxRows: typeof fallbackWorkspace.outboxRows;
+  keyEvents: typeof fallbackWorkspace.keyEvents;
+}) {
   return (
     <aside className="panel-solid h-full min-h-0 overflow-auto">
       <RightSection title="RuntimeSupervisor" badge={<Badge tone="green">healthy</Badge>}>
@@ -249,7 +275,7 @@ function RightRail() {
         </Button>
       </RightSection>
       <RightSection title="Key Events" badge={<Badge>live</Badge>}>
-        <EventTable compact />
+        <EventTable rows={keyEvents} compact />
       </RightSection>
     </aside>
   );
@@ -326,12 +352,12 @@ function Progress({ value, tone = "default" }: { value: number; tone?: "default"
   );
 }
 
-function EventTable({ compact = false }: { compact?: boolean }) {
+function EventTable({ rows, compact = false }: { rows: typeof fallbackWorkspace.keyEvents; compact?: boolean }) {
   return (
     <div className="overflow-hidden rounded-[8px] border border-border">
       <table className="w-full border-collapse text-left text-xs">
         <tbody>
-          {keyEvents.map(([seq, type, detail]) => (
+          {rows.map(([seq, type, detail]) => (
             <tr key={`${seq}-${type}`} className="border-b border-border last:border-b-0">
               <td className="w-16 px-2 py-2 font-mono text-muted-foreground">{seq}</td>
               <td className="px-2 py-2 font-medium">{type}</td>
