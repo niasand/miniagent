@@ -74,6 +74,39 @@ describe("HTTP app", () => {
         "Hello from Codex",
       );
 
+      const createSessionResponse = await app.request("/api/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "Trae session",
+          agentType: "trae",
+          workspacePath: "/tmp/miniagent-new",
+        }),
+      });
+      expect(createSessionResponse.status).toBe(201);
+
+      const createdSession = await createSessionResponse.json();
+      expect(createdSession.workspace).toMatchObject({
+        selectedSessionId: createdSession.sessionId,
+      });
+      expect(createdSession.workspace.sessions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: createdSession.sessionId,
+            title: "Trae session",
+            agentType: "trae",
+            workspace: "/tmp/miniagent-new",
+          }),
+        ]),
+      );
+
+      const invalidCreateSessionResponse = await app.request("/api/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentType: "unknown" }),
+      });
+      expect(invalidCreateSessionResponse.status).toBe(400);
+
       const replayResponse = await app.request("/api/events?sessionId=session-1&afterGlobalSeq=2&limit=2");
       const replay = await replayResponse.json();
       expect(replay.events.map((event: { type: string }) => event.type)).toEqual(["text_delta", "run_finished"]);

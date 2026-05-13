@@ -58,3 +58,14 @@ export type SendMessageResponse = {
   eventId: string;
   workspace: WorkspaceSnapshot;
 };
+
+export type CreateSessionRequest = {
+  title?: string;
+  agentType?: WorkspaceAgentType;
+  workspacePath?: string;
+};
+
+export type CreateSessionResponse = {
+  sessionId: string;
+  workspace: WorkspaceSnapshot;
+};

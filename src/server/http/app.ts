@@ -6,8 +6,9 @@ import { HandoffService } from "../handoff/handoff-service.js";
 import type { AuditActorType } from "../audit/audit-log-store.js";
 import { UserMessageService } from "../messages/user-message-service.js";
 import type { AgentType } from "../runtime/types.js";
+import { SessionStore } from "../sessions/session-store.js";
 import { createWorkspaceSnapshot } from "../workspace/workspace-service.js";
-import type { CreateHandoffResponse, SendMessageResponse } from "../../shared/workspace.js";
+import type { CreateHandoffResponse, CreateSessionResponse, SendMessageResponse } from "../../shared/workspace.js";
 
 export type AppBindings = {
   Variables: {
@@ -37,6 +38,43 @@ export function createApp(db: SqliteDatabase) {
       }),
     ),
   );
+
+  app.post("/api/sessions", async (context) => {
+    const db = context.get("db");
+    const body = await readJsonBody(context.req);
+    if (!body.ok) {
+      return context.json({ error: body.error }, 400);
+    }
+
+    const requestedAgentType = body.value.agentType;
+    if (requestedAgentType !== undefined && !isAgentType(requestedAgentType)) {
+      return context.json({ error: "agentType must be one of: codex, claude, trae" }, 400);
+    }
+
+    const title = body.value.title;
+    if (title !== undefined && typeof title !== "string") {
+      return context.json({ error: "title must be a string" }, 400);
+    }
+
+    const workspacePath = body.value.workspacePath;
+    if (workspacePath !== undefined && typeof workspacePath !== "string") {
+      return context.json({ error: "workspacePath must be a string" }, 400);
+    }
+
+    const agentType = requestedAgentType ?? "codex";
+    const session = new SessionStore(db).createSession({
+      title: title?.trim() || `${displayAgent(agentType)} session`,
+      agentType,
+      workspacePath: workspacePath?.trim() || process.cwd(),
+      channelType: "web",
+    });
+    const response: CreateSessionResponse = {
+      sessionId: session.id,
+      workspace: createWorkspaceSnapshot(db, { selectedSessionId: session.id }),
+    };
+
+    return context.json(response, 201);
+  });
 
   app.post("/api/sessions/:sessionId/messages", async (context) => {
     const db = context.get("db");
@@ -190,4 +228,14 @@ function isAgentType(value: unknown): value is AgentType {
 
 function isAuditActorType(value: unknown): value is AuditActorType {
   return value === "web_user" || value === "feishu_user" || value === "system" || value === "agent";
+}
+
+function displayAgent(agentType: AgentType): string {
+  if (agentType === "claude") {
+    return "Claude";
+  }
+  if (agentType === "trae") {
+    return "Trae";
+  }
+  return "Codex";
 }

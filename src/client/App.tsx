@@ -25,6 +25,7 @@ import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "reac
 import remarkGfm from "remark-gfm";
 import { createHandoff } from "./api/handoff.js";
 import { sendSessionMessage } from "./api/messages.js";
+import { createSession } from "./api/sessions.js";
 import { fetchWorkspace } from "./api/workspace.js";
 import { Badge } from "./components/ui/badge.js";
 import { Button } from "./components/ui/button.js";
@@ -45,9 +46,11 @@ const statusTone = {
 
 export default function App() {
   const selectedSessionId = useWorkspaceStore((state) => state.selectedSessionId);
+  const defaultAgentType = useWorkspaceStore((state) => state.defaultAgentType);
   const commandOpen = useWorkspaceStore((state) => state.commandOpen);
   const setCommandOpen = useWorkspaceStore((state) => state.setCommandOpen);
   const setSelectedSessionId = useWorkspaceStore((state) => state.setSelectedSessionId);
+  const setDefaultAgentType = useWorkspaceStore((state) => state.setDefaultAgentType);
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState("Ask Codex to turn the data model into migrations...");
 
@@ -83,11 +86,27 @@ export default function App() {
       setDraft("");
     },
   });
+  const newSession = useMutation({
+    mutationFn: () =>
+      createSession({
+        agentType: defaultAgentType,
+      }),
+    onSuccess: (response) => {
+      queryClient.setQueryData(["workspace", response.workspace.selectedSessionId], response.workspace);
+      setSelectedSessionId(response.sessionId);
+    },
+  });
 
   return (
     <main className="min-h-screen bg-app text-foreground">
       <div className="flex min-h-screen flex-col p-4 md:p-[18px]">
-        <Topbar onOpenCommand={() => setCommandOpen(true)} />
+        <Topbar
+          defaultAgentType={defaultAgentType}
+          creatingSession={newSession.isPending}
+          onSelectDefaultAgent={setDefaultAgentType}
+          onOpenCommand={() => setCommandOpen(true)}
+          onNewSession={() => newSession.mutate()}
+        />
         <PanelGroup orientation="horizontal" className="command-deck-panels min-h-[720px] flex-1 gap-3 overflow-hidden">
           <Panel defaultSize={21} minSize={18} maxSize={28} className="min-w-[244px]">
             <Sidebar sessions={snapshot.sessions} selected={selected} />
@@ -128,7 +147,25 @@ export default function App() {
   );
 }
 
-function Topbar({ onOpenCommand }: { onOpenCommand: () => void }) {
+function Topbar({
+  defaultAgentType,
+  creatingSession,
+  onSelectDefaultAgent,
+  onOpenCommand,
+  onNewSession,
+}: {
+  defaultAgentType: WorkspaceAgentType;
+  creatingSession: boolean;
+  onSelectDefaultAgent: (agentType: WorkspaceAgentType) => void;
+  onOpenCommand: () => void;
+  onNewSession: () => void;
+}) {
+  const agents: Array<{ agentType: WorkspaceAgentType; label: string; icon: React.ReactNode }> = [
+    { agentType: "codex", label: "Codex CLI", icon: <Bot className="h-4 w-4" /> },
+    { agentType: "claude", label: "Claude Code", icon: <Sparkles className="h-4 w-4" /> },
+    { agentType: "trae", label: "Trae CLI", icon: <Waypoints className="h-4 w-4" /> },
+  ];
+
   return (
     <header className="mb-3 flex flex-wrap items-center justify-between gap-3">
       <div className="flex min-w-0 items-center gap-3">
@@ -141,24 +178,23 @@ function Topbar({ onOpenCommand }: { onOpenCommand: () => void }) {
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button size="sm">
-          <Bot className="h-4 w-4" />
-          Codex CLI
-        </Button>
-        <Button size="sm">
-          <Sparkles className="h-4 w-4" />
-          Claude Code
-        </Button>
-        <Button size="sm">
-          <Waypoints className="h-4 w-4" />
-          Trae CLI
-        </Button>
+        {agents.map((agent) => (
+          <Button
+            key={agent.agentType}
+            size="sm"
+            variant={defaultAgentType === agent.agentType ? "primary" : "default"}
+            onClick={() => onSelectDefaultAgent(agent.agentType)}
+          >
+            {agent.icon}
+            {agent.label}
+          </Button>
+        ))}
         <Button size="icon" aria-label="Open command palette" onClick={onOpenCommand}>
           <Search className="h-4 w-4" />
         </Button>
-        <Button size="sm" variant="primary">
+        <Button size="sm" variant="primary" disabled={creatingSession} onClick={onNewSession}>
           <Plus className="h-4 w-4" />
-          New Session
+          {creatingSession ? "Creating..." : "New Session"}
         </Button>
       </div>
     </header>
