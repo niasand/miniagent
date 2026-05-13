@@ -111,6 +111,23 @@ export class OutboxStore {
     return mapOutboxRow(row);
   }
 
+  enqueueOnce(input: EnqueueOutboxInput): OutboxItem {
+    const existing = this.getByIdempotencyKey(input.idempotencyKey);
+    if (existing) {
+      return existing;
+    }
+
+    return this.enqueue(input);
+  }
+
+  getByIdempotencyKey(idempotencyKey: string): OutboxItem | null {
+    const row = this.db
+      .prepare("SELECT * FROM outbox WHERE idempotency_key = ?")
+      .get(idempotencyKey) as OutboxRow | undefined;
+
+    return row ? mapOutboxRow(row) : null;
+  }
+
   claimDue(options: { workerId: string; limit: number; leaseMs: number; now?: string }): OutboxItem[] {
     if (options.limit <= 0) {
       throw new Error("limit must be positive");
