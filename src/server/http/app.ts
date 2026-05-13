@@ -51,6 +51,21 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
     await next();
   });
 
+  app.get("/", (context) =>
+    context.json({
+      ok: true,
+      service: "miniagent",
+      ui: "http://127.0.0.1:7272/",
+      endpoints: [
+        "/api/health",
+        "/api/workspace",
+        "/api/agents",
+        "/api/sessions",
+        "/api/events",
+      ],
+    }),
+  );
+
   app.get("/api/health", (context) =>
     context.json({
       ok: true,

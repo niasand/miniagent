@@ -72,6 +72,14 @@ describe("HTTP app", () => {
         service: "miniagent",
       });
 
+      const rootResponse = await app.request("/");
+      await expect(rootResponse.json()).resolves.toMatchObject({
+        ok: true,
+        service: "miniagent",
+        ui: "http://127.0.0.1:7272/",
+        endpoints: expect.arrayContaining(["/api/health", "/api/workspace", "/api/agents"]),
+      });
+
       const agentsResponse = await app.request("/api/agents");
       const agents = await agentsResponse.json();
       expect(agents.agents.map((agent: { agentType: string; status: string }) => [agent.agentType, agent.status])).toEqual([
