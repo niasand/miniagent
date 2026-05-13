@@ -33,9 +33,11 @@ Keep channel integrations behind adapter interfaces so Lark, Telegram, QQ, and W
 
 ## Testing Guidelines
 
-Add tests with each behavior change. Prefer fast unit tests for adapters, schedulers, persistence, and routing. Add integration tests for agent lifecycle, channel delivery, and SQLite persistence.
+Add tests with each behavior change. New or changed code should include corresponding unit, integration, or regression coverage before the task is considered complete. Prefer fast unit tests for adapters, schedulers, persistence, and routing. Add integration tests for agent lifecycle, channel delivery, and SQLite persistence.
 
 Name tests after behavior, for example `agent-session.test.ts` or `lark-card-renderer.test.ts`. Tests should not require real credentials; mock external chat APIs and agent processes by default.
+
+Run the relevant focused test first, then run the full available test suite before finishing code changes. If any test fails, fix the issue and repeat the same checks until they pass.
 
 ## Commit & Pull Request Guidelines
 
