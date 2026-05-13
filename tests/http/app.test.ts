@@ -67,6 +67,36 @@ describe("HTTP app", () => {
       const invalid = await app.request("/api/events?afterGlobalSeq=-1");
       expect(invalid.status).toBe(400);
 
+      const messageResponse = await app.request("/api/sessions/session-1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "  Follow up on the migration  " }),
+      });
+      expect(messageResponse.status).toBe(201);
+
+      const message = await messageResponse.json();
+      expect(message).toMatchObject({
+        taskId: expect.any(String),
+        eventId: expect.any(String),
+      });
+      expect(message.workspace.messages.map((item: { markdown: string }) => item.markdown)).toContain(
+        "Follow up on the migration",
+      );
+
+      const emptyMessageResponse = await app.request("/api/sessions/session-1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: " " }),
+      });
+      expect(emptyMessageResponse.status).toBe(400);
+
+      const missingMessageSessionResponse = await app.request("/api/sessions/missing/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "Hello" }),
+      });
+      expect(missingMessageSessionResponse.status).toBe(404);
+
       const handoffResponse = await app.request("/api/sessions/session-1/handoffs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

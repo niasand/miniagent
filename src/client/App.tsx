@@ -19,10 +19,12 @@ import {
   Waypoints,
 } from "lucide-react";
 import { motion } from "motion/react";
+import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "react-resizable-panels";
 import remarkGfm from "remark-gfm";
 import { createHandoff } from "./api/handoff.js";
+import { sendSessionMessage } from "./api/messages.js";
 import { fetchWorkspace } from "./api/workspace.js";
 import { Badge } from "./components/ui/badge.js";
 import { Button } from "./components/ui/button.js";
@@ -47,6 +49,7 @@ export default function App() {
   const setCommandOpen = useWorkspaceStore((state) => state.setCommandOpen);
   const setSelectedSessionId = useWorkspaceStore((state) => state.setSelectedSessionId);
   const queryClient = useQueryClient();
+  const [draft, setDraft] = useState("Ask Codex to turn the data model into migrations...");
 
   const workspace = useQuery({
     queryKey: ["workspace"],
@@ -67,6 +70,16 @@ export default function App() {
       setSelectedSessionId(response.targetSessionId);
     },
   });
+  const sendMessage = useMutation({
+    mutationFn: (input: { sessionId: string; text: string }) =>
+      sendSessionMessage(input.sessionId, {
+        text: input.text,
+      }),
+    onSuccess: (response) => {
+      queryClient.setQueryData(["workspace"], response.workspace);
+      setDraft("");
+    },
+  });
 
   return (
     <main className="min-h-screen bg-app text-foreground">
@@ -78,7 +91,21 @@ export default function App() {
           </Panel>
           <ResizeGrip />
           <Panel defaultSize={52} minSize={38} className="min-w-[420px]">
-            <Conversation selected={selected} messages={snapshot.messages} keyEvents={snapshot.keyEvents} />
+            <Conversation
+              selected={selected}
+              messages={snapshot.messages}
+              keyEvents={snapshot.keyEvents}
+              draft={draft}
+              sendError={sendMessage.error?.message}
+              sending={sendMessage.isPending}
+              onDraftChange={setDraft}
+              onSend={() => {
+                const text = draft.trim();
+                if (text) {
+                  sendMessage.mutate({ sessionId: selected.id, text });
+                }
+              }}
+            />
           </Panel>
           <ResizeGrip />
           <Panel defaultSize={27} minSize={22} maxSize={34} className="min-w-[320px]">
@@ -185,10 +212,20 @@ function Conversation({
   selected,
   messages,
   keyEvents,
+  draft,
+  sendError,
+  sending,
+  onDraftChange,
+  onSend,
 }: {
   selected: WorkspaceSessionSummary;
   messages: typeof fallbackWorkspace.messages;
   keyEvents: typeof fallbackWorkspace.keyEvents;
+  draft: string;
+  sendError?: string;
+  sending: boolean;
+  onDraftChange: (value: string) => void;
+  onSend: () => void;
 }) {
   return (
     <section className="panel-solid grid h-full min-h-0 grid-rows-[auto_1fr_auto] overflow-hidden">
@@ -241,13 +278,17 @@ function Conversation({
         </TabsContent>
       </Tabs>
       <div className="grid grid-cols-[1fr_auto] gap-3 border-t border-border bg-surface/95 p-3">
-        <textarea
-          className="h-14 resize-none rounded-[8px] border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-          defaultValue="Ask Codex to turn the data model into migrations..."
-        />
-        <Button variant="primary" className="h-14">
+        <div className="grid gap-1">
+          <textarea
+            className="h-14 resize-none rounded-[8px] border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+            value={draft}
+            onChange={(event) => onDraftChange(event.currentTarget.value)}
+          />
+          {sendError ? <p className="text-xs text-red-600">{sendError}</p> : null}
+        </div>
+        <Button variant="primary" className="h-14" disabled={sending || draft.trim().length === 0} onClick={onSend}>
           <Send className="h-4 w-4" />
-          Send
+          {sending ? "Sending..." : "Send"}
         </Button>
       </div>
     </section>

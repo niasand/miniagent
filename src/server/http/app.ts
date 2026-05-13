@@ -1,11 +1,13 @@
 import { Hono } from "hono";
 import type { SqliteDatabase } from "../db/migrate.js";
 import { EventStore } from "../events/event-store.js";
+import { projectReadModelsUntilIdle } from "../events/projector-runner.js";
 import { HandoffService } from "../handoff/handoff-service.js";
 import type { AuditActorType } from "../audit/audit-log-store.js";
+import { UserMessageService } from "../messages/user-message-service.js";
 import type { AgentType } from "../runtime/types.js";
 import { createWorkspaceSnapshot } from "../workspace/workspace-service.js";
-import type { CreateHandoffRequest, CreateHandoffResponse } from "../../shared/workspace.js";
+import type { CreateHandoffResponse, SendMessageResponse } from "../../shared/workspace.js";
 
 export type AppBindings = {
   Variables: {
@@ -29,6 +31,50 @@ export function createApp(db: SqliteDatabase) {
   );
 
   app.get("/api/workspace", (context) => context.json(createWorkspaceSnapshot(context.get("db"))));
+
+  app.post("/api/sessions/:sessionId/messages", async (context) => {
+    const db = context.get("db");
+    const body = await readJsonBody(context.req);
+    if (!body.ok) {
+      return context.json({ error: body.error }, 400);
+    }
+
+    const text = body.value.text;
+    if (typeof text !== "string" || text.trim().length === 0) {
+      return context.json({ error: "text is required" }, 400);
+    }
+
+    const actorRef = body.value.actorRef;
+    if (actorRef !== undefined && actorRef !== null && typeof actorRef !== "string") {
+      return context.json({ error: "actorRef must be a string or null" }, 400);
+    }
+
+    try {
+      const result = new UserMessageService(db).send({
+        sessionId: context.req.param("sessionId"),
+        text,
+        actorRef,
+      });
+      projectReadModelsUntilIdle(db);
+
+      const response: SendMessageResponse = {
+        taskId: result.task.id,
+        eventId: result.event.id,
+        workspace: createWorkspaceSnapshot(db),
+      };
+
+      return context.json(response, 201);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Message send failed";
+      if (message.startsWith("Session not found")) {
+        return context.json({ error: message }, 404);
+      }
+      if (message.includes("archived") || message.includes("required")) {
+        return context.json({ error: message }, 400);
+      }
+      return context.json({ error: message }, 500);
+    }
+  });
 
   app.post("/api/sessions/:sessionId/handoffs", async (context) => {
     const db = context.get("db");
@@ -65,6 +111,8 @@ export function createApp(db: SqliteDatabase) {
         actorRef,
         targetTitle,
       });
+      projectReadModelsUntilIdle(db);
+
       const response: CreateHandoffResponse = {
         targetSessionId: result.targetSession.id,
         targetTaskId: result.task.id,
@@ -112,7 +160,7 @@ export function createApp(db: SqliteDatabase) {
 }
 
 async function readJsonBody(request: { json: () => Promise<unknown> }): Promise<
-  | { ok: true; value: Partial<CreateHandoffRequest> }
+  | { ok: true; value: Record<string, unknown> }
   | { ok: false; error: string }
 > {
   try {
@@ -126,7 +174,7 @@ async function readJsonBody(request: { json: () => Promise<unknown> }): Promise<
   }
 }
 
-function isRecord(value: unknown): value is Partial<CreateHandoffRequest> {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 

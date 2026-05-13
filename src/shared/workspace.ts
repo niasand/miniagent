@@ -46,3 +46,14 @@ export type CreateHandoffResponse = {
   createdEventId: string;
   workspace: WorkspaceSnapshot;
 };
+
+export type SendMessageRequest = {
+  text: string;
+  actorRef?: string | null;
+};
+
+export type SendMessageResponse = {
+  taskId: string;
+  eventId: string;
+  workspace: WorkspaceSnapshot;
+};
