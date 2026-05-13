@@ -135,17 +135,51 @@ input {
   background: var(--color-muted);
 }
 
-@media (max-width: 1040px) {
+@media (max-width: 1180px) {
   .command-deck-panels {
-    display: grid !important;
-    grid-template-columns: 1fr;
-    height: auto !important;
-    min-height: 0 !important;
+    gap: 10px;
   }
 
-  .command-deck-panels [data-panel] {
+  .right-rail-panel,
+  .right-rail-handle {
+    display: none !important;
+  }
+
+  .session-panel {
+    flex: 0 0 250px !important;
+    min-width: 220px !important;
+  }
+
+  .conversation-panel {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .command-deck-panels {
+    flex-direction: column !important;
+    min-height: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .session-panel,
+  .conversation-panel {
+    flex: none !important;
     width: 100% !important;
     min-width: 0 !important;
-    flex: none !important;
+  }
+
+  .session-panel {
+    height: 240px !important;
+  }
+
+  .conversation-panel {
+    min-height: 620px;
+  }
+
+  .session-resize-handle {
+    display: none !important;
   }
 }

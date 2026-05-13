@@ -124,11 +124,11 @@ export default function App() {
           onNewSession={() => newSession.mutate()}
         />
         <PanelGroup orientation="horizontal" className="command-deck-panels min-h-[720px] flex-1 gap-3 overflow-hidden">
-          <Panel defaultSize={21} minSize={18} maxSize={28} className="min-w-[244px]">
+          <Panel defaultSize={21} minSize={18} maxSize={28} className="session-panel min-w-[232px]">
             <Sidebar sessions={snapshot.sessions} selected={selected} />
           </Panel>
-          <ResizeGrip />
-          <Panel defaultSize={52} minSize={38} className="min-w-[420px]">
+          <ResizeGrip className="session-resize-handle" />
+          <Panel defaultSize={52} minSize={38} className="conversation-panel min-w-0">
             <Conversation
               selected={selected}
               messages={snapshot.messages}
@@ -145,8 +145,8 @@ export default function App() {
               }}
             />
           </Panel>
-          <ResizeGrip />
-          <Panel defaultSize={27} minSize={22} maxSize={34} className="min-w-[320px]">
+          <ResizeGrip className="right-rail-handle" />
+          <Panel defaultSize={27} minSize={22} maxSize={34} className="right-rail-panel min-w-[300px]">
             <RightRail
               selected={selected}
               outboxRows={snapshot.outboxRows}
@@ -536,9 +536,14 @@ function EventTable({ rows, compact = false }: { rows: typeof fallbackWorkspace.
   );
 }
 
-function ResizeGrip() {
+function ResizeGrip({ className }: { className?: string }) {
   return (
-    <PanelResizeHandle className="hidden w-1 rounded-full bg-transparent transition-colors hover:bg-primary/30 data-[separator-active]:bg-primary/40 lg:block" />
+    <PanelResizeHandle
+      className={cn(
+        "hidden w-1 rounded-full bg-transparent transition-colors hover:bg-primary/30 data-[separator-active]:bg-primary/40 lg:block",
+        className,
+      )}
+    />
   );
 }
 
