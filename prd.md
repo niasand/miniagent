@@ -38,7 +38,7 @@ MVP 包含：
 
 - Agent：先支持 Codex，多实例运行；Claude Code 作为下一阶段扩展。
 - Channel：先支持飞书；QQ、Telegram、微信后续通过同一 adapter 接入。
-- UI：React 单页应用，包含会话列表、会话详情、实时输出和任务状态。
+- UI：精致的 React 控制台应用，包含会话列表、会话详情、实时输出、任务状态和清晰的空状态/错误状态。
 - Persistence：使用 better-sqlite3 保存 sessions、messages、agent_runs、events、tasks。
 - Scheduler：支持创建、暂停、取消一次性任务和 cron 任务。
 - Rendering：飞书卡片先支持流式 Markdown 和基础状态更新。
@@ -54,7 +54,7 @@ MVP 包含：
 
 ## 6. 系统架构
 
-后端使用 Node.js + TypeScript + Hono + better-sqlite3。前端使用 React + Tailwind CSS 4 + react-markdown。默认端口为 `7272`。
+后端使用 Node.js + TypeScript + Hono + better-sqlite3。前端使用 Vite + React + TypeScript + Tailwind CSS 4 + shadcn/ui + TanStack Query。默认端口为 `7272`。
 
 建议目录：
 
@@ -63,10 +63,36 @@ MVP 包含：
 - `src/server/sessions/`：会话路由、状态机、消息持久化。
 - `src/server/scheduler/`：cron 和一次性任务。
 - `src/server/renderers/`：Web 与飞书卡片渲染。
-- `src/client/`：React UI。
+- `src/client/`：React UI、页面、组件、hooks 和前端状态。
 - `src/shared/`：共享类型、事件协议和配置 schema。
 
-## 7. 飞书卡片阶段
+## 7. UI 体验与前端选型
+
+MiniAgent 的 Web UI 应按高质量桌面控制台设计，而不是营销页。界面应克制、精致、信息密度高，适合长时间监控多个 Agent 会话。
+
+体验要求：
+
+- 首屏就是可操作工作台：左侧会话/任务导航，中间对话流，右侧运行状态、工具调用和上下文信息。
+- 支持浅色/深色主题，默认使用系统主题。
+- 所有长文本、Markdown、工具调用和错误堆栈都必须可读、可折叠、可复制。
+- 使用统一 spacing、radius、阴影、边框和状态色，避免临时手写样式。
+- 动效只用于状态变化、流式输出、面板切换和反馈，不做干扰操作的装饰动画。
+
+推荐前端库：
+
+- `Vite`：开发服务器和构建工具。
+- `React` + `TypeScript`：主 UI 框架和类型系统。
+- `Tailwind CSS 4`：样式系统，优先使用 CSS 变量管理主题 token。
+- `shadcn/ui`：组件基础，组件源码放入 `src/client/components/ui/` 后按项目风格定制。
+- `lucide-react`：图标库。
+- `TanStack Query`：管理 API 请求、缓存、刷新和错误状态。
+- `Zustand`：仅用于少量客户端 UI 状态，如选中会话、面板展开、主题偏好。
+- `react-markdown` + `remark-gfm`：渲染 Agent Markdown 输出。
+- `motion`：用于少量高质量微动效。
+
+第一版优先实现：`Sidebar`、`Tabs`、`Resizable Panels`、`Scroll Area`、`Tooltip`、`Command`、`Badge`、`Table`、`Dialog`、`Toast/Sonner`。不要一次性引入大型图表库，除非日志和任务指标需要。
+
+## 8. 飞书卡片阶段
 
 P0：
 
@@ -86,7 +112,7 @@ P2：
 - 多卡片拆分。
 - 分享为图片。
 
-## 8. MCP 与 Skills
+## 9. MCP 与 Skills
 
 MiniAgent 应提供控制工具，允许 Agent 或外部调用方操作会话和任务：
 
@@ -97,7 +123,7 @@ MiniAgent 应提供控制工具，允许 Agent 或外部调用方操作会话和
 
 第一版只保留接口设计和最小可用工具，避免过早做完整插件市场。
 
-## 9. 日志与记忆
+## 10. 日志与记忆
 
 日志分为两类：
 
@@ -110,7 +136,7 @@ MiniAgent 应提供控制工具，允许 Agent 或外部调用方操作会话和
 - 每日生成摘要，供后续会话参考。
 - 支持配置全局记忆文件，并按 Agent 类型注入或软链接到工作目录。
 
-## 10. 配置
+## 11. 配置
 
 环境变量：
 
@@ -123,31 +149,34 @@ MiniAgent 应提供控制工具，允许 Agent 或外部调用方操作会话和
 
 敏感信息如飞书 app secret、Telegram token、微信密钥只能放入本地 `.env`，不得提交到仓库。
 
-## 11. 验收标准
+## 12. 验收标准
 
 MVP 完成时应满足：
 
 - 可以在 Web UI 创建 Codex 会话并选择工作目录。
+- Web UI 达到可交付质量：布局稳定、主题一致、流式输出顺滑、错误/空状态完整。
 - 可以从飞书给指定会话发消息。
 - Codex 输出可以流式显示在 Web UI 和飞书卡片中。
 - 会话、消息、事件和任务重启后仍可查询。
 - 可以创建一个 cron 任务并看到执行日志。
 - 核心逻辑有自动化测试，不依赖真实平台凭证。
 
-## 12. 里程碑
+## 13. 里程碑
 
-1. 项目脚手架：Node/TypeScript、Hono、React、SQLite、基础测试。
+1. 项目脚手架：Node/TypeScript、Hono、Vite、React、Tailwind CSS 4、shadcn/ui、SQLite、基础测试。
 2. Session + AgentRuntime：跑通 Web 输入到 Codex 输出。
 3. Persistence：保存会话、消息、事件和运行记录。
-4. 飞书 adapter：接收飞书消息并返回流式卡片。
-5. Scheduler：支持一次性任务和 cron 任务。
-6. 记忆归档：每日原始记录和摘要。
-7. 扩展 Claude Code、Telegram、QQ、微信。
+4. 精致 Web UI：完成多会话工作台、流式输出、运行状态和基础动效。
+5. 飞书 adapter：接收飞书消息并返回流式卡片。
+6. Scheduler：支持一次性任务和 cron 任务。
+7. 记忆归档：每日原始记录和摘要。
+8. 扩展 Claude Code、Telegram、QQ、微信。
 
-## 13. 主要风险
+## 14. 主要风险
 
 - Agent CLI 输出格式不稳定，需要用事件解析层隔离变化。
 - 飞书卡片更新频率有限制，需要做节流和分片。
 - 多 Agent 并行运行可能带来进程泄漏，需要可靠的生命周期管理。
 - 会话和归档数据可能包含敏感信息，需要默认本地存储并避免误提交。
 - 不同 channel 能力差异较大，adapter 接口要保持最小公共能力。
+- UI 组件库如果无约束地二次封装，容易变成样式债；第一版应优先复用 shadcn/ui 原生组件。
