@@ -445,6 +445,20 @@ export class SessionStore {
     return this.requireRun(runId);
   }
 
+  setCurrentContextPack(sessionId: string, contextPackId: string, updatedAt = nowIso()): SessionRecord {
+    this.db
+      .prepare(
+        `
+        UPDATE sessions
+        SET current_context_pack_id = @contextPackId, updated_at = @updatedAt
+        WHERE id = @sessionId
+      `,
+      )
+      .run({ sessionId, contextPackId, updatedAt });
+
+    return this.requireSession(sessionId);
+  }
+
   getSession(id: string): SessionRecord | null {
     const row = this.db.prepare("SELECT * FROM sessions WHERE id = ?").get(id) as SessionRow | undefined;
     return row ? mapSessionRow(row) : null;
