@@ -46,7 +46,7 @@ export type RuntimeLaunchContext = {
   run: RuntimeRunContext;
 };
 
-export type RuntimeLaunchSpec = {
+export type RuntimeLaunchSpec = JsonObject & {
   agentType: AgentType;
   command: string;
   args: string[];

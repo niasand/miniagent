@@ -431,6 +431,20 @@ export class SessionStore {
     return finish(input);
   }
 
+  updateRunProcess(runId: string, pid: number | null, heartbeatAt = nowIso()): AgentRunRecord {
+    this.db
+      .prepare(
+        `
+        UPDATE agent_runs
+        SET pid = @pid, heartbeat_at = @heartbeatAt, updated_at = @updatedAt
+        WHERE id = @runId
+      `,
+      )
+      .run({ runId, pid, heartbeatAt, updatedAt: heartbeatAt });
+
+    return this.requireRun(runId);
+  }
+
   getSession(id: string): SessionRecord | null {
     const row = this.db.prepare("SELECT * FROM sessions WHERE id = ?").get(id) as SessionRow | undefined;
     return row ? mapSessionRow(row) : null;
