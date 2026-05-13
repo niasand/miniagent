@@ -1,7 +1,11 @@
 import { Hono } from "hono";
 import type { SqliteDatabase } from "../db/migrate.js";
 import { EventStore } from "../events/event-store.js";
+import { HandoffService } from "../handoff/handoff-service.js";
+import type { AuditActorType } from "../audit/audit-log-store.js";
+import type { AgentType } from "../runtime/types.js";
 import { createWorkspaceSnapshot } from "../workspace/workspace-service.js";
+import type { CreateHandoffRequest, CreateHandoffResponse } from "../../shared/workspace.js";
 
 export type AppBindings = {
   Variables: {
@@ -26,6 +30,63 @@ export function createApp(db: SqliteDatabase) {
 
   app.get("/api/workspace", (context) => context.json(createWorkspaceSnapshot(context.get("db"))));
 
+  app.post("/api/sessions/:sessionId/handoffs", async (context) => {
+    const db = context.get("db");
+    const body = await readJsonBody(context.req);
+    if (!body.ok) {
+      return context.json({ error: body.error }, 400);
+    }
+
+    const targetAgentType = body.value.targetAgentType;
+    if (!isAgentType(targetAgentType)) {
+      return context.json({ error: "targetAgentType must be one of: codex, claude, trae" }, 400);
+    }
+
+    const actorType = body.value.actorType ?? "web_user";
+    if (!isAuditActorType(actorType)) {
+      return context.json({ error: "actorType must be one of: web_user, feishu_user, system, agent" }, 400);
+    }
+
+    const actorRef = body.value.actorRef;
+    if (actorRef !== undefined && actorRef !== null && typeof actorRef !== "string") {
+      return context.json({ error: "actorRef must be a string or null" }, 400);
+    }
+
+    const targetTitle = body.value.targetTitle;
+    if (targetTitle !== undefined && typeof targetTitle !== "string") {
+      return context.json({ error: "targetTitle must be a string" }, 400);
+    }
+
+    try {
+      const result = new HandoffService(db).handoff({
+        sourceSessionId: context.req.param("sessionId"),
+        targetAgentType,
+        actorType,
+        actorRef,
+        targetTitle,
+      });
+      const response: CreateHandoffResponse = {
+        targetSessionId: result.targetSession.id,
+        targetTaskId: result.task.id,
+        sourceContextPackId: result.contextPack.id,
+        requestedEventId: result.requestedEvent.id,
+        createdEventId: result.createdEvent.id,
+        workspace: createWorkspaceSnapshot(db),
+      };
+
+      return context.json(response, 201);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Handoff failed";
+      if (message.startsWith("Session not found")) {
+        return context.json({ error: message }, 404);
+      }
+      if (message.includes("target agent")) {
+        return context.json({ error: message }, 400);
+      }
+      return context.json({ error: message }, 500);
+    }
+  });
+
   app.get("/api/events", (context) => {
     const sessionId = context.req.query("sessionId") || undefined;
     const afterGlobalSeq = Number(context.req.query("afterGlobalSeq") ?? 0);
@@ -48,4 +109,31 @@ export function createApp(db: SqliteDatabase) {
   });
 
   return app;
+}
+
+async function readJsonBody(request: { json: () => Promise<unknown> }): Promise<
+  | { ok: true; value: Partial<CreateHandoffRequest> }
+  | { ok: false; error: string }
+> {
+  try {
+    const value = await request.json();
+    if (!isRecord(value)) {
+      return { ok: false, error: "Request body must be a JSON object" };
+    }
+    return { ok: true, value };
+  } catch {
+    return { ok: false, error: "Request body must be valid JSON" };
+  }
+}
+
+function isRecord(value: unknown): value is Partial<CreateHandoffRequest> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isAgentType(value: unknown): value is AgentType {
+  return value === "codex" || value === "claude" || value === "trae";
+}
+
+function isAuditActorType(value: unknown): value is AuditActorType {
+  return value === "web_user" || value === "feishu_user" || value === "system" || value === "agent";
 }

@@ -3,6 +3,7 @@ import type { MessageRole } from "../events/message-store.js";
 import { parseJson } from "../../shared/json.js";
 import type {
   WorkspaceAgentLabel,
+  WorkspaceAgentType,
   WorkspaceMessage,
   WorkspaceSessionStatus,
   WorkspaceSnapshot,
@@ -65,12 +66,14 @@ function readSessions(db: SqliteDatabase): WorkspaceSnapshot["sessions"] {
     .all() as SessionRow[];
 
   return rows.map((row) => {
-    const agent = mapAgent(row.agent_type);
+    const agentType = mapAgentType(row.agent_type);
+    const agent = mapAgent(agentType);
     return {
       id: row.id,
       title: row.title,
+      agentType,
       agent,
-      initials: mapInitials(agent),
+      initials: mapInitials(agentType),
       workspace: row.source_session_id ? `handoff from ${row.source_session_id}` : row.workspace_path,
       status: mapStatus(row.status),
       handoff: row.source_session_id ?? undefined,
@@ -162,7 +165,14 @@ function describeEvent(row: EventRow): string {
   return row.run_id ?? "system";
 }
 
-function mapAgent(agentType: string): WorkspaceAgentLabel {
+function mapAgentType(agentType: string): WorkspaceAgentType {
+  if (agentType === "claude" || agentType === "trae") {
+    return agentType;
+  }
+  return "codex";
+}
+
+function mapAgent(agentType: WorkspaceAgentType): WorkspaceAgentLabel {
   if (agentType === "claude") {
     return "Claude";
   }
@@ -172,11 +182,11 @@ function mapAgent(agentType: string): WorkspaceAgentLabel {
   return "Codex";
 }
 
-function mapInitials(agent: WorkspaceAgentLabel): string {
-  if (agent === "Claude") {
+function mapInitials(agentType: WorkspaceAgentType): string {
+  if (agentType === "claude") {
     return "CL";
   }
-  if (agent === "Trae") {
+  if (agentType === "trae") {
     return "TR";
   }
   return "CX";

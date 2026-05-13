@@ -52,6 +52,7 @@ describe("HTTP app", () => {
       expect(workspace.sessions[0]).toMatchObject({
         id: "session-1",
         title: "Codex session",
+        agentType: "codex",
         agent: "Codex",
         status: "idle",
       });
@@ -65,6 +66,55 @@ describe("HTTP app", () => {
 
       const invalid = await app.request("/api/events?afterGlobalSeq=-1");
       expect(invalid.status).toBe(400);
+
+      const handoffResponse = await app.request("/api/sessions/session-1/handoffs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetAgentType: "claude",
+          actorType: "web_user",
+          actorRef: "user-1",
+        }),
+      });
+      expect(handoffResponse.status).toBe(201);
+
+      const handoff = await handoffResponse.json();
+      expect(handoff).toMatchObject({
+        sourceContextPackId: expect.any(String),
+        requestedEventId: expect.any(String),
+        createdEventId: expect.any(String),
+      });
+      expect(handoff.workspace.sessions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: handoff.targetSessionId,
+            agentType: "claude",
+            agent: "Claude",
+            handoff: "session-1",
+          }),
+        ]),
+      );
+
+      const sameAgentResponse = await app.request("/api/sessions/session-1/handoffs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetAgentType: "codex" }),
+      });
+      expect(sameAgentResponse.status).toBe(400);
+
+      const invalidAgentResponse = await app.request("/api/sessions/session-1/handoffs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetAgentType: "unknown" }),
+      });
+      expect(invalidAgentResponse.status).toBe(400);
+
+      const missingSessionResponse = await app.request("/api/sessions/missing/handoffs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetAgentType: "claude" }),
+      });
+      expect(missingSessionResponse.status).toBe(404);
     } finally {
       testDb.close();
     }

@@ -4,6 +4,7 @@ export const sessions: WorkspaceSessionSummary[] = [
   {
     id: "session-prd",
     title: "MiniAgent PRD hardening",
+    agentType: "codex",
     agent: "Codex",
     initials: "CX",
     workspace: "/Documents/MiniAgent",
@@ -12,6 +13,7 @@ export const sessions: WorkspaceSessionSummary[] = [
   {
     id: "session-feishu",
     title: "Feishu card renderer",
+    agentType: "claude",
     agent: "Claude",
     initials: "CL",
     workspace: "handoff from Codex",
@@ -21,6 +23,7 @@ export const sessions: WorkspaceSessionSummary[] = [
   {
     id: "session-trae",
     title: "Runtime adapter smoke test",
+    agentType: "trae",
     agent: "Trae",
     initials: "TR",
     workspace: "queued by cron",
@@ -29,6 +32,7 @@ export const sessions: WorkspaceSessionSummary[] = [
   {
     id: "session-sqlite",
     title: "SQLite migration draft",
+    agentType: "codex",
     agent: "Codex",
     initials: "CX",
     workspace: "/Documents/MiniAgent",
@@ -37,6 +41,7 @@ export const sessions: WorkspaceSessionSummary[] = [
   {
     id: "session-replay",
     title: "EventStore replay review",
+    agentType: "claude",
     agent: "Claude",
     initials: "CL",
     workspace: "archived",

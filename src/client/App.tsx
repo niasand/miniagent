@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Command } from "cmdk";
 import {
   Bot,
@@ -22,6 +22,7 @@ import { motion } from "motion/react";
 import ReactMarkdown from "react-markdown";
 import { Group as PanelGroup, Panel, Separator as PanelResizeHandle } from "react-resizable-panels";
 import remarkGfm from "remark-gfm";
+import { createHandoff } from "./api/handoff.js";
 import { fetchWorkspace } from "./api/workspace.js";
 import { Badge } from "./components/ui/badge.js";
 import { Button } from "./components/ui/button.js";
@@ -29,7 +30,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.j
 import { fallbackWorkspace } from "./data/mock-workspace.js";
 import { cn } from "./lib/utils.js";
 import { useWorkspaceStore } from "./state/workspace-store.js";
-import type { WorkspaceSessionSummary } from "../shared/workspace.js";
+import type { WorkspaceAgentType, WorkspaceSessionSummary } from "../shared/workspace.js";
 
 const statusTone = {
   running: "green",
@@ -44,6 +45,8 @@ export default function App() {
   const selectedSessionId = useWorkspaceStore((state) => state.selectedSessionId);
   const commandOpen = useWorkspaceStore((state) => state.commandOpen);
   const setCommandOpen = useWorkspaceStore((state) => state.setCommandOpen);
+  const setSelectedSessionId = useWorkspaceStore((state) => state.setSelectedSessionId);
+  const queryClient = useQueryClient();
 
   const workspace = useQuery({
     queryKey: ["workspace"],
@@ -53,6 +56,17 @@ export default function App() {
   });
   const snapshot = workspace.data.sessions.length > 0 ? workspace.data : fallbackWorkspace;
   const selected = snapshot.sessions.find((session) => session.id === selectedSessionId) ?? snapshot.sessions[0];
+  const handoff = useMutation({
+    mutationFn: (input: { sessionId: string; targetAgentType: WorkspaceAgentType }) =>
+      createHandoff(input.sessionId, {
+        targetAgentType: input.targetAgentType,
+        actorType: "web_user",
+      }),
+    onSuccess: (response) => {
+      queryClient.setQueryData(["workspace"], response.workspace);
+      setSelectedSessionId(response.targetSessionId);
+    },
+  });
 
   return (
     <main className="min-h-screen bg-app text-foreground">
@@ -68,7 +82,14 @@ export default function App() {
           </Panel>
           <ResizeGrip />
           <Panel defaultSize={27} minSize={22} maxSize={34} className="min-w-[320px]">
-            <RightRail outboxRows={snapshot.outboxRows} keyEvents={snapshot.keyEvents} />
+            <RightRail
+              selected={selected}
+              outboxRows={snapshot.outboxRows}
+              keyEvents={snapshot.keyEvents}
+              handoffError={handoff.error?.message}
+              handoffPendingTarget={handoff.isPending ? handoff.variables?.targetAgentType ?? null : null}
+              onHandoff={(targetAgentType) => handoff.mutate({ sessionId: selected.id, targetAgentType })}
+            />
           </Panel>
         </PanelGroup>
       </div>
@@ -234,12 +255,27 @@ function Conversation({
 }
 
 function RightRail({
+  selected,
   outboxRows,
   keyEvents,
+  handoffError,
+  handoffPendingTarget,
+  onHandoff,
 }: {
+  selected: WorkspaceSessionSummary;
   outboxRows: typeof fallbackWorkspace.outboxRows;
   keyEvents: typeof fallbackWorkspace.keyEvents;
+  handoffError?: string;
+  handoffPendingTarget: WorkspaceAgentType | null;
+  onHandoff: (targetAgentType: WorkspaceAgentType) => void;
 }) {
+  const allHandoffTargets: Array<{ agentType: WorkspaceAgentType; label: string }> = [
+    { agentType: "codex", label: "Codex" },
+    { agentType: "claude", label: "Claude" },
+    { agentType: "trae", label: "Trae" },
+  ];
+  const handoffTargets = allHandoffTargets.filter((target) => target.agentType !== selected.agentType);
+
   return (
     <aside className="panel-solid h-full min-h-0 overflow-auto">
       <RightSection title="RuntimeSupervisor" badge={<Badge tone="green">healthy</Badge>}>
@@ -265,14 +301,18 @@ function RightRail({
         </div>
       </RightSection>
       <RightSection title="Handoff" badge={<Badge>available</Badge>}>
-        <Button size="sm">
-          <GitBranch className="h-4 w-4" />
-          Handoff to Claude
-        </Button>
-        <Button size="sm">
-          <GitBranch className="h-4 w-4" />
-          Handoff to Trae
-        </Button>
+        {handoffTargets.map((target) => (
+          <Button
+            key={target.agentType}
+            size="sm"
+            disabled={handoffPendingTarget !== null}
+            onClick={() => onHandoff(target.agentType)}
+          >
+            <GitBranch className="h-4 w-4" />
+            {handoffPendingTarget === target.agentType ? "Creating..." : `Handoff to ${target.label}`}
+          </Button>
+        ))}
+        {handoffError ? <p className="text-xs text-red-600">{handoffError}</p> : null}
       </RightSection>
       <RightSection title="Key Events" badge={<Badge>live</Badge>}>
         <EventTable rows={keyEvents} compact />
