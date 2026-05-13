@@ -30,7 +30,13 @@ export function createApp(db: SqliteDatabase) {
     }),
   );
 
-  app.get("/api/workspace", (context) => context.json(createWorkspaceSnapshot(context.get("db"))));
+  app.get("/api/workspace", (context) =>
+    context.json(
+      createWorkspaceSnapshot(context.get("db"), {
+        selectedSessionId: context.req.query("sessionId") || null,
+      }),
+    ),
+  );
 
   app.post("/api/sessions/:sessionId/messages", async (context) => {
     const db = context.get("db");
@@ -60,7 +66,7 @@ export function createApp(db: SqliteDatabase) {
       const response: SendMessageResponse = {
         taskId: result.task.id,
         eventId: result.event.id,
-        workspace: createWorkspaceSnapshot(db),
+        workspace: createWorkspaceSnapshot(db, { selectedSessionId: context.req.param("sessionId") }),
       };
 
       return context.json(response, 201);
@@ -119,7 +125,7 @@ export function createApp(db: SqliteDatabase) {
         sourceContextPackId: result.contextPack.id,
         requestedEventId: result.requestedEvent.id,
         createdEventId: result.createdEvent.id,
-        workspace: createWorkspaceSnapshot(db),
+        workspace: createWorkspaceSnapshot(db, { selectedSessionId: result.targetSession.id }),
       };
 
       return context.json(response, 201);

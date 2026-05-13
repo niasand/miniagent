@@ -25,6 +25,7 @@ export type WorkspaceMessage = {
 };
 
 export type WorkspaceSnapshot = {
+  selectedSessionId: string | null;
   sessions: WorkspaceSessionSummary[];
   messages: WorkspaceMessage[];
   outboxRows: Array<[string, string, string]>;

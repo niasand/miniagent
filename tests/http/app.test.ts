@@ -49,6 +49,7 @@ describe("HTTP app", () => {
 
       const workspaceResponse = await app.request("/api/workspace");
       const workspace = await workspaceResponse.json();
+      expect(workspace.selectedSessionId).toBe("session-1");
       expect(workspace.sessions[0]).toMatchObject({
         id: "session-1",
         title: "Codex session",
@@ -59,6 +60,19 @@ describe("HTTP app", () => {
       expect(workspace.messages.map((message: { markdown: string }) => message.markdown)).toContain("Hello from Codex");
       expect(workspace.outboxRows).toHaveLength(4);
       expect(workspace.keyEvents.at(-1)).toMatchObject(["4", "run_finished", "succeeded"]);
+
+      sessionStore.createSession({
+        id: "session-2",
+        title: "Claude session",
+        agentType: "claude",
+        workspacePath: "/tmp/miniagent-test",
+      });
+      const selectedWorkspaceResponse = await app.request("/api/workspace?sessionId=session-1");
+      const selectedWorkspace = await selectedWorkspaceResponse.json();
+      expect(selectedWorkspace.selectedSessionId).toBe("session-1");
+      expect(selectedWorkspace.messages.map((message: { markdown: string }) => message.markdown)).toContain(
+        "Hello from Codex",
+      );
 
       const replayResponse = await app.request("/api/events?sessionId=session-1&afterGlobalSeq=2&limit=2");
       const replay = await replayResponse.json();
@@ -78,6 +92,9 @@ describe("HTTP app", () => {
       expect(message).toMatchObject({
         taskId: expect.any(String),
         eventId: expect.any(String),
+        workspace: expect.objectContaining({
+          selectedSessionId: "session-1",
+        }),
       });
       expect(message.workspace.messages.map((item: { markdown: string }) => item.markdown)).toContain(
         "Follow up on the migration",

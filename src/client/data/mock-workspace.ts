@@ -88,6 +88,7 @@ export const keyEvents: WorkspaceSnapshot["keyEvents"] = [
 ];
 
 export const fallbackWorkspace: WorkspaceSnapshot = {
+  selectedSessionId: "session-prd",
   sessions,
   messages,
   outboxRows,

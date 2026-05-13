@@ -52,21 +52,24 @@ export default function App() {
   const [draft, setDraft] = useState("Ask Codex to turn the data model into migrations...");
 
   const workspace = useQuery({
-    queryKey: ["workspace"],
-    queryFn: fetchWorkspace,
+    queryKey: ["workspace", selectedSessionId],
+    queryFn: () => fetchWorkspace(selectedSessionId),
     initialData: fallbackWorkspace,
     retry: 1,
   });
   const snapshot = workspace.data.sessions.length > 0 ? workspace.data : fallbackWorkspace;
-  const selected = snapshot.sessions.find((session) => session.id === selectedSessionId) ?? snapshot.sessions[0];
+  const selected =
+    snapshot.sessions.find((session) => session.id === selectedSessionId) ??
+    snapshot.sessions.find((session) => session.id === snapshot.selectedSessionId) ??
+    snapshot.sessions[0];
   const handoff = useMutation({
     mutationFn: (input: { sessionId: string; targetAgentType: WorkspaceAgentType }) =>
       createHandoff(input.sessionId, {
         targetAgentType: input.targetAgentType,
         actorType: "web_user",
-      }),
+    }),
     onSuccess: (response) => {
-      queryClient.setQueryData(["workspace"], response.workspace);
+      queryClient.setQueryData(["workspace", response.workspace.selectedSessionId], response.workspace);
       setSelectedSessionId(response.targetSessionId);
     },
   });
@@ -74,9 +77,9 @@ export default function App() {
     mutationFn: (input: { sessionId: string; text: string }) =>
       sendSessionMessage(input.sessionId, {
         text: input.text,
-      }),
+    }),
     onSuccess: (response) => {
-      queryClient.setQueryData(["workspace"], response.workspace);
+      queryClient.setQueryData(["workspace", response.workspace.selectedSessionId], response.workspace);
       setDraft("");
     },
   });

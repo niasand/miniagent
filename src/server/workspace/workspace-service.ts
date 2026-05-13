@@ -41,11 +41,17 @@ type EventRow = {
   run_id: string | null;
 };
 
-export function createWorkspaceSnapshot(db: SqliteDatabase): WorkspaceSnapshot {
+export type WorkspaceSnapshotOptions = {
+  selectedSessionId?: string | null;
+};
+
+export function createWorkspaceSnapshot(db: SqliteDatabase, options: WorkspaceSnapshotOptions = {}): WorkspaceSnapshot {
   const sessions = readSessions(db);
-  const selectedSessionId = sessions[0]?.id ?? null;
+  const selectedSessionId =
+    sessions.find((session) => session.id === options.selectedSessionId)?.id ?? sessions[0]?.id ?? null;
 
   return {
+    selectedSessionId,
     sessions,
     messages: selectedSessionId ? readMessages(db, selectedSessionId) : [],
     outboxRows: readOutboxRows(db),
