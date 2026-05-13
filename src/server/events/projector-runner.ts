@@ -30,3 +30,25 @@ export function projectReadModelsUntilIdle(
 
   return { messagesProcessed, webOutboxProcessed };
 }
+
+export type ProjectorLoopOptions = ProjectorOptions & {
+  intervalMs?: number;
+  maxBatches?: number;
+  onError?: (error: unknown) => void;
+};
+
+export function startProjectorLoop(db: SqliteDatabase, options: ProjectorLoopOptions = {}): () => void {
+  const intervalMs = options.intervalMs ?? 500;
+  const timer = setInterval(() => {
+    try {
+      projectReadModelsUntilIdle(db, {
+        batchSize: options.batchSize,
+        maxBatches: options.maxBatches ?? 2,
+      });
+    } catch (error) {
+      options.onError?.(error);
+    }
+  }, intervalMs);
+
+  return () => clearInterval(timer);
+}

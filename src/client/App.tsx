@@ -60,6 +60,7 @@ export default function App() {
     queryKey: ["workspace", selectedSessionId],
     queryFn: () => fetchWorkspace(selectedSessionId),
     initialData: fallbackWorkspace,
+    refetchInterval: 1_500,
     retry: 1,
   });
   const agents = useQuery({
