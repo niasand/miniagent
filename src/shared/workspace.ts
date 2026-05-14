@@ -167,6 +167,36 @@ export type StopRunResponse = {
   workspace: WorkspaceSnapshot;
 };
 
+export type RuntimePermissionRequest = {
+  id: string;
+  sessionId: string;
+  runId: string;
+  taskId: string | null;
+  eventId: string | null;
+  requestId: string | null;
+  protocol: "acp" | "legacy_cli";
+  status: "pending" | "approved" | "denied" | "cancelled" | "expired";
+  prompt: string;
+  options: unknown;
+  toolCall: unknown;
+  selectedOptionId: string | null;
+  expiresAt: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ListRuntimePermissionsResponse = {
+  permissions: RuntimePermissionRequest[];
+};
+
+export type RespondRuntimePermissionRequest = {
+  outcome: "selected" | "cancelled";
+  optionId?: string;
+};
+
+export type RespondRuntimePermissionResponse = ListRuntimePermissionsResponse;
+
 export type CompactContextRequest = {
   actorType?: WorkspaceActorType;
   budgetTokens?: number;

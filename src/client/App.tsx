@@ -4,6 +4,8 @@ import {
   Boxes,
   CircleDot,
   Folder,
+  ShieldCheck,
+  ShieldX,
   Plus,
   X,
 } from "lucide-react";
@@ -16,7 +18,7 @@ import { compactSessionContext, restartSessionContext } from "./api/context.js";
 import { fetchEvents } from "./api/events.js";
 import { createHandoff } from "./api/handoff.js";
 import { sendSessionMessage } from "./api/messages.js";
-import { stopRun } from "./api/runtime.js";
+import { fetchRunPermissions, respondRunPermission, stopRun } from "./api/runtime.js";
 import { createSession } from "./api/sessions.js";
 import { fetchWorkspace } from "./api/workspace.js";
 import { Badge } from "./components/ui/badge.js";
@@ -26,6 +28,7 @@ import { cn } from "./lib/utils.js";
 import { useWorkspaceStore } from "./state/workspace-store.js";
 import type {
   CreateSessionRequest,
+  RuntimePermissionRequest,
   WorkspaceAgentType,
   WorkspaceEvent,
   WorkspaceRuntimeKind,
@@ -53,6 +56,11 @@ const eventStreamTypes = [
   "run_started",
   "text_delta",
   "runtime_stderr",
+  "runtime_event",
+  "tool_call",
+  "tool_call_update",
+  "acp_session_started",
+  "acp_cancel_requested",
   "permission_prompt",
   "context_budget_changed",
   "context_pack_created",
@@ -94,7 +102,25 @@ export default function App() {
     enabled: historyOpen && hasRealSelectedSession,
     retry: 1,
   });
+  const permissions = useQuery({
+    queryKey: ["permissions", snapshot.runtime.activeRunId],
+    queryFn: () => fetchRunPermissions(snapshot.runtime.activeRunId as string),
+    enabled: Boolean(snapshot.runtime.activeRunId),
+    refetchInterval: snapshot.runtime.status === "waiting_permission" ? 1_000 : 5_000,
+    retry: 1,
+  });
   useWorkspaceEventStream(selected.id, hasRealSelectedSession);
+  const respondPermission = useMutation({
+    mutationFn: (input: { runId: string; requestId: string; outcome: "selected" | "cancelled"; optionId?: string }) =>
+      respondRunPermission(input.runId, input.requestId, {
+        outcome: input.outcome,
+        optionId: input.optionId,
+      }),
+    onSuccess: (_response, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["permissions", variables.runId] });
+      queryClient.invalidateQueries({ queryKey: ["workspace"] });
+    },
+  });
   const handoff = useMutation({
     mutationFn: (input: { sessionId: string; targetAgentType: WorkspaceAgentType }) =>
       createHandoff(input.sessionId, {
@@ -230,6 +256,11 @@ export default function App() {
             contextBudget={snapshot.contextBudget}
             outboxRows={snapshot.outboxRows}
             keyEvents={snapshot.keyEvents}
+            permissions={permissions.data?.permissions ?? []}
+            permissionsError={permissions.error?.message ?? respondPermission.error?.message}
+            respondingPermissionId={
+              respondPermission.isPending ? `${respondPermission.variables.runId}:${respondPermission.variables.requestId}` : null
+            }
             compactError={compactContext.error?.message}
             compacting={compactContext.isPending}
             restartError={restartContext.error?.message}
@@ -250,6 +281,7 @@ export default function App() {
             }}
             onViewHistory={() => setHistoryOpen(true)}
             onStopRun={(runId) => stopRuntime.mutate(runId)}
+            onRespondPermission={(input) => respondPermission.mutate(input)}
             onHandoff={(targetAgentType) => handoff.mutate({ sessionId: selected.id, targetAgentType })}
           />
         </div>
@@ -605,6 +637,9 @@ function RightRail({
   contextBudget,
   outboxRows,
   keyEvents,
+  permissions,
+  permissionsError,
+  respondingPermissionId,
   compactError,
   compacting,
   restartError,
@@ -617,6 +652,7 @@ function RightRail({
   onRestart,
   onViewHistory,
   onStopRun,
+  onRespondPermission,
   onHandoff,
 }: {
   selected: WorkspaceSessionSummary;
@@ -624,6 +660,9 @@ function RightRail({
   contextBudget: typeof fallbackWorkspace.contextBudget;
   outboxRows: typeof fallbackWorkspace.outboxRows;
   keyEvents: typeof fallbackWorkspace.keyEvents;
+  permissions: RuntimePermissionRequest[];
+  permissionsError?: string;
+  respondingPermissionId: string | null;
   compactError?: string;
   compacting: boolean;
   restartError?: string;
@@ -636,6 +675,7 @@ function RightRail({
   onRestart: () => void;
   onViewHistory: () => void;
   onStopRun: (runId: string) => void;
+  onRespondPermission: (input: { runId: string; requestId: string; outcome: "selected" | "cancelled"; optionId?: string }) => void;
   onHandoff: (targetAgentType: WorkspaceAgentType) => void;
 }) {
   const allHandoffTargets: Array<{ agentType: WorkspaceAgentType; label: string }> = [
@@ -656,6 +696,60 @@ function RightRail({
           </Button>
         ) : null}
         {stopError ? <p className="text-xs text-red-600">{stopError}</p> : null}
+      </RightSection>
+      <RightSection
+        title="Permissions"
+        badge={<Badge tone={pendingPermissions(permissions).length > 0 ? "amber" : "green"}>{pendingPermissions(permissions).length}</Badge>}
+      >
+        {pendingPermissions(permissions).length === 0 ? (
+          <p className="text-xs text-muted-foreground">No pending runtime approvals.</p>
+        ) : (
+          <div className="grid gap-2">
+            {pendingPermissions(permissions).map((permission) => {
+              const requestId = permission.requestId ?? permission.id;
+              const optionId = firstPermissionOptionId(permission.options) ?? "allow";
+              const pendingKey = `${permission.runId}:${requestId}`;
+              return (
+                <div key={permission.id} className="grid gap-2 rounded-[8px] border border-border bg-muted/70 p-3">
+                  <p className="text-xs text-muted-foreground">{permission.protocol.toUpperCase()} approval</p>
+                  <p className="text-sm">{permission.prompt}</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      size="sm"
+                      disabled={respondingPermissionId === pendingKey}
+                      onClick={() =>
+                        onRespondPermission({
+                          runId: permission.runId,
+                          requestId,
+                          outcome: "selected",
+                          optionId,
+                        })
+                      }
+                    >
+                      <ShieldCheck className="h-4 w-4" />
+                      Allow
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={respondingPermissionId === pendingKey}
+                      onClick={() =>
+                        onRespondPermission({
+                          runId: permission.runId,
+                          requestId,
+                          outcome: "cancelled",
+                        })
+                      }
+                    >
+                      <ShieldX className="h-4 w-4" />
+                      Deny
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {permissionsError ? <p className="text-xs text-red-600">{permissionsError}</p> : null}
       </RightSection>
       <RightSection title="ContextPack" badge={<Badge tone={contextTone[contextBudget.status]}>{contextBudget.status}</Badge>}>
         <Progress
@@ -779,6 +873,20 @@ function formatLastPack(value: string | null): string {
     minute: "2-digit",
     hour12: false,
   })}`;
+}
+
+function pendingPermissions(permissions: RuntimePermissionRequest[]): RuntimePermissionRequest[] {
+  return permissions.filter((permission) => permission.status === "pending");
+}
+
+function firstPermissionOptionId(options: unknown): string | null {
+  if (!Array.isArray(options)) {
+    return null;
+  }
+  const first = options.find((option) => option && typeof option === "object" && "id" in option) as
+    | { id?: unknown }
+    | undefined;
+  return typeof first?.id === "string" ? first.id : null;
 }
 
 function SectionHeader({
