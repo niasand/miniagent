@@ -12,23 +12,27 @@ type PendingRequest = {
   method: string;
   resolve: (value: JsonValue) => void;
   reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
 };
 
 export type AcpJsonRpcConnectionOptions = {
   onNotification: JsonRpcNotificationHandler;
   onRequest: (method: string, params: JsonValue, id: JsonRpcId) => Promise<JsonValue> | JsonValue;
   onProtocolEvent: (draft: RuntimeEventDraft) => void;
+  requestTimeoutMs?: number;
 };
 
 export class AcpJsonRpcConnection {
   private nextId = 1;
   private stdoutBuffer = "";
   private readonly pending = new Map<JsonRpcId, PendingRequest>();
+  private readonly requestTimeoutMs: number;
 
   constructor(
     private readonly process: RuntimeProcess,
     private readonly options: AcpJsonRpcConnectionOptions,
   ) {
+    this.requestTimeoutMs = options.requestTimeoutMs ?? 30_000;
     process.onOutput((chunk) => {
       if (chunk.stream === "stderr") {
         this.options.onProtocolEvent({
@@ -39,12 +43,19 @@ export class AcpJsonRpcConnection {
       }
       this.acceptStdout(chunk.text);
     });
+    process.onExit((exit) => {
+      this.rejectAll(new Error(exit.message ?? exit.signal ?? `ACP process exited with code ${exit.exitCode}`));
+    });
   }
 
   sendRequest(method: string, params: JsonValue = {}): Promise<JsonValue> {
     const id = this.nextId++;
     const pending = new Promise<JsonValue>((resolve, reject) => {
-      this.pending.set(id, { method, resolve, reject });
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`ACP request timed out: ${method}`));
+      }, this.requestTimeoutMs);
+      this.pending.set(id, { method, resolve, reject, timer });
     });
     this.write({ jsonrpc: "2.0", id, method, params });
     return pending;
@@ -115,6 +126,7 @@ export class AcpJsonRpcConnection {
       return;
     }
     this.pending.delete(id);
+    clearTimeout(pending.timer);
 
     if (isObject(message.error)) {
       const errorMessage =
@@ -144,6 +156,14 @@ export class AcpJsonRpcConnection {
 
   private write(message: JsonObject): void {
     this.process.write(`${JSON.stringify(message)}\n`);
+  }
+
+  private rejectAll(error: Error): void {
+    for (const [id, pending] of this.pending.entries()) {
+      clearTimeout(pending.timer);
+      this.pending.delete(id);
+      pending.reject(error);
+    }
   }
 }
 

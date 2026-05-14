@@ -30,6 +30,7 @@ type AcpRuntimeDriverOptions = {
   command: string;
   defaultArgs?: string[];
   commandRunner?: CommandRunner;
+  requestTimeoutMs?: number;
 };
 
 const acpCapabilities: RuntimeCapabilities = {
@@ -50,6 +51,7 @@ export class AcpRuntimeDriver implements RuntimeSessionDriver {
 
   private readonly defaultArgs: string[];
   private readonly commandRunner: CommandRunner;
+  readonly requestTimeoutMs: number;
 
   constructor(options: AcpRuntimeDriverOptions) {
     this.agentType = options.agentType;
@@ -57,6 +59,7 @@ export class AcpRuntimeDriver implements RuntimeSessionDriver {
     this.command = options.command;
     this.defaultArgs = options.defaultArgs ?? [];
     this.commandRunner = options.commandRunner ?? new DefaultCommandRunner();
+    this.requestTimeoutMs = options.requestTimeoutMs ?? 30_000;
   }
 
   capabilities(): RuntimeCapabilities {
@@ -150,6 +153,7 @@ class AcpRunHandle implements RuntimeRunHandle {
       onNotification: (method, params) => this.handleNotification(method, params),
       onRequest: (method, params, id) => this.handleRequest(method, params, id),
       onProtocolEvent: (draft) => callbacks.emit(draft),
+      requestTimeoutMs: driver.requestTimeoutMs,
     });
     process.onExit((exit) => this.finish(exit));
     this.ready = this.bootstrap();

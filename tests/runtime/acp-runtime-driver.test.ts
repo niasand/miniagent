@@ -197,6 +197,21 @@ describe("AcpRuntimeDriver", () => {
     });
   });
 
+  it("fails the run when an ACP request times out", async () => {
+    const fixture = createAcpSupervisorFixture({ ignoreInitialize: true, requestTimeoutMs: 1 });
+    const started = fixture.supervisor.startTask({ sessionId: "session-1", taskId: "task-1" });
+
+    fixture.supervisor.sendInput(started.run.id, { taskType: "message", input: { text: "hello" } });
+
+    await eventually(() => {
+      expect(fixture.sessionStore.getRun(started.run.id)).toMatchObject({
+        status: "failed",
+        errorClass: "process_crash",
+        stopReason: "ACP request timed out: initialize",
+      });
+    });
+  });
+
   it("serves ACP file reads from the session workspace with redaction", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "miniagent-acp-fs-"));
     const filePath = join(tempDir, "notes.txt");
@@ -252,6 +267,7 @@ describe("AcpRuntimeDriver", () => {
           agentType: "codex",
           displayName: "Codex ACP",
           command: "fake-acp-agent",
+          requestTimeoutMs: options.requestTimeoutMs,
         }),
       ]),
       eventStore,
@@ -276,12 +292,14 @@ type JsonRpcMessage = {
 
 type FakeAcpProcessOptions = {
   holdPromptUntilCancel?: boolean;
+  ignoreInitialize?: boolean;
   ignoreCancel?: boolean;
   requestPermission?: boolean;
   readFilePath?: string;
   workspacePath?: string;
   cancelKillTimeoutMs?: number;
   cleanup?: () => void;
+  requestTimeoutMs?: number;
 };
 
 class FakeProcessFactory implements RuntimeProcessFactory {
@@ -367,6 +385,9 @@ class FakeAcpProcess implements RuntimeProcess {
     this.messages.push(message);
     switch (message.method) {
       case "initialize":
+        if (this.options.ignoreInitialize) {
+          break;
+        }
         this.send({ jsonrpc: "2.0", id: responseId(message), result: { protocolVersion: 1, agentCapabilities: {} } });
         break;
       case "session/new":
