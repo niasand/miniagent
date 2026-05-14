@@ -156,6 +156,25 @@ describe("HTTP app", () => {
         "Hello from Codex",
       );
 
+      const toolsResponse = await app.request("/api/mcp/tools");
+      await expect(toolsResponse.json()).resolves.toMatchObject({
+        tools: expect.arrayContaining([expect.objectContaining({ name: "events.query" })]),
+      });
+
+      const toolCallResponse = await app.request("/api/mcp/tools/call", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "events.query",
+          args: { sessionId: "session-1", afterGlobalSeq: 0, limit: 2 },
+        }),
+      });
+      expect(toolCallResponse.status).toBe(200);
+      await expect(toolCallResponse.json()).resolves.toMatchObject({
+        name: "events.query",
+        result: expect.arrayContaining([expect.objectContaining({ sessionId: "session-1" })]),
+      });
+
       const createSessionResponse = await app.request("/api/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

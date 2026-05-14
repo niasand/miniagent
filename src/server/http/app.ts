@@ -8,6 +8,7 @@ import { HandoffService } from "../handoff/handoff-service.js";
 import { AuditLogStore, type AuditActorType } from "../audit/audit-log-store.js";
 import { DefaultAgentService } from "../agents/default-agent-service.js";
 import type { AgentDefaultRecord, AgentDefaultScopeType } from "../agents/agent-default-store.js";
+import { ControlToolService } from "../mcp/control-tool-service.js";
 import { MemoryArchiveService } from "../memory/memory-archive-service.js";
 import type { MemoryArchiveRecord } from "../memory/memory-archive-store.js";
 import { UserMessageService } from "../messages/user-message-service.js";
@@ -28,6 +29,7 @@ import type {
   AgentsResponse,
   AgentDefault,
   CompactContextResponse,
+  CallControlToolResponse,
   ConfirmOperationResponse,
   CreateHandoffResponse,
   CreateMemoryArchiveResponse,
@@ -35,6 +37,7 @@ import type {
   CreateScheduleResponse,
   CreateSessionResponse,
   ListSchedulesResponse,
+  ListControlToolsResponse,
   ListMemoryArchivesResponse,
   RunDueSchedulesResponse,
   SendMessageResponse,
@@ -99,6 +102,8 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
         "/api/schedules",
         "/api/schedules/due/run",
         "/api/feishu/messages",
+        "/api/mcp/tools",
+        "/api/mcp/tools/call",
         "/api/security/confirmations",
         "/api/sessions/:sessionId/memory/archives",
       ],
@@ -225,6 +230,50 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
       }),
     ),
   );
+
+  app.get("/api/mcp/tools", (context) => {
+    const response: ListControlToolsResponse = {
+      tools: new ControlToolService(context.get("db")).listTools(),
+    };
+    return context.json(response);
+  });
+
+  app.post("/api/mcp/tools/call", async (context) => {
+    const body = await readJsonBody(context.req);
+    if (!body.ok) {
+      return context.json({ error: body.error }, 400);
+    }
+
+    const name = body.value.name;
+    if (typeof name !== "string" || name.trim().length === 0) {
+      return context.json({ error: "name is required" }, 400);
+    }
+    const args = body.value.args;
+    if (args !== undefined && !isJsonRecord(args)) {
+      return context.json({ error: "args must be a JSON object" }, 400);
+    }
+
+    try {
+      const result = new ControlToolService(context.get("db")).callTool(name, args ? (args as JsonObject) : {});
+      const response: CallControlToolResponse = result;
+      return context.json(response);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Control tool call failed";
+      if (message.includes("not found") || message.startsWith("Session not found")) {
+        return context.json({ error: message }, 404);
+      }
+      if (message.startsWith("Unknown control tool")) {
+        return context.json({ error: message }, 404);
+      }
+      if (message.includes("required") || message.includes("must be") || message.includes("kind must")) {
+        return context.json({ error: message }, 400);
+      }
+      if (message.startsWith("No events found")) {
+        return context.json({ error: message }, 409);
+      }
+      return context.json({ error: message }, 500);
+    }
+  });
 
   app.get("/api/agents", async (context) => {
     const agents = await Promise.all(

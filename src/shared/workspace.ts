@@ -240,3 +240,23 @@ export type CreateOperationConfirmationResponse = {
 export type ConfirmOperationResponse = {
   confirmation: OperationConfirmation;
 };
+
+export type ControlToolDescriptor = {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+};
+
+export type ListControlToolsResponse = {
+  tools: ControlToolDescriptor[];
+};
+
+export type CallControlToolRequest = {
+  name: string;
+  args?: Record<string, unknown>;
+};
+
+export type CallControlToolResponse = {
+  name: string;
+  result: unknown;
+};
