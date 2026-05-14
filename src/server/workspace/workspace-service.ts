@@ -6,6 +6,7 @@ import type {
   WorkspaceAgentType,
   WorkspaceContextBudget,
   WorkspaceMessage,
+  WorkspaceRuntimeSummary,
   WorkspaceSessionStatus,
   WorkspaceSnapshot,
 } from "../../shared/workspace.js";
@@ -54,6 +55,14 @@ type ContextBudgetRow = {
   last_compacted_at: string | null;
 };
 
+type RuntimeRow = {
+  id: string;
+  agent_type: string;
+  status: string;
+  pid: number | null;
+  started_at: string | null;
+};
+
 export type WorkspaceSnapshotOptions = {
   selectedSessionId?: string | null;
 };
@@ -70,6 +79,7 @@ export function createWorkspaceSnapshot(db: SqliteDatabase, options: WorkspaceSn
     outboxRows: readOutboxRows(db),
     keyEvents: readKeyEvents(db),
     contextBudget: selectedSessionId ? readContextBudget(db, selectedSessionId) : defaultContextBudget(),
+    runtime: selectedSessionId ? readRuntime(db, selectedSessionId) : defaultRuntime(),
   };
 }
 
@@ -202,6 +212,46 @@ function defaultContextBudget(): WorkspaceContextBudget {
     currentContextPackId: null,
     lastCompactedAt: null,
   };
+}
+
+function readRuntime(db: SqliteDatabase, sessionId: string): WorkspaceRuntimeSummary {
+  const row = db
+    .prepare(
+      `
+      SELECT id, agent_type, status, pid, started_at
+      FROM agent_runs
+      WHERE session_id = ?
+      ORDER BY created_at DESC
+      LIMIT 1
+    `,
+    )
+    .get(sessionId) as RuntimeRow | undefined;
+
+  if (!row) {
+    return defaultRuntime();
+  }
+
+  return {
+    activeRunId: isActiveRunStatus(row.status) ? row.id : null,
+    status: row.status,
+    pid: row.pid,
+    agentType: mapAgentType(row.agent_type),
+    startedAt: row.started_at,
+  };
+}
+
+function defaultRuntime(): WorkspaceRuntimeSummary {
+  return {
+    activeRunId: null,
+    status: "idle",
+    pid: null,
+    agentType: null,
+    startedAt: null,
+  };
+}
+
+function isActiveRunStatus(status: string): boolean {
+  return ["queued", "starting", "running", "waiting_permission", "compacting", "stopping"].includes(status);
 }
 
 function describeEvent(row: EventRow): string {

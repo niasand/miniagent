@@ -93,6 +93,13 @@ export const fallbackWorkspace: WorkspaceSnapshot = {
   messages,
   outboxRows,
   keyEvents,
+  runtime: {
+    activeRunId: "run_mock",
+    status: "running",
+    pid: 12345,
+    agentType: "codex",
+    startedAt: "2026-05-13T23:40:00.000Z",
+  },
   contextBudget: {
     status: "warning",
     tokenEstimate: 72_000,

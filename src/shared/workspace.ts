@@ -32,6 +32,15 @@ export type WorkspaceSnapshot = {
   outboxRows: Array<[string, string, string]>;
   keyEvents: Array<[string, string, string]>;
   contextBudget: WorkspaceContextBudget;
+  runtime: WorkspaceRuntimeSummary;
+};
+
+export type WorkspaceRuntimeSummary = {
+  activeRunId: string | null;
+  status: string;
+  pid: number | null;
+  agentType: WorkspaceAgentType | null;
+  startedAt: string | null;
 };
 
 export type WorkspaceEvent = {

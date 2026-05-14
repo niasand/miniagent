@@ -16,6 +16,7 @@ import { compactSessionContext, restartSessionContext } from "./api/context.js";
 import { fetchEvents } from "./api/events.js";
 import { createHandoff } from "./api/handoff.js";
 import { sendSessionMessage } from "./api/messages.js";
+import { stopRun } from "./api/runtime.js";
 import { createSession } from "./api/sessions.js";
 import { fetchWorkspace } from "./api/workspace.js";
 import { Badge } from "./components/ui/badge.js";
@@ -130,6 +131,12 @@ export default function App() {
       queryClient.setQueryData(["workspace", response.workspace.selectedSessionId], response.workspace);
     },
   });
+  const stopRuntime = useMutation({
+    mutationFn: (runId: string) => stopRun(runId),
+    onSuccess: (response) => {
+      queryClient.setQueryData(["workspace", response.workspace.selectedSessionId], response.workspace);
+    },
+  });
   const sendMessage = useMutation({
     mutationFn: async (input: {
       sessionId: string;
@@ -218,6 +225,7 @@ export default function App() {
           />
           <RightRail
             selected={selected}
+            runtime={snapshot.runtime}
             contextBudget={snapshot.contextBudget}
             outboxRows={snapshot.outboxRows}
             keyEvents={snapshot.keyEvents}
@@ -225,6 +233,8 @@ export default function App() {
             compacting={compactContext.isPending}
             restartError={restartContext.error?.message}
             restarting={restartContext.isPending}
+            stopError={stopRuntime.error?.message}
+            stopping={stopRuntime.isPending}
             handoffError={handoff.error?.message}
             handoffPendingTarget={handoff.isPending ? handoff.variables?.targetAgentType ?? null : null}
             onCompact={() => {
@@ -238,6 +248,7 @@ export default function App() {
               }
             }}
             onViewHistory={() => setHistoryOpen(true)}
+            onStopRun={(runId) => stopRuntime.mutate(runId)}
             onHandoff={(targetAgentType) => handoff.mutate({ sessionId: selected.id, targetAgentType })}
           />
         </div>
@@ -570,6 +581,7 @@ function Conversation({
 
 function RightRail({
   selected,
+  runtime,
   contextBudget,
   outboxRows,
   keyEvents,
@@ -577,14 +589,18 @@ function RightRail({
   compacting,
   restartError,
   restarting,
+  stopError,
+  stopping,
   handoffError,
   handoffPendingTarget,
   onCompact,
   onRestart,
   onViewHistory,
+  onStopRun,
   onHandoff,
 }: {
   selected: WorkspaceSessionSummary;
+  runtime: typeof fallbackWorkspace.runtime;
   contextBudget: typeof fallbackWorkspace.contextBudget;
   outboxRows: typeof fallbackWorkspace.outboxRows;
   keyEvents: typeof fallbackWorkspace.keyEvents;
@@ -592,11 +608,14 @@ function RightRail({
   compacting: boolean;
   restartError?: string;
   restarting: boolean;
+  stopError?: string;
+  stopping: boolean;
   handoffError?: string;
   handoffPendingTarget: WorkspaceAgentType | null;
   onCompact: () => void;
   onRestart: () => void;
   onViewHistory: () => void;
+  onStopRun: (runId: string) => void;
   onHandoff: (targetAgentType: WorkspaceAgentType) => void;
 }) {
   const allHandoffTargets: Array<{ agentType: WorkspaceAgentType; label: string }> = [
@@ -609,7 +628,13 @@ function RightRail({
   return (
     <aside className="panel-solid rightbar h-full min-h-0 overflow-auto">
       <RightSection title="RuntimeSupervisor" badge={<Badge tone="green">healthy</Badge>}>
-        <Metric label="stdout batch window" value="126ms" progress={56} />
+        <Metric label="latest run" value={runtime.status} progress={runtime.activeRunId ? 72 : 0} />
+        {runtime.activeRunId ? (
+          <Button size="sm" disabled={stopping} onClick={() => onStopRun(runtime.activeRunId as string)}>
+            {stopping ? "Stopping..." : "Stop run"}
+          </Button>
+        ) : null}
+        {stopError ? <p className="text-xs text-red-600">{stopError}</p> : null}
       </RightSection>
       <RightSection title="ContextPack" badge={<Badge tone={contextTone[contextBudget.status]}>{contextBudget.status}</Badge>}>
         <Progress
