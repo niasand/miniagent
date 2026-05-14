@@ -1,4 +1,5 @@
 import type { SqliteDatabase } from "../db/migrate.js";
+import { AuditLogStore } from "../audit/audit-log-store.js";
 import { OutboxStore, type OutboxItem } from "../events/outbox-store.js";
 import { EventStore } from "../events/event-store.js";
 import { parseJson, type JsonValue } from "../../shared/json.js";
@@ -23,6 +24,7 @@ export type DeliverFeishuOutboxResult = {
 };
 
 export class FeishuDeliveryService {
+  private readonly auditLogs: AuditLogStore;
   private readonly events: EventStore;
   private readonly outbox: OutboxStore;
 
@@ -31,6 +33,7 @@ export class FeishuDeliveryService {
     private readonly client: FeishuDeliveryClient,
     events = new EventStore(db),
   ) {
+    this.auditLogs = new AuditLogStore(db);
     this.events = events;
     this.outbox = new OutboxStore(db);
   }
@@ -64,6 +67,19 @@ export class FeishuDeliveryService {
           },
           createdAt: now,
         });
+        this.auditLogs.insert({
+          actorType: "system",
+          action: "delivery_succeeded",
+          resourceType: "outbox",
+          resourceId: item.id,
+          payload: {
+            sessionId: item.sessionId,
+            channelType: item.channelType,
+            kind: item.kind,
+            providerMessageId: delivered.providerMessageId,
+          },
+          createdAt: now,
+        });
         sent += 1;
       } catch (error) {
         const message = error instanceof Error ? error.message : "Feishu delivery failed";
@@ -74,6 +90,19 @@ export class FeishuDeliveryService {
           causationId: item.eventId,
           payload: {
             outboxId: item.id,
+            channelType: item.channelType,
+            kind: item.kind,
+            error: message,
+          },
+          createdAt: now,
+        });
+        this.auditLogs.insert({
+          actorType: "system",
+          action: "delivery_failed",
+          resourceType: "outbox",
+          resourceId: item.id,
+          payload: {
+            sessionId: item.sessionId,
             channelType: item.channelType,
             kind: item.kind,
             error: message,

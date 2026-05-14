@@ -54,6 +54,7 @@ describe("FeishuDeliveryService", () => {
       providerMessageId: "provider-card-1",
     });
     expect(readEventTypes()).toContain("delivery_succeeded");
+    expect(readAuditActions()).toContain("delivery_succeeded");
   });
 
   it("marks Feishu delivery failures for retry and records the failure event", async () => {
@@ -83,6 +84,7 @@ describe("FeishuDeliveryService", () => {
       nextAttemptAt: "2026-05-13T00:00:01.000Z",
     });
     expect(readEventTypes()).toContain("delivery_failed");
+    expect(readAuditActions()).toContain("delivery_failed");
   });
 
   function fakeClient(): FeishuDeliveryClient & {
@@ -102,5 +104,12 @@ describe("FeishuDeliveryService", () => {
       .prepare("SELECT type FROM events WHERE session_id = 'session-1' ORDER BY global_seq ASC")
       .all()
       .map((row) => (row as { type: string }).type);
+  }
+
+  function readAuditActions(): string[] {
+    return testDb.db
+      .prepare("SELECT action FROM audit_logs ORDER BY created_at ASC, id ASC")
+      .all()
+      .map((row) => (row as { action: string }).action);
   }
 });
