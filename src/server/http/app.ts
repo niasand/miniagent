@@ -8,6 +8,8 @@ import { HandoffService } from "../handoff/handoff-service.js";
 import { AuditLogStore, type AuditActorType } from "../audit/audit-log-store.js";
 import { DefaultAgentService } from "../agents/default-agent-service.js";
 import type { AgentDefaultRecord, AgentDefaultScopeType } from "../agents/agent-default-store.js";
+import { MemoryArchiveService } from "../memory/memory-archive-service.js";
+import type { MemoryArchiveRecord } from "../memory/memory-archive-store.js";
 import { UserMessageService } from "../messages/user-message-service.js";
 import type { AgentType } from "../runtime/types.js";
 import { RuntimeAdapterRegistry } from "../runtime/registry.js";
@@ -24,9 +26,11 @@ import type {
   AgentDefault,
   CompactContextResponse,
   CreateHandoffResponse,
+  CreateMemoryArchiveResponse,
   CreateScheduleResponse,
   CreateSessionResponse,
   ListSchedulesResponse,
+  ListMemoryArchivesResponse,
   RunDueSchedulesResponse,
   SendMessageResponse,
   ResolveAgentDefaultResponse,
@@ -34,6 +38,7 @@ import type {
   StartRunResponse,
   UpdateScheduleResponse,
   WorkspaceSchedule,
+  MemoryArchive,
 } from "../../shared/workspace.js";
 
 export type AppBindings = {
@@ -84,6 +89,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
         "/api/schedules",
         "/api/schedules/due/run",
         "/api/feishu/messages",
+        "/api/sessions/:sessionId/memory/archives",
       ],
     }),
   );
@@ -661,6 +667,59 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
     }
   });
 
+  app.get("/api/sessions/:sessionId/memory/archives", (context) => {
+    try {
+      const archives = new MemoryArchiveService(context.get("db"))
+        .listArchives(context.req.param("sessionId"))
+        .map(mapMemoryArchive);
+      const response: ListMemoryArchivesResponse = { archives };
+      return context.json(response);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "List memory archives failed";
+      if (message.startsWith("Session not found")) {
+        return context.json({ error: message }, 404);
+      }
+      return context.json({ error: message }, 500);
+    }
+  });
+
+  app.post("/api/sessions/:sessionId/memory/archives", async (context) => {
+    const body = await readJsonBody(context.req);
+    if (!body.ok) {
+      return context.json({ error: body.error }, 400);
+    }
+
+    const archiveDate = body.value.archiveDate;
+    if (typeof archiveDate !== "string") {
+      return context.json({ error: "archiveDate is required" }, 400);
+    }
+
+    try {
+      const result = new MemoryArchiveService(context.get("db")).createDailyArchive({
+        sessionId: context.req.param("sessionId"),
+        archiveDate,
+      });
+      projectReadModelsUntilIdle(context.get("db"));
+      const response: CreateMemoryArchiveResponse = {
+        archive: mapMemoryArchive(result.archive),
+        eventId: result.event.id,
+      };
+      return context.json(response, 201);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Create memory archive failed";
+      if (message.startsWith("Session not found")) {
+        return context.json({ error: message }, 404);
+      }
+      if (message.includes("archiveDate")) {
+        return context.json({ error: message }, 400);
+      }
+      if (message.startsWith("No events found")) {
+        return context.json({ error: message }, 409);
+      }
+      return context.json({ error: message }, 500);
+    }
+  });
+
   app.post("/api/sessions/:sessionId/context/compact", async (context) => {
     const db = context.get("db");
     const body = await readOptionalJsonBody(context.req);
@@ -868,6 +927,18 @@ function mapAgentDefault(record: AgentDefaultRecord): AgentDefault {
     scopeRef: record.scopeRef,
     agentType: record.agentType,
     params: record.params,
+    updatedAt: record.updatedAt,
+  };
+}
+
+function mapMemoryArchive(record: MemoryArchiveRecord): MemoryArchive {
+  return {
+    id: record.id,
+    sessionId: record.sessionId,
+    archiveDate: record.archiveDate,
+    sourceGlobalSeqStart: record.sourceGlobalSeqStart,
+    sourceGlobalSeqEnd: record.sourceGlobalSeqEnd,
+    summary: record.summary,
     updatedAt: record.updatedAt,
   };
 }

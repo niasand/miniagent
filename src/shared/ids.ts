@@ -5,6 +5,7 @@ export type EntityPrefix =
   | "aud"
   | "ctx"
   | "evt"
+  | "mem"
   | "out"
   | "run"
   | "sch"

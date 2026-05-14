@@ -210,6 +210,31 @@ describe("HTTP app", () => {
       expect(eventStream).toContain("event: run_finished");
       expect(eventStream).toContain(": cursor-ready");
 
+      testDb.db
+        .prepare("UPDATE events SET created_at = '2026-05-13T09:00:00.000Z' WHERE session_id = 'session-1'")
+        .run();
+      const archiveResponse = await app.request("/api/sessions/session-1/memory/archives", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archiveDate: "2026-05-13" }),
+      });
+      expect(archiveResponse.status).toBe(201);
+      await expect(archiveResponse.json()).resolves.toMatchObject({
+        archive: {
+          sessionId: "session-1",
+          archiveDate: "2026-05-13",
+          summary: {
+            eventCount: expect.any(Number),
+          },
+        },
+        eventId: expect.any(String),
+      });
+
+      const archivesResponse = await app.request("/api/sessions/session-1/memory/archives");
+      await expect(archivesResponse.json()).resolves.toMatchObject({
+        archives: [expect.objectContaining({ sessionId: "session-1", archiveDate: "2026-05-13" })],
+      });
+
       const messageResponse = await app.request("/api/sessions/session-1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

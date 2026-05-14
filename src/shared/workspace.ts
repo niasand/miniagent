@@ -189,3 +189,26 @@ export type RunDueSchedulesResponse = {
   }>;
   workspace: WorkspaceSnapshot;
 };
+
+export type MemoryArchive = {
+  id: string;
+  sessionId: string;
+  archiveDate: string;
+  sourceGlobalSeqStart: number;
+  sourceGlobalSeqEnd: number;
+  summary: unknown;
+  updatedAt: string;
+};
+
+export type CreateMemoryArchiveRequest = {
+  archiveDate: string;
+};
+
+export type CreateMemoryArchiveResponse = {
+  archive: MemoryArchive;
+  eventId: string;
+};
+
+export type ListMemoryArchivesResponse = {
+  archives: MemoryArchive[];
+};
