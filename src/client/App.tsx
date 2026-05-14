@@ -28,6 +28,7 @@ import type {
   CreateSessionRequest,
   WorkspaceAgentType,
   WorkspaceEvent,
+  WorkspaceRuntimeKind,
   WorkspaceSessionSummary,
 } from "../shared/workspace.js";
 
@@ -379,12 +380,14 @@ function NewSessionDialog({
   onCreate: (request: CreateSessionRequest) => void;
 }) {
   const [agentType, setAgentType] = useState<WorkspaceAgentType>(defaultAgentType);
+  const [runtimeKind, setRuntimeKind] = useState<WorkspaceRuntimeKind>("cli");
   const [title, setTitle] = useState("");
   const [workspacePath, setWorkspacePath] = useState("");
 
   useEffect(() => {
     if (open) {
       setAgentType(defaultAgentType);
+      setRuntimeKind("cli");
       setTitle("");
       setWorkspacePath("");
     }
@@ -404,6 +407,7 @@ function NewSessionDialog({
           event.preventDefault();
           onCreate({
             agentType,
+            runtimeKind,
             title: title.trim() || undefined,
             workspacePath: workspacePath.trim() || undefined,
           });
@@ -431,6 +435,22 @@ function NewSessionDialog({
                   onClick={() => setAgentType(value)}
                 >
                   {value === "codex" ? "Codex CLI" : value === "claude" ? "Claude Code" : "Trae CLI"}
+                </button>
+              ))}
+            </div>
+          </label>
+
+          <label className="field">
+            <span>Runtime</span>
+            <div className="segmented" role="group" aria-label="Runtime kind">
+              {(["cli", "acp"] as WorkspaceRuntimeKind[]).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={cn("segmented-item", runtimeKind === value && "active")}
+                  onClick={() => setRuntimeKind(value)}
+                >
+                  {value === "cli" ? "CLI" : "ACP"}
                 </button>
               ))}
             </div>
@@ -629,6 +649,7 @@ function RightRail({
     <aside className="panel-solid rightbar h-full min-h-0 overflow-auto">
       <RightSection title="RuntimeSupervisor" badge={<Badge tone="green">healthy</Badge>}>
         <Metric label="latest run" value={runtime.status} progress={runtime.activeRunId ? 72 : 0} />
+        <Metric label="protocol" value={runtime.runtimeKind ?? "idle"} progress={runtime.runtimeKind === "acp" ? 100 : 40} />
         {runtime.activeRunId ? (
           <Button size="sm" disabled={stopping} onClick={() => onStopRun(runtime.activeRunId as string)}>
             {stopping ? "Stopping..." : "Stop run"}

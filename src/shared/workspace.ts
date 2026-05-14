@@ -1,5 +1,6 @@
 export type WorkspaceAgentType = "codex" | "claude" | "trae";
 export type WorkspaceAgentLabel = "Codex" | "Claude" | "Trae";
+export type WorkspaceRuntimeKind = "cli" | "acp";
 export type WorkspaceAgentHealthStatus = "unknown" | "healthy" | "missing" | "auth_required" | "failed";
 export type WorkspaceActorType = "web_user" | "feishu_user" | "system" | "agent";
 
@@ -40,6 +41,7 @@ export type WorkspaceRuntimeSummary = {
   status: string;
   pid: number | null;
   agentType: WorkspaceAgentType | null;
+  runtimeKind: WorkspaceRuntimeKind | null;
   startedAt: string | null;
 };
 
@@ -101,6 +103,7 @@ export type SendMessageResponse = {
 export type CreateSessionRequest = {
   title?: string;
   agentType?: WorkspaceAgentType;
+  runtimeKind?: WorkspaceRuntimeKind;
   workspacePath?: string;
 };
 
@@ -111,7 +114,7 @@ export type CreateSessionResponse = {
 
 export type WorkspaceAgentRuntime = {
   agentType: WorkspaceAgentType;
-  runtimeKind?: "cli" | "acp";
+  runtimeKind?: WorkspaceRuntimeKind;
   label: string;
   status: WorkspaceAgentHealthStatus;
   command: string;

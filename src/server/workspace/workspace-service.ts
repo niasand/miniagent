@@ -58,6 +58,7 @@ type ContextBudgetRow = {
 type RuntimeRow = {
   id: string;
   agent_type: string;
+  runtime_kind: "cli" | "acp";
   status: string;
   pid: number | null;
   started_at: string | null;
@@ -218,7 +219,7 @@ function readRuntime(db: SqliteDatabase, sessionId: string): WorkspaceRuntimeSum
   const row = db
     .prepare(
       `
-      SELECT id, agent_type, status, pid, started_at
+      SELECT id, agent_type, runtime_kind, status, pid, started_at
       FROM agent_runs
       WHERE session_id = ?
       ORDER BY created_at DESC
@@ -236,6 +237,7 @@ function readRuntime(db: SqliteDatabase, sessionId: string): WorkspaceRuntimeSum
     status: row.status,
     pid: row.pid,
     agentType: mapAgentType(row.agent_type),
+    runtimeKind: row.runtime_kind,
     startedAt: row.started_at,
   };
 }
@@ -246,6 +248,7 @@ function defaultRuntime(): WorkspaceRuntimeSummary {
     status: "idle",
     pid: null,
     agentType: null,
+    runtimeKind: null,
     startedAt: null,
   };
 }

@@ -428,6 +428,10 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
     if (workspacePath !== undefined && typeof workspacePath !== "string") {
       return context.json({ error: "workspacePath must be a string" }, 400);
     }
+    const requestedRuntimeKind = body.value.runtimeKind;
+    if (requestedRuntimeKind !== undefined && requestedRuntimeKind !== "cli" && requestedRuntimeKind !== "acp") {
+      return context.json({ error: "runtimeKind must be cli or acp" }, 400);
+    }
 
     let effectiveWorkspacePath: string;
     try {
@@ -445,16 +449,18 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
       }
       throw error;
     }
-    const agentType =
-      requestedAgentType ??
-      new DefaultAgentService(db).resolve({
-        workspacePath: effectiveWorkspacePath,
-      }).agentType;
+    const resolvedDefault = new DefaultAgentService(db).resolve({
+      workspacePath: effectiveWorkspacePath,
+    });
+    const agentType = requestedAgentType ?? resolvedDefault.agentType;
+    const defaultParams = readDefaultParams(resolvedDefault.params);
+    const runtimeKind = requestedRuntimeKind ?? readRuntimeKind(defaultParams);
     const session = new SessionStore(db).createSession({
       title: title?.trim() || `${displayAgent(agentType)} session`,
       agentType,
       workspacePath: effectiveWorkspacePath,
       channelType: "web",
+      defaultParams: runtimeKind ? { ...defaultParams, runtimeKind } : defaultParams,
     });
     const response: CreateSessionResponse = {
       sessionId: session.id,
@@ -1173,6 +1179,14 @@ function isJsonRecord(value: unknown): value is Record<string, unknown> {
 
 function isAgentType(value: unknown): value is AgentType {
   return value === "codex" || value === "claude" || value === "trae";
+}
+
+function readDefaultParams(value: unknown): JsonObject {
+  return isJsonRecord(value) ? (value as JsonObject) : {};
+}
+
+function readRuntimeKind(value: JsonObject): "cli" | "acp" | null {
+  return value.runtimeKind === "cli" || value.runtimeKind === "acp" ? value.runtimeKind : null;
 }
 
 function isAuditActorType(value: unknown): value is AuditActorType {

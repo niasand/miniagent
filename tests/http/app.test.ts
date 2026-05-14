@@ -195,6 +195,7 @@ describe("HTTP app", () => {
         body: JSON.stringify({
           title: "Trae session",
           agentType: "trae",
+          runtimeKind: "acp",
           workspacePath: "/tmp/miniagent-new",
         }),
       });
@@ -214,6 +215,10 @@ describe("HTTP app", () => {
           }),
         ]),
       );
+      const createdRow = testDb.db
+        .prepare("SELECT default_params_json FROM sessions WHERE id = ?")
+        .get(createdSession.sessionId) as { default_params_json: string };
+      expect(JSON.parse(createdRow.default_params_json)).toMatchObject({ runtimeKind: "acp" });
 
       const invalidCreateSessionResponse = await app.request("/api/sessions", {
         method: "POST",
@@ -238,6 +243,7 @@ describe("HTTP app", () => {
           scopeType: "workspace",
           scopeRef: "/tmp/default-workspace",
           agentType: "claude",
+          params: { runtimeKind: "acp" },
         }),
       });
       expect(setDefaultResponse.status).toBe(201);
@@ -246,6 +252,7 @@ describe("HTTP app", () => {
           scopeType: "workspace",
           scopeRef: "/tmp/default-workspace",
           agentType: "claude",
+          params: { runtimeKind: "acp" },
         },
       });
 
@@ -277,6 +284,10 @@ describe("HTTP app", () => {
           }),
         ]),
       );
+      const defaultedRow = testDb.db
+        .prepare("SELECT default_params_json FROM sessions WHERE id = ?")
+        .get(defaultedSession.sessionId) as { default_params_json: string };
+      expect(JSON.parse(defaultedRow.default_params_json)).toMatchObject({ runtimeKind: "acp" });
 
       const replayResponse = await app.request("/api/events?sessionId=session-1&afterGlobalSeq=2&limit=2");
       const replay = await replayResponse.json();

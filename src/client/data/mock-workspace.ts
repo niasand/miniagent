@@ -98,6 +98,7 @@ export const fallbackWorkspace: WorkspaceSnapshot = {
     status: "running",
     pid: 12345,
     agentType: "codex",
+    runtimeKind: "acp",
     startedAt: "2026-05-13T23:40:00.000Z",
   },
   contextBudget: {
