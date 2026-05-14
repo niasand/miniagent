@@ -4,7 +4,7 @@ import {
   CircleDot,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { compactSessionContext } from "./api/context.js";
@@ -35,6 +35,23 @@ const contextTone = {
   overflow: "red",
 } as const;
 
+const eventStreamTypes = [
+  "task_created",
+  "run_started",
+  "text_delta",
+  "runtime_stderr",
+  "permission_prompt",
+  "context_budget_changed",
+  "context_pack_created",
+  "memory_archive_created",
+  "handoff_requested",
+  "handoff_created",
+  "delivery_succeeded",
+  "delivery_failed",
+  "run_finished",
+  "run_failed",
+];
+
 export default function App() {
   const selectedSessionId = useWorkspaceStore((state) => state.selectedSessionId);
   const defaultAgentType = useWorkspaceStore((state) => state.defaultAgentType);
@@ -47,7 +64,7 @@ export default function App() {
     queryKey: ["workspace", selectedSessionId],
     queryFn: () => fetchWorkspace(selectedSessionId),
     initialData: fallbackWorkspace,
-    refetchInterval: 1_500,
+    refetchInterval: 5_000,
     retry: 1,
   });
   const snapshot = workspace.data.sessions.length > 0 ? workspace.data : fallbackWorkspace;
@@ -56,6 +73,7 @@ export default function App() {
     snapshot.sessions.find((session) => session.id === snapshot.selectedSessionId) ??
     snapshot.sessions[0];
   const hasRealSelectedSession = workspace.data.sessions.some((session) => session.id === selected.id);
+  useWorkspaceEventStream(selected.id, hasRealSelectedSession);
   const handoff = useMutation({
     mutationFn: (input: { sessionId: string; targetAgentType: WorkspaceAgentType }) =>
       createHandoff(input.sessionId, {
@@ -163,6 +181,58 @@ export default function App() {
       </div>
     </main>
   );
+}
+
+function useWorkspaceEventStream(sessionId: string, enabled: boolean) {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!enabled || !sessionId || typeof EventSource === "undefined") {
+      return;
+    }
+
+    let stopped = false;
+    let cursor = 0;
+    let source: EventSource | null = null;
+    let reconnectTimer: number | null = null;
+
+    const refreshWorkspace = (event: MessageEvent) => {
+      try {
+        const payload = JSON.parse(event.data) as { globalSeq?: number };
+        if (typeof payload.globalSeq === "number") {
+          cursor = Math.max(cursor, payload.globalSeq);
+        }
+      } catch {
+        return;
+      }
+      void queryClient.invalidateQueries({ queryKey: ["workspace"] });
+    };
+
+    const connect = () => {
+      source = new EventSource(
+        `/api/events/stream?sessionId=${encodeURIComponent(sessionId)}&afterGlobalSeq=${cursor}&limit=100`,
+      );
+      for (const type of eventStreamTypes) {
+        source.addEventListener(type, refreshWorkspace as EventListener);
+      }
+      source.onerror = () => {
+        source?.close();
+        if (!stopped) {
+          reconnectTimer = window.setTimeout(connect, 1_500);
+        }
+      };
+    };
+
+    connect();
+
+    return () => {
+      stopped = true;
+      source?.close();
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+      }
+    };
+  }, [enabled, queryClient, sessionId]);
 }
 
 function Topbar({
