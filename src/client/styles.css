@@ -15,6 +15,23 @@
   --shadow-elevated: 0 18px 55px rgba(21, 31, 35, 0.12);
 }
 
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-app: #111614;
+    --color-background: #111816;
+    --color-surface: #16201d;
+    --color-muted: #1d2b27;
+    --color-foreground: #edf4f2;
+    --color-muted-foreground: #9caaa6;
+    --color-border: #30423d;
+    --color-primary: #39b9a8;
+    --color-primary-foreground: #08110f;
+    --color-ink: #edf4f2;
+    --color-ring: #54c8b9;
+    --shadow-elevated: 0 18px 55px rgba(0, 0, 0, 0.32);
+  }
+}
+
 * {
   box-sizing: border-box;
 }
