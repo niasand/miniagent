@@ -183,6 +183,7 @@ export default function App() {
             selected={selected}
             contextBudget={snapshot.contextBudget}
             outboxRows={snapshot.outboxRows}
+            keyEvents={snapshot.keyEvents}
             compactError={compactContext.error?.message}
             compacting={compactContext.isPending}
             restartError={restartContext.error?.message}
@@ -525,6 +526,7 @@ function RightRail({
   selected,
   contextBudget,
   outboxRows,
+  keyEvents,
   compactError,
   compacting,
   restartError,
@@ -538,6 +540,7 @@ function RightRail({
   selected: WorkspaceSessionSummary;
   contextBudget: typeof fallbackWorkspace.contextBudget;
   outboxRows: typeof fallbackWorkspace.outboxRows;
+  keyEvents: typeof fallbackWorkspace.keyEvents;
   compactError?: string;
   compacting: boolean;
   restartError?: string;
@@ -585,6 +588,17 @@ function RightRail({
               <span className="font-mono text-muted-foreground">{seq}</span>
               <span>{target}</span>
               <span className="truncate text-muted-foreground">{status}</span>
+            </div>
+          ))}
+        </div>
+      </RightSection>
+      <RightSection title="Key Events" badge={<Badge>replay</Badge>}>
+        <div className="space-y-2">
+          {keyEvents.map(([seq, type, detail]) => (
+            <div key={`${seq}-${type}`} className="log-line">
+              <span className="font-mono text-muted-foreground">{seq}</span>
+              <span>{type}</span>
+              <span className="truncate text-muted-foreground">{detail}</span>
             </div>
           ))}
         </div>
