@@ -1,8 +1,9 @@
 import type { SqliteDatabase } from "../db/migrate.js";
 import { EventStore, type StoredEvent } from "../events/event-store.js";
 import { createId } from "../../shared/ids.js";
-import { parseJson, stringifyJson, type JsonValue } from "../../shared/json.js";
+import { parseJson, stringifyJson, type JsonObject, type JsonValue } from "../../shared/json.js";
 import { nowIso } from "../../shared/time.js";
+import type { RuntimeKind, RuntimeProtocolStateUpdate } from "../runtime/driver.js";
 
 export type SessionStatus = "idle" | "running" | "compacting" | "failed" | "archived";
 export type TaskStatus = "scheduled" | "queued" | "running" | "succeeded" | "failed" | "cancelled" | "paused";
@@ -65,6 +66,11 @@ export type AgentRunRecord = {
   status: RunStatus;
   launchSpec: JsonValue;
   pid: number | null;
+  runtimeKind: RuntimeKind;
+  externalSessionId: string | null;
+  checkpointId: string | null;
+  protocolState: JsonValue;
+  cancelState: string | null;
   contextPackId: string | null;
   firstGlobalSeq: number | null;
   lastGlobalSeq: number | null;
@@ -109,6 +115,11 @@ export type StartRunInput = {
   agentType?: string;
   launchSpec?: JsonValue;
   pid?: number | null;
+  runtimeKind?: RuntimeKind;
+  externalSessionId?: string | null;
+  checkpointId?: string | null;
+  protocolState?: JsonValue;
+  cancelState?: string | null;
   contextPackId?: string | null;
   startedAt?: string;
 };
@@ -166,6 +177,11 @@ type AgentRunRow = {
   status: RunStatus;
   launch_spec_json: string;
   pid: number | null;
+  runtime_kind: RuntimeKind;
+  external_session_id: string | null;
+  checkpoint_id: string | null;
+  protocol_state_json: string;
+  cancel_state: string | null;
   context_pack_id: string | null;
   first_global_seq: number | null;
   last_global_seq: number | null;
@@ -268,10 +284,12 @@ export class SessionStore {
           `
           INSERT INTO agent_runs (
             id, session_id, task_id, agent_type, status, launch_spec_json, pid,
+            runtime_kind, external_session_id, checkpoint_id, protocol_state_json, cancel_state,
             context_pack_id, heartbeat_at, started_at, created_at, updated_at
           )
           VALUES (
             @id, @sessionId, @taskId, @agentType, 'running', @launchSpecJson, @pid,
+            @runtimeKind, @externalSessionId, @checkpointId, @protocolStateJson, @cancelState,
             @contextPackId, @heartbeatAt, @startedAt, @createdAt, @updatedAt
           )
         `,
@@ -283,6 +301,11 @@ export class SessionStore {
           agentType,
           launchSpecJson: stringifyJson(runInput.launchSpec ?? {}),
           pid: runInput.pid ?? null,
+          runtimeKind: runInput.runtimeKind ?? "cli",
+          externalSessionId: runInput.externalSessionId ?? null,
+          checkpointId: runInput.checkpointId ?? null,
+          protocolStateJson: stringifyJson(runInput.protocolState ?? {}),
+          cancelState: runInput.cancelState ?? null,
           contextPackId: runInput.contextPackId ?? null,
           heartbeatAt: timestamp,
           startedAt: timestamp,
@@ -299,6 +322,9 @@ export class SessionStore {
           agentType,
           launchSpec: runInput.launchSpec ?? {},
           pid: runInput.pid ?? null,
+          runtimeKind: runInput.runtimeKind ?? "cli",
+          externalSessionId: runInput.externalSessionId ?? null,
+          checkpointId: runInput.checkpointId ?? null,
           contextPackId: runInput.contextPackId ?? null,
         },
         createdAt: timestamp,
@@ -441,6 +467,36 @@ export class SessionStore {
       `,
       )
       .run({ runId, pid, heartbeatAt, updatedAt: heartbeatAt });
+
+    return this.requireRun(runId);
+  }
+
+  updateRunProtocolState(runId: string, state: RuntimeProtocolStateUpdate, updatedAt = nowIso()): AgentRunRecord {
+    const existing = this.requireRun(runId);
+    const protocolState = mergeProtocolState(existing.protocolState, state.protocolState);
+    this.db
+      .prepare(
+        `
+        UPDATE agent_runs
+        SET
+          external_session_id = COALESCE(@externalSessionId, external_session_id),
+          checkpoint_id = COALESCE(@checkpointId, checkpoint_id),
+          protocol_state_json = @protocolStateJson,
+          cancel_state = COALESCE(@cancelState, cancel_state),
+          heartbeat_at = @heartbeatAt,
+          updated_at = @updatedAt
+        WHERE id = @runId
+      `,
+      )
+      .run({
+        runId,
+        externalSessionId: state.externalSessionId ?? null,
+        checkpointId: state.checkpointId ?? null,
+        protocolStateJson: stringifyJson(protocolState),
+        cancelState: state.cancelState ?? null,
+        heartbeatAt: updatedAt,
+        updatedAt,
+      });
 
     return this.requireRun(runId);
   }
@@ -622,6 +678,11 @@ function mapAgentRunRow(row: AgentRunRow): AgentRunRecord {
     status: row.status,
     launchSpec: parseJson(row.launch_spec_json),
     pid: row.pid,
+    runtimeKind: row.runtime_kind,
+    externalSessionId: row.external_session_id,
+    checkpointId: row.checkpoint_id,
+    protocolState: parseJson(row.protocol_state_json),
+    cancelState: row.cancel_state,
     contextPackId: row.context_pack_id,
     firstGlobalSeq: row.first_global_seq,
     lastGlobalSeq: row.last_global_seq,
@@ -634,4 +695,9 @@ function mapAgentRunRow(row: AgentRunRow): AgentRunRecord {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function mergeProtocolState(existing: JsonValue, update: RuntimeProtocolStateUpdate["protocolState"]): JsonValue {
+  const base: JsonObject = existing && typeof existing === "object" && !Array.isArray(existing) ? existing : {};
+  return update ? { ...base, ...update } : base;
 }

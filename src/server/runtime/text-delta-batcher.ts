@@ -4,6 +4,7 @@ export class TextDeltaBatcher {
   private text = "";
   private firstReceivedAt: string | null = null;
   private lastReceivedAt: string | null = null;
+  private metadata: RuntimeEventDraft["payload"] = {};
 
   constructor(private readonly maxBytes: number) {
     if (maxBytes <= 0) {
@@ -25,6 +26,7 @@ export class TextDeltaBatcher {
     const receivedAt = typeof event.payload.receivedAt === "string" ? event.payload.receivedAt : null;
     this.firstReceivedAt ??= receivedAt;
     this.lastReceivedAt = receivedAt;
+    this.metadata = mergeMetadata(this.metadata, event.payload);
 
     if (Buffer.byteLength(this.text, "utf8") >= this.maxBytes) {
       return this.flush();
@@ -41,6 +43,7 @@ export class TextDeltaBatcher {
     const event: RuntimeEventDraft = {
       type: "text_delta",
       payload: {
+        ...this.metadata,
         text: this.text,
         firstReceivedAt: this.firstReceivedAt,
         lastReceivedAt: this.lastReceivedAt,
@@ -50,7 +53,22 @@ export class TextDeltaBatcher {
     this.text = "";
     this.firstReceivedAt = null;
     this.lastReceivedAt = null;
+    this.metadata = {};
 
     return [event];
   }
+}
+
+function mergeMetadata(
+  existing: RuntimeEventDraft["payload"],
+  payload: RuntimeEventDraft["payload"],
+): RuntimeEventDraft["payload"] {
+  const next = { ...existing };
+  for (const [key, value] of Object.entries(payload)) {
+    if (key === "text" || key === "receivedAt") {
+      continue;
+    }
+    next[key] = value;
+  }
+  return next;
 }

@@ -48,6 +48,7 @@ export type RuntimeLaunchContext = {
 
 export type RuntimeLaunchSpec = JsonObject & {
   agentType: AgentType;
+  runtimeKind?: "cli" | "acp";
   command: string;
   args: string[];
   cwd: string;
@@ -67,7 +68,16 @@ export type RuntimeOutputChunk = {
 };
 
 export type RuntimeEventDraft = {
-  type: "text_delta" | "runtime_stderr" | "permission_prompt" | "context_budget_changed";
+  type:
+    | "text_delta"
+    | "runtime_stderr"
+    | "permission_prompt"
+    | "context_budget_changed"
+    | "runtime_event"
+    | "tool_call"
+    | "tool_call_update"
+    | "acp_session_started"
+    | "acp_cancel_requested";
   payload: JsonObject;
 };
 

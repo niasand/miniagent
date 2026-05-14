@@ -49,6 +49,8 @@ Describes available runtime adapters.
 | `id` | TEXT PK | `codex`, `claude`, `trae` |
 | `display_name` | TEXT | UI label |
 | `command` | TEXT | Executable name or absolute path |
+| `runtime_kind` | TEXT | `cli` or `acp`; ACP is the canonical runtime path |
+| `transport_json` | TEXT | ACP transport config or CLI compatibility metadata |
 | `capabilities_json` | TEXT | Structured events, compact, resume, images, permissions |
 | `default_args_json` | TEXT | Default CLI args |
 | `health_status` | TEXT | `unknown`, `healthy`, `missing`, `auth_required`, `failed` |
@@ -143,6 +145,11 @@ Represents one Agent process execution.
 | `status` | TEXT | `queued`, `starting`, `running`, `waiting_permission`, `compacting`, `stopping`, `succeeded`, `failed`, `cancelled`, `overflowed` |
 | `launch_spec_json` | TEXT | Command, args, cwd, env summary |
 | `pid` | INTEGER NULL | Local process ID while active |
+| `runtime_kind` | TEXT | Runtime driver used for this run: `cli` or `acp` |
+| `external_session_id` | TEXT NULL | ACP session ID or provider-native session handle |
+| `checkpoint_id` | TEXT NULL | ACP checkpoint/resume cursor when available |
+| `protocol_state_json` | TEXT | Protocol-specific state needed for recovery |
+| `cancel_state` | TEXT NULL | `requested`, `acknowledged`, `killed` |
 | `context_pack_id` | TEXT NULL | ContextPack injected at start |
 | `first_global_seq` | INTEGER NULL | First runtime event cursor |
 | `last_global_seq` | INTEGER NULL | Last runtime event cursor |
@@ -187,8 +194,9 @@ Important event types:
 - `task_created`, `task_started`, `task_finished`, `task_failed`
 - `run_queued`, `run_started`, `run_heartbeat`, `run_finished`, `run_failed`
 - `text_delta`, `message_completed`
-- `tool_call_started`, `tool_call_delta`, `tool_call_finished`
+- `tool_call`, `tool_call_update`
 - `permission_prompt`, `permission_resolved`
+- `acp_session_started`, `acp_cancel_requested`
 - `context_budget_changed`, `context_pack_created`
 - `delivery_queued`, `delivery_sent`, `delivery_failed`
 - `handoff_requested`, `handoff_created`
@@ -199,6 +207,29 @@ Recommended indexes:
 - `idx_events_run_seq` unique on `(run_id, run_seq)` where `run_id IS NOT NULL`
 - `idx_events_type_global_seq` on `(type, global_seq)`
 - `idx_events_correlation`
+
+### `permission_requests`
+
+Durable queue for ACP and legacy CLI permission prompts.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | TEXT PK | Permission request ID |
+| `session_id` | TEXT | Parent session |
+| `run_id` | TEXT | Active run waiting for a decision |
+| `task_id` | TEXT NULL | Triggering task |
+| `event_id` | TEXT NULL | Event that surfaced the prompt |
+| `acp_request_id` | TEXT NULL | JSON-RPC request ID for ACP response routing |
+| `protocol` | TEXT | `acp` or `legacy_cli` |
+| `status` | TEXT | `pending`, `approved`, `denied`, `cancelled`, `expired` |
+| `prompt` | TEXT | Human-readable prompt |
+| `options_json` | TEXT | ACP permission options |
+| `tool_call_json` | TEXT | Related tool call metadata |
+| `selected_option_id` | TEXT NULL | Chosen ACP option |
+| `expires_at` | TEXT NULL | Optional timeout |
+| `resolved_at` | TEXT NULL | Decision timestamp |
+| `created_at` | TEXT |  |
+| `updated_at` | TEXT |  |
 
 ### `messages`
 

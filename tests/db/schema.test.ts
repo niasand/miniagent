@@ -43,6 +43,7 @@ describe("SQLite schema", () => {
         "audit_logs",
         "memory_archives",
         "operation_confirmations",
+        "permission_requests",
       ]),
     );
 
@@ -207,6 +208,7 @@ describe("SQLite schema", () => {
       "0003_schedule_leases",
       "0004_memory_archives",
       "0005_operation_confirmations",
+      "0006_acp_runtime",
     ]);
   });
 });
