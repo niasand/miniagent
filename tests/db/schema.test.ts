@@ -42,6 +42,7 @@ describe("SQLite schema", () => {
         "schedules",
         "audit_logs",
         "memory_archives",
+        "operation_confirmations",
       ]),
     );
 
@@ -200,7 +201,13 @@ describe("SQLite schema", () => {
       .all()
       .map((row) => (row as { version: string }).version);
 
-    expect(rows).toEqual(["0001_initial", "0002_context_budgets", "0003_schedule_leases", "0004_memory_archives"]);
+    expect(rows).toEqual([
+      "0001_initial",
+      "0002_context_budgets",
+      "0003_schedule_leases",
+      "0004_memory_archives",
+      "0005_operation_confirmations",
+    ]);
   });
 });
 

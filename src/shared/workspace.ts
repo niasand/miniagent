@@ -212,3 +212,31 @@ export type CreateMemoryArchiveResponse = {
 export type ListMemoryArchivesResponse = {
   archives: MemoryArchive[];
 };
+
+export type DangerousOperationRisk = "medium" | "high" | "critical";
+
+export type OperationConfirmation = {
+  id: string;
+  action: string;
+  resourceType: string;
+  resourceId: string | null;
+  riskLevel: DangerousOperationRisk;
+  prompt: string;
+  payload: unknown;
+  status: "pending" | "confirmed" | "expired" | "consumed" | "cancelled";
+  actorType: "web_user" | "feishu_user" | "system" | "agent";
+  actorRef: string | null;
+  requestedAt: string;
+  expiresAt: string;
+  confirmedAt: string | null;
+  consumedAt: string | null;
+};
+
+export type CreateOperationConfirmationResponse = {
+  confirmation: OperationConfirmation;
+  token: string;
+};
+
+export type ConfirmOperationResponse = {
+  confirmation: OperationConfirmation;
+};

@@ -17,6 +17,8 @@ import type { RuntimeProcessFactory } from "../runtime/process.js";
 import { RuntimeService } from "../runtime/runtime-service.js";
 import { RuntimeSupervisor } from "../runtime/runtime-supervisor.js";
 import { SchedulerService } from "../scheduler/scheduler-service.js";
+import { OperationConfirmationService } from "../security/operation-confirmation-service.js";
+import type { OperationConfirmationRecord } from "../security/operation-confirmation-store.js";
 import { WorkspacePolicy, WorkspacePolicyError } from "../security/workspace-policy.js";
 import type { ScheduleRecord } from "../scheduler/schedule-store.js";
 import { SessionStore } from "../sessions/session-store.js";
@@ -26,8 +28,10 @@ import type {
   AgentsResponse,
   AgentDefault,
   CompactContextResponse,
+  ConfirmOperationResponse,
   CreateHandoffResponse,
   CreateMemoryArchiveResponse,
+  CreateOperationConfirmationResponse,
   CreateScheduleResponse,
   CreateSessionResponse,
   ListSchedulesResponse,
@@ -40,6 +44,7 @@ import type {
   UpdateScheduleResponse,
   WorkspaceSchedule,
   MemoryArchive,
+  OperationConfirmation,
 } from "../../shared/workspace.js";
 
 export type AppBindings = {
@@ -94,6 +99,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
         "/api/schedules",
         "/api/schedules/due/run",
         "/api/feishu/messages",
+        "/api/security/confirmations",
         "/api/sessions/:sessionId/memory/archives",
       ],
     }),
@@ -105,6 +111,112 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
       service: "miniagent",
     }),
   );
+
+  app.post("/api/security/confirmations", async (context) => {
+    const body = await readJsonBody(context.req);
+    if (!body.ok) {
+      return context.json({ error: body.error }, 400);
+    }
+
+    const action = body.value.action;
+    if (typeof action !== "string" || action.trim().length === 0) {
+      return context.json({ error: "action is required" }, 400);
+    }
+
+    const resourceType = body.value.resourceType;
+    if (typeof resourceType !== "string" || resourceType.trim().length === 0) {
+      return context.json({ error: "resourceType is required" }, 400);
+    }
+
+    const resourceId = body.value.resourceId;
+    if (resourceId !== undefined && resourceId !== null && typeof resourceId !== "string") {
+      return context.json({ error: "resourceId must be a string or null" }, 400);
+    }
+
+    const riskLevel = body.value.riskLevel;
+    if (!isOperationRiskLevel(riskLevel)) {
+      return context.json({ error: "riskLevel must be one of: medium, high, critical" }, 400);
+    }
+
+    const prompt = body.value.prompt;
+    if (prompt !== undefined && typeof prompt !== "string") {
+      return context.json({ error: "prompt must be a string" }, 400);
+    }
+
+    const payload = body.value.payload;
+    if (payload !== undefined && !isJsonRecord(payload)) {
+      return context.json({ error: "payload must be a JSON object" }, 400);
+    }
+
+    const actorType = body.value.actorType ?? "web_user";
+    if (!isAuditActorType(actorType)) {
+      return context.json({ error: "actorType must be one of: web_user, feishu_user, system, agent" }, 400);
+    }
+
+    const actorRef = body.value.actorRef;
+    if (actorRef !== undefined && actorRef !== null && typeof actorRef !== "string") {
+      return context.json({ error: "actorRef must be a string or null" }, 400);
+    }
+
+    try {
+      const result = new OperationConfirmationService(context.get("db")).request({
+        action,
+        resourceType,
+        resourceId: typeof resourceId === "string" ? resourceId : null,
+        riskLevel,
+        prompt,
+        payload: payload ? (payload as JsonObject) : {},
+        actorType,
+        actorRef: actorRef ?? null,
+      });
+      const response: CreateOperationConfirmationResponse = {
+        confirmation: mapOperationConfirmation(result.confirmation),
+        token: result.token,
+      };
+      return context.json(response, 201);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Create operation confirmation failed";
+      if (message.includes("required")) {
+        return context.json({ error: message }, 400);
+      }
+      return context.json({ error: message }, 500);
+    }
+  });
+
+  app.post("/api/security/confirmations/:confirmationId/confirm", async (context) => {
+    const body = await readJsonBody(context.req);
+    if (!body.ok) {
+      return context.json({ error: body.error }, 400);
+    }
+
+    const token = body.value.token;
+    if (typeof token !== "string" || token.trim().length === 0) {
+      return context.json({ error: "token is required" }, 400);
+    }
+
+    try {
+      const confirmation = new OperationConfirmationService(context.get("db")).confirm({
+        id: context.req.param("confirmationId"),
+        token,
+      });
+      const response: ConfirmOperationResponse = {
+        confirmation: mapOperationConfirmation(confirmation),
+      };
+      return context.json(response);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Confirm operation failed";
+      if (message.includes("not found")) {
+        return context.json({ error: message }, 404);
+      }
+      if (message.includes("expired") || message.includes("not pending")) {
+        return context.json({ error: message }, 409);
+      }
+      if (message.includes("invalid") || message.includes("required")) {
+        return context.json({ error: message }, 400);
+      }
+      return context.json({ error: message }, 500);
+    }
+  });
 
   app.get("/api/workspace", (context) =>
     context.json(
@@ -867,6 +979,10 @@ function isAuditActorType(value: unknown): value is AuditActorType {
   return value === "web_user" || value === "feishu_user" || value === "system" || value === "agent";
 }
 
+function isOperationRiskLevel(value: unknown): value is "medium" | "high" | "critical" {
+  return value === "medium" || value === "high" || value === "critical";
+}
+
 function isAgentDefaultScopeType(value: unknown): value is AgentDefaultScopeType {
   return value === "user" || value === "channel" || value === "workspace" || value === "system";
 }
@@ -980,6 +1096,25 @@ function auditWorkspaceDenied(
       allowlist: input.error.allowlist,
     },
   });
+}
+
+function mapOperationConfirmation(record: OperationConfirmationRecord): OperationConfirmation {
+  return {
+    id: record.id,
+    action: record.action,
+    resourceType: record.resourceType,
+    resourceId: record.resourceId,
+    riskLevel: record.riskLevel,
+    prompt: record.prompt,
+    payload: record.payload,
+    status: record.status,
+    actorType: record.actorType,
+    actorRef: record.actorRef,
+    requestedAt: record.requestedAt,
+    expiresAt: record.expiresAt,
+    confirmedAt: record.confirmedAt,
+    consumedAt: record.consumedAt,
+  };
 }
 
 function mapMemoryArchive(record: MemoryArchiveRecord): MemoryArchive {

@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 export type EntityPrefix =
   | "agd"
   | "aud"
+  | "cnf"
   | "ctx"
   | "evt"
   | "mem"

@@ -73,6 +73,46 @@ describe("HTTP app", () => {
         service: "miniagent",
       });
 
+      const confirmationResponse = await app.request("/api/security/confirmations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "delete_archive",
+          resourceType: "memory_archive",
+          resourceId: "mem-1",
+          riskLevel: "high",
+          prompt: "Confirm archive deletion",
+          payload: { archiveDate: "2026-05-13" },
+        }),
+      });
+      expect(confirmationResponse.status).toBe(201);
+      const confirmation = await confirmationResponse.json();
+      expect(confirmation).toMatchObject({
+        confirmation: {
+          id: expect.any(String),
+          action: "delete_archive",
+          resourceType: "memory_archive",
+          status: "pending",
+        },
+        token: expect.any(String),
+      });
+
+      const confirmResponse = await app.request(
+        `/api/security/confirmations/${confirmation.confirmation.id}/confirm`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: confirmation.token }),
+        },
+      );
+      expect(confirmResponse.status).toBe(200);
+      await expect(confirmResponse.json()).resolves.toMatchObject({
+        confirmation: {
+          id: confirmation.confirmation.id,
+          status: "confirmed",
+        },
+      });
+
       const rootResponse = await app.request("/");
       await expect(rootResponse.json()).resolves.toMatchObject({
         ok: true,
