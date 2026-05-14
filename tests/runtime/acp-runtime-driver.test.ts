@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { EventStore } from "../../src/server/events/event-store.js";
 import type { RuntimeProcess, RuntimeProcessExit, RuntimeProcessFactory } from "../../src/server/runtime/process.js";
@@ -143,16 +146,43 @@ describe("AcpRuntimeDriver", () => {
     ]);
   });
 
+  it("serves ACP file reads from the session workspace with redaction", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "miniagent-acp-fs-"));
+    const filePath = join(tempDir, "notes.txt");
+    writeFileSync(filePath, "safe line\napi_key=super-secret-token\nlast line", "utf8");
+    const fixture = createAcpSupervisorFixture({
+      workspacePath: tempDir,
+      readFilePath: filePath,
+      cleanup: () => rmSync(tempDir, { recursive: true, force: true }),
+    });
+    const started = fixture.supervisor.startTask({ sessionId: "session-1", taskId: "task-1" });
+
+    fixture.supervisor.sendInput(started.run.id, { taskType: "message", input: { text: "read file" } });
+
+    await eventually(() => {
+      expect(fixture.sessionStore.getRun(started.run.id)).toMatchObject({ status: "succeeded" });
+    });
+
+    expect(fixture.process.response("read-1")?.result).toEqual({ content: "api_key=[REDACTED]" });
+    const fsEvent = fixture.eventStore
+      .listAfterGlobalSeq({ afterGlobalSeq: 0 })
+      .find((event) => event.type === "runtime_event" && (event.payload as JsonObject).method === "fs/read_text_file");
+    expect(fsEvent?.payload).toMatchObject({ status: "succeeded", path: filePath });
+  });
+
   function createAcpSupervisorFixture(options: FakeAcpProcessOptions = {}) {
     const testDb = createTestDatabase();
-    cleanup = testDb.close;
+    cleanup = () => {
+      testDb.close();
+      options.cleanup?.();
+    };
     const eventStore = new EventStore(testDb.db);
     const sessionStore = new SessionStore(testDb.db, eventStore);
     sessionStore.createSession({
       id: "session-1",
       title: "ACP session",
       agentType: "codex",
-      workspacePath: "/tmp/miniagent-test",
+      workspacePath: options.workspacePath ?? "/tmp/miniagent-test",
     });
     sessionStore.createTask({
       id: "task-1",
@@ -195,6 +225,9 @@ type JsonRpcMessage = {
 type FakeAcpProcessOptions = {
   holdPromptUntilCancel?: boolean;
   requestPermission?: boolean;
+  readFilePath?: string;
+  workspacePath?: string;
+  cleanup?: () => void;
 };
 
 class FakeProcessFactory implements RuntimeProcessFactory {
@@ -265,6 +298,11 @@ class FakeAcpProcess implements RuntimeProcess {
         this.send({ jsonrpc: "2.0", id: this.pendingPromptId, result: { stopReason: "end_turn" } });
         this.pendingPromptId = null;
       }
+      if (String(message.id) === "read-1" && this.pendingPromptId !== null) {
+        this.sendTextDelta();
+        this.send({ jsonrpc: "2.0", id: this.pendingPromptId, result: { stopReason: "end_turn" } });
+        this.pendingPromptId = null;
+      }
       return;
     }
 
@@ -308,6 +346,21 @@ class FakeAcpProcess implements RuntimeProcess {
     }
 
     if (this.options.holdPromptUntilCancel) {
+      return;
+    }
+
+    if (this.options.readFilePath) {
+      this.send({
+        jsonrpc: "2.0",
+        id: "read-1",
+        method: "fs/read_text_file",
+        params: {
+          sessionId: "acp-session-1",
+          path: this.options.readFilePath,
+          line: 2,
+          limit: 1,
+        },
+      });
       return;
     }
 

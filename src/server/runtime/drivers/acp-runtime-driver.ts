@@ -4,6 +4,7 @@ import { nowIso } from "../../../shared/time.js";
 import type { CommandRunner } from "../command-runner.js";
 import { DefaultCommandRunner } from "../command-runner.js";
 import type { RuntimeProcess, RuntimeProcessExit } from "../process.js";
+import { AcpClientFileSystem } from "../acp/client-file-system.js";
 import { AcpJsonRpcConnection, type JsonRpcId } from "../acp/json-rpc.js";
 import type {
   RuntimeDriverCallbacks,
@@ -131,6 +132,7 @@ export class AcpRuntimeDriver implements RuntimeSessionDriver {
 
 class AcpRunHandle implements RuntimeRunHandle {
   private readonly connection: AcpJsonRpcConnection;
+  private readonly fileSystem: AcpClientFileSystem;
   private readonly pendingPermissions = new Map<string, (response: JsonValue) => void>();
   private readonly ready: Promise<void>;
   private promptInFlight: Promise<void> = Promise.resolve();
@@ -143,6 +145,7 @@ class AcpRunHandle implements RuntimeRunHandle {
     private readonly process: RuntimeProcess,
     private readonly callbacks: RuntimeDriverCallbacks,
   ) {
+    this.fileSystem = new AcpClientFileSystem({ workspacePath: context.session.workspacePath });
     this.connection = new AcpJsonRpcConnection(process, {
       onNotification: (method, params) => this.handleNotification(method, params),
       onRequest: (method, params, id) => this.handleRequest(method, params, id),
@@ -200,7 +203,7 @@ class AcpRunHandle implements RuntimeRunHandle {
     const initialize = await this.connection.sendRequest("initialize", {
       protocolVersion: 1,
       clientCapabilities: {
-        fs: { readTextFile: false, writeTextFile: false },
+        fs: { readTextFile: true, writeTextFile: false },
         terminal: false,
       },
       clientInfo: {
@@ -279,6 +282,38 @@ class AcpRunHandle implements RuntimeRunHandle {
   }
 
   private handleRequest(method: string, params: JsonValue, id: JsonRpcId): Promise<JsonValue> | JsonValue {
+    if (method === "fs/read_text_file") {
+      try {
+        const response = this.fileSystem.readTextFile(params);
+        this.callbacks.emit({
+          type: "runtime_event",
+          payload: {
+            protocol: "acp",
+            method,
+            requestId: String(id),
+            path: readString(params, "path"),
+            status: "succeeded",
+            receivedAt: nowIso(),
+          },
+        });
+        return response;
+      } catch (error) {
+        this.callbacks.emit({
+          type: "runtime_event",
+          payload: {
+            protocol: "acp",
+            method,
+            requestId: String(id),
+            path: readString(params, "path"),
+            status: "failed",
+            error: readErrorMessage(error),
+            receivedAt: nowIso(),
+          },
+        });
+        throw error;
+      }
+    }
+
     if (method !== "session/request_permission") {
       throw new Error(`Unsupported ACP client request: ${method}`);
     }
