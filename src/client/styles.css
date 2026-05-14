@@ -245,6 +245,40 @@ input {
   box-shadow: var(--shadow-elevated);
 }
 
+.history-panel {
+  width: min(760px, 100%);
+  max-height: min(760px, calc(100vh - 36px));
+  grid-template-rows: auto auto auto 1fr;
+}
+
+.history-list {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  gap: 10px;
+}
+
+.history-row {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 10px;
+}
+
+.history-row pre {
+  max-height: 220px;
+  overflow: auto;
+  margin: 0;
+  border-radius: 7px;
+  background: #14201e;
+  color: #dff5f1;
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .field {
   display: grid;
   gap: 7px;

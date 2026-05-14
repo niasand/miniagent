@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { compactSessionContext, restartSessionContext } from "./api/context.js";
+import { fetchEvents } from "./api/events.js";
 import { createHandoff } from "./api/handoff.js";
 import { sendSessionMessage } from "./api/messages.js";
 import { createSession } from "./api/sessions.js";
@@ -21,7 +22,12 @@ import { Button } from "./components/ui/button.js";
 import { fallbackWorkspace } from "./data/mock-workspace.js";
 import { cn } from "./lib/utils.js";
 import { useWorkspaceStore } from "./state/workspace-store.js";
-import type { CreateSessionRequest, WorkspaceAgentType, WorkspaceSessionSummary } from "../shared/workspace.js";
+import type {
+  CreateSessionRequest,
+  WorkspaceAgentType,
+  WorkspaceEvent,
+  WorkspaceSessionSummary,
+} from "../shared/workspace.js";
 
 const statusTone = {
   running: "green",
@@ -64,6 +70,7 @@ export default function App() {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState("Ask Codex to turn the data model into migrations...");
   const [newSessionOpen, setNewSessionOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const workspace = useQuery({
     queryKey: ["workspace", selectedSessionId],
@@ -78,6 +85,12 @@ export default function App() {
     snapshot.sessions.find((session) => session.id === snapshot.selectedSessionId) ??
     snapshot.sessions[0];
   const hasRealSelectedSession = workspace.data.sessions.some((session) => session.id === selected.id);
+  const eventHistory = useQuery({
+    queryKey: ["events", selected.id],
+    queryFn: () => fetchEvents(selected.id, 100),
+    enabled: historyOpen && hasRealSelectedSession,
+    retry: 1,
+  });
   useWorkspaceEventStream(selected.id, hasRealSelectedSession);
   const handoff = useMutation({
     mutationFn: (input: { sessionId: string; targetAgentType: WorkspaceAgentType }) =>
@@ -156,6 +169,13 @@ export default function App() {
           onClose={() => setNewSessionOpen(false)}
           onCreate={(request) => newSession.mutate(request)}
         />
+        <RawHistoryDialog
+          open={historyOpen}
+          events={eventHistory.data?.events ?? []}
+          error={eventHistory.error?.message}
+          loading={eventHistory.isFetching}
+          onClose={() => setHistoryOpen(false)}
+        />
         <div className="deck">
           <Sidebar sessions={snapshot.sessions} selected={selected} />
           <Conversation
@@ -200,6 +220,7 @@ export default function App() {
                 restartContext.mutate(selected.id);
               }
             }}
+            onViewHistory={() => setHistoryOpen(true)}
             onHandoff={(targetAgentType) => handoff.mutate({ sessionId: selected.id, targetAgentType })}
           />
         </div>
@@ -535,6 +556,7 @@ function RightRail({
   handoffPendingTarget,
   onCompact,
   onRestart,
+  onViewHistory,
   onHandoff,
 }: {
   selected: WorkspaceSessionSummary;
@@ -549,6 +571,7 @@ function RightRail({
   handoffPendingTarget: WorkspaceAgentType | null;
   onCompact: () => void;
   onRestart: () => void;
+  onViewHistory: () => void;
   onHandoff: (targetAgentType: WorkspaceAgentType) => void;
 }) {
   const allHandoffTargets: Array<{ agentType: WorkspaceAgentType; label: string }> = [
@@ -577,6 +600,9 @@ function RightRail({
         </Button>
         <Button size="sm" disabled={restarting} onClick={onRestart}>
           {restarting ? "Queueing..." : "Restart from ContextPack"}
+        </Button>
+        <Button size="sm" onClick={onViewHistory}>
+          View raw history
         </Button>
         {compactError ? <p className="text-xs text-red-600">{compactError}</p> : null}
         {restartError ? <p className="text-xs text-red-600">{restartError}</p> : null}
@@ -617,6 +643,53 @@ function RightRail({
         {handoffError ? <p className="text-xs text-red-600">{handoffError}</p> : null}
       </RightSection>
     </aside>
+  );
+}
+
+function RawHistoryDialog({
+  open,
+  events,
+  error,
+  loading,
+  onClose,
+}: {
+  open: boolean;
+  events: WorkspaceEvent[];
+  error?: string;
+  loading: boolean;
+  onClose: () => void;
+}) {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section className="modal-panel history-panel" aria-label="Raw event history" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-base font-semibold">Raw History</h2>
+            <p className="mt-1 text-xs text-muted-foreground">Recent EventStore records ordered by global_seq.</p>
+          </div>
+          <Button type="button" size="icon" variant="ghost" onClick={onClose} aria-label="Close raw history">
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+        {loading ? <p className="text-sm text-muted-foreground">Loading events...</p> : null}
+        {error ? <p className="text-xs text-red-600">{error}</p> : null}
+        <div className="history-list">
+          {events.map((event) => (
+            <article key={event.id} className="history-row">
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-mono text-xs text-muted-foreground">#{event.globalSeq}</span>
+                <Badge>{event.type}</Badge>
+              </div>
+              <pre>{JSON.stringify(event.payload, null, 2)}</pre>
+            </article>
+          ))}
+        </div>
+      </section>
+    </div>
   );
 }
 

@@ -34,6 +34,22 @@ export type WorkspaceSnapshot = {
   contextBudget: WorkspaceContextBudget;
 };
 
+export type WorkspaceEvent = {
+  globalSeq: number;
+  id: string;
+  sessionId: string;
+  runId: string | null;
+  taskId: string | null;
+  runSeq: number | null;
+  type: string;
+  payload: unknown;
+  createdAt: string;
+};
+
+export type QueryEventsResponse = {
+  events: WorkspaceEvent[];
+};
+
 export type WorkspaceContextBudget = {
   status: "healthy" | "warning" | "critical" | "overflow";
   tokenEstimate: number;
