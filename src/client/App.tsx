@@ -11,7 +11,7 @@ import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { compactSessionContext } from "./api/context.js";
+import { compactSessionContext, restartSessionContext } from "./api/context.js";
 import { createHandoff } from "./api/handoff.js";
 import { sendSessionMessage } from "./api/messages.js";
 import { createSession } from "./api/sessions.js";
@@ -92,6 +92,12 @@ export default function App() {
   });
   const compactContext = useMutation({
     mutationFn: (sessionId: string) => compactSessionContext(sessionId, { actorType: "web_user" }),
+    onSuccess: (response) => {
+      queryClient.setQueryData(["workspace", response.workspace.selectedSessionId], response.workspace);
+    },
+  });
+  const restartContext = useMutation({
+    mutationFn: (sessionId: string) => restartSessionContext(sessionId, { actorType: "web_user" }),
     onSuccess: (response) => {
       queryClient.setQueryData(["workspace", response.workspace.selectedSessionId], response.workspace);
     },
@@ -179,11 +185,18 @@ export default function App() {
             outboxRows={snapshot.outboxRows}
             compactError={compactContext.error?.message}
             compacting={compactContext.isPending}
+            restartError={restartContext.error?.message}
+            restarting={restartContext.isPending}
             handoffError={handoff.error?.message}
             handoffPendingTarget={handoff.isPending ? handoff.variables?.targetAgentType ?? null : null}
             onCompact={() => {
               if (hasRealSelectedSession) {
                 compactContext.mutate(selected.id);
+              }
+            }}
+            onRestart={() => {
+              if (hasRealSelectedSession) {
+                restartContext.mutate(selected.id);
               }
             }}
             onHandoff={(targetAgentType) => handoff.mutate({ sessionId: selected.id, targetAgentType })}
@@ -514,9 +527,12 @@ function RightRail({
   outboxRows,
   compactError,
   compacting,
+  restartError,
+  restarting,
   handoffError,
   handoffPendingTarget,
   onCompact,
+  onRestart,
   onHandoff,
 }: {
   selected: WorkspaceSessionSummary;
@@ -524,9 +540,12 @@ function RightRail({
   outboxRows: typeof fallbackWorkspace.outboxRows;
   compactError?: string;
   compacting: boolean;
+  restartError?: string;
+  restarting: boolean;
   handoffError?: string;
   handoffPendingTarget: WorkspaceAgentType | null;
   onCompact: () => void;
+  onRestart: () => void;
   onHandoff: (targetAgentType: WorkspaceAgentType) => void;
 }) {
   const allHandoffTargets: Array<{ agentType: WorkspaceAgentType; label: string }> = [
@@ -553,7 +572,11 @@ function RightRail({
         <Button size="sm" disabled={compacting} onClick={onCompact}>
           {compacting ? "Compacting..." : "Compact now"}
         </Button>
+        <Button size="sm" disabled={restarting} onClick={onRestart}>
+          {restarting ? "Queueing..." : "Restart from ContextPack"}
+        </Button>
         {compactError ? <p className="text-xs text-red-600">{compactError}</p> : null}
+        {restartError ? <p className="text-xs text-red-600">{restartError}</p> : null}
       </RightSection>
       <RightSection title="Outbox" badge={<Badge tone="blue">8 pending</Badge>}>
         <div className="space-y-2">

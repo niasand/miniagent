@@ -467,6 +467,21 @@ describe("HTTP app", () => {
       });
       expect(readAuditActions(testDb.db, "session-1")).toContain("compact");
 
+      const restartContextResponse = await app.request("/api/sessions/session-1/context/restart", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ actorType: "web_user" }),
+      });
+      expect(restartContextResponse.status).toBe(201);
+      await expect(restartContextResponse.json()).resolves.toMatchObject({
+        contextPackId: compact.contextPackId,
+        taskId: expect.any(String),
+        eventId: expect.any(String),
+        workspace: expect.objectContaining({
+          selectedSessionId: "session-1",
+        }),
+      });
+
       const emptyMessageResponse = await app.request("/api/sessions/session-1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

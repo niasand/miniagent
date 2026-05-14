@@ -1,4 +1,9 @@
-import type { CompactContextRequest, CompactContextResponse } from "../../shared/workspace.js";
+import type {
+  CompactContextRequest,
+  CompactContextResponse,
+  RestartContextRequest,
+  RestartContextResponse,
+} from "../../shared/workspace.js";
 
 const API_BASE = "http://127.0.0.1:7273";
 
@@ -18,4 +23,22 @@ export async function compactSessionContext(
   }
 
   return (await response.json()) as CompactContextResponse;
+}
+
+export async function restartSessionContext(
+  sessionId: string,
+  request: RestartContextRequest = {},
+): Promise<RestartContextResponse> {
+  const response = await fetch(`${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}/context/restart`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `Restart from ContextPack failed: ${response.status}`);
+  }
+
+  return (await response.json()) as RestartContextResponse;
 }

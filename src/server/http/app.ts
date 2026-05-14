@@ -1,6 +1,7 @@
 import { Hono, type Context } from "hono";
 import type { SqliteDatabase } from "../db/migrate.js";
 import { ContextBudgetService } from "../context/context-budget-service.js";
+import { ContextRestartService } from "../context/context-restart-service.js";
 import { FeishuInboundService } from "../channels/feishu-inbound-service.js";
 import { EventStore } from "../events/event-store.js";
 import { projectReadModelsUntilIdle } from "../events/projector-runner.js";
@@ -42,6 +43,7 @@ import type {
   RunDueSchedulesResponse,
   SendMessageResponse,
   ResolveAgentDefaultResponse,
+  RestartContextResponse,
   SetAgentDefaultResponse,
   StartRunResponse,
   UpdateScheduleResponse,
@@ -99,6 +101,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
         "/api/events",
         "/api/events/stream",
         "/api/sessions/:sessionId/context/compact",
+        "/api/sessions/:sessionId/context/restart",
         "/api/schedules",
         "/api/schedules/due/run",
         "/api/feishu/messages",
@@ -971,6 +974,52 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
       }
       if (message.includes("budget") || message.includes("threshold")) {
         return context.json({ error: message }, 400);
+      }
+      return context.json({ error: message }, 500);
+    }
+  });
+
+  app.post("/api/sessions/:sessionId/context/restart", async (context) => {
+    const db = context.get("db");
+    const body = await readOptionalJsonBody(context.req);
+    if (!body.ok) {
+      return context.json({ error: body.error }, 400);
+    }
+
+    const actorType = body.value.actorType ?? "web_user";
+    if (!isAuditActorType(actorType)) {
+      return context.json({ error: "actorType must be one of: web_user, feishu_user, system, agent" }, 400);
+    }
+
+    const actorRef = body.value.actorRef;
+    if (actorRef !== undefined && actorRef !== null && typeof actorRef !== "string") {
+      return context.json({ error: "actorRef must be a string or null" }, 400);
+    }
+
+    try {
+      const result = new ContextRestartService(db).restart({
+        sessionId: context.req.param("sessionId"),
+        actorType,
+        actorRef: typeof actorRef === "string" ? actorRef : null,
+      });
+      new ContextBudgetService(db).evaluate({ sessionId: context.req.param("sessionId"), autoCompact: false });
+      projectReadModelsUntilIdle(db);
+
+      const response: RestartContextResponse = {
+        contextPackId: result.contextPack.id,
+        taskId: result.task.id,
+        eventId: result.event.id,
+        workspace: createWorkspaceSnapshot(db, { selectedSessionId: context.req.param("sessionId") }),
+      };
+
+      return context.json(response, 201);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Restart from ContextPack failed";
+      if (message.startsWith("Session not found")) {
+        return context.json({ error: message }, 404);
+      }
+      if (message.includes("active run") || message.startsWith("No events found")) {
+        return context.json({ error: message }, 409);
       }
       return context.json({ error: message }, 500);
     }

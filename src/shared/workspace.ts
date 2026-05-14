@@ -144,6 +144,18 @@ export type CompactContextResponse = {
   workspace: WorkspaceSnapshot;
 };
 
+export type RestartContextRequest = {
+  actorType?: WorkspaceActorType;
+  actorRef?: string | null;
+};
+
+export type RestartContextResponse = {
+  contextPackId: string;
+  taskId: string;
+  eventId: string;
+  workspace: WorkspaceSnapshot;
+};
+
 export type WorkspaceScheduleKind = "once" | "cron";
 export type WorkspaceScheduleStatus = "active" | "paused" | "cancelled";
 
