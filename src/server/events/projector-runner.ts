@@ -1,9 +1,10 @@
 import type { SqliteDatabase } from "../db/migrate.js";
-import { MessageProjector, WebOutboxProjector, type ProjectorOptions } from "./projectors.js";
+import { FeishuOutboxProjector, MessageProjector, WebOutboxProjector, type ProjectorOptions } from "./projectors.js";
 
 export type ProjectReadModelsResult = {
   messagesProcessed: number;
   webOutboxProcessed: number;
+  feishuOutboxProcessed: number;
 };
 
 export function projectReadModelsUntilIdle(
@@ -14,21 +15,25 @@ export function projectReadModelsUntilIdle(
   const maxBatches = options.maxBatches ?? 20;
   const messages = new MessageProjector(db);
   const webOutbox = new WebOutboxProjector(db);
+  const feishuOutbox = new FeishuOutboxProjector(db);
   let messagesProcessed = 0;
   let webOutboxProcessed = 0;
+  let feishuOutboxProcessed = 0;
 
   for (let batch = 0; batch < maxBatches; batch += 1) {
     const messageResult = messages.projectNextBatch({ batchSize });
     const outboxResult = webOutbox.projectNextBatch({ batchSize });
+    const feishuOutboxResult = feishuOutbox.projectNextBatch({ batchSize });
     messagesProcessed += messageResult.processed;
     webOutboxProcessed += outboxResult.processed;
+    feishuOutboxProcessed += feishuOutboxResult.processed;
 
-    if (messageResult.processed === 0 && outboxResult.processed === 0) {
+    if (messageResult.processed === 0 && outboxResult.processed === 0 && feishuOutboxResult.processed === 0) {
       break;
     }
   }
 
-  return { messagesProcessed, webOutboxProcessed };
+  return { messagesProcessed, webOutboxProcessed, feishuOutboxProcessed };
 }
 
 export type ProjectorLoopOptions = ProjectorOptions & {

@@ -61,6 +61,50 @@ export class WebOutboxProjector {
   }
 }
 
+export class FeishuOutboxProjector {
+  private readonly outbox: OutboxStore;
+  private readonly projectors: ProjectorStore;
+
+  constructor(private readonly db: SqliteDatabase) {
+    this.outbox = new OutboxStore(db);
+    this.projectors = new ProjectorStore(db);
+  }
+
+  projectNextBatch(options: ProjectorOptions = {}): ProjectBatchResult {
+    return this.projectors.projectBatch("feishu_outbox", { limit: options.batchSize ?? DEFAULT_BATCH_SIZE }, (events) => {
+      for (const event of events) {
+        if (event.type.startsWith("delivery_")) {
+          continue;
+        }
+
+        const targetRef = this.readFeishuTargetRef(event.sessionId);
+        if (!targetRef) {
+          continue;
+        }
+
+        this.outbox.enqueueOnce({
+          sessionId: event.sessionId,
+          eventId: event.id,
+          eventGlobalSeq: event.globalSeq,
+          channelType: "feishu",
+          targetRef,
+          kind: event.type === "task_created" ? "feishu_card_create" : "feishu_card_update",
+          viewModel: mapEventToFeishuCard(event),
+          idempotencyKey: `feishu:${targetRef}:${event.id}`,
+        });
+      }
+    });
+  }
+
+  private readFeishuTargetRef(sessionId: string): string | null {
+    const row = this.db
+      .prepare("SELECT channel_ref FROM sessions WHERE id = ? AND channel_type = 'feishu'")
+      .get(sessionId) as { channel_ref: string | null } | undefined;
+
+    return row?.channel_ref ?? null;
+  }
+}
+
 type MessageInput = Parameters<MessageStore["upsert"]>[0];
 
 function mapEventToMessage(event: StoredEvent): MessageInput | null {
@@ -110,6 +154,23 @@ function mapEventToWebViewModel(event: StoredEvent): JsonObject {
       runId: event.runId,
       taskId: event.taskId,
       runSeq: event.runSeq,
+      type: event.type,
+      payload: event.payload,
+      createdAt: event.createdAt,
+    },
+  };
+}
+
+function mapEventToFeishuCard(event: StoredEvent): JsonObject {
+  return {
+    type: "feishu_card",
+    title: "MiniAgent",
+    event: {
+      globalSeq: event.globalSeq,
+      id: event.id,
+      sessionId: event.sessionId,
+      runId: event.runId,
+      taskId: event.taskId,
       type: event.type,
       payload: event.payload,
       createdAt: event.createdAt,

@@ -1,6 +1,7 @@
 import { Hono, type Context } from "hono";
 import type { SqliteDatabase } from "../db/migrate.js";
 import { ContextBudgetService } from "../context/context-budget-service.js";
+import { FeishuInboundService } from "../channels/feishu-inbound-service.js";
 import { EventStore } from "../events/event-store.js";
 import { projectReadModelsUntilIdle } from "../events/projector-runner.js";
 import { HandoffService } from "../handoff/handoff-service.js";
@@ -75,6 +76,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
         "/api/sessions/:sessionId/context/compact",
         "/api/schedules",
         "/api/schedules/due/run",
+        "/api/feishu/messages",
       ],
     }),
   );
@@ -465,6 +467,94 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
       service.cancelSchedule(scheduleId, actorType, actorRef),
     ),
   );
+
+  app.post("/api/feishu/messages", async (context) => {
+    const db = context.get("db");
+    const body = await readJsonBody(context.req);
+    if (!body.ok) {
+      return context.json({ error: body.error }, 400);
+    }
+
+    const messageId = body.value.messageId;
+    if (typeof messageId !== "string" || messageId.trim().length === 0) {
+      return context.json({ error: "messageId is required" }, 400);
+    }
+
+    const chatId = body.value.chatId;
+    if (typeof chatId !== "string" || chatId.trim().length === 0) {
+      return context.json({ error: "chatId is required" }, 400);
+    }
+
+    const text = body.value.text;
+    if (typeof text !== "string" || text.trim().length === 0) {
+      return context.json({ error: "text is required" }, 400);
+    }
+
+    const userId = body.value.userId;
+    if (userId !== undefined && userId !== null && typeof userId !== "string") {
+      return context.json({ error: "userId must be a string or null" }, 400);
+    }
+
+    const sessionId = body.value.sessionId;
+    if (sessionId !== undefined && sessionId !== null && typeof sessionId !== "string") {
+      return context.json({ error: "sessionId must be a string or null" }, 400);
+    }
+
+    const workspacePath = body.value.workspacePath;
+    if (workspacePath !== undefined && workspacePath !== null && typeof workspacePath !== "string") {
+      return context.json({ error: "workspacePath must be a string or null" }, 400);
+    }
+
+    const defaultAgentType = body.value.defaultAgentType;
+    if (defaultAgentType !== undefined && !isAgentType(defaultAgentType)) {
+      return context.json({ error: "defaultAgentType must be one of: codex, claude, trae" }, 400);
+    }
+
+    try {
+      const result = new FeishuInboundService(db).receiveMessage({
+        messageId,
+        chatId,
+        text,
+        userId: typeof userId === "string" ? userId : null,
+        sessionId: typeof sessionId === "string" ? sessionId : null,
+        workspacePath: typeof workspacePath === "string" ? workspacePath : defaultWorkspacePath,
+        defaultAgentType: isAgentType(defaultAgentType) ? defaultAgentType : undefined,
+      });
+      if (result.action === "message") {
+        new ContextBudgetService(db).evaluate({ sessionId: result.session.id });
+      }
+      projectReadModelsUntilIdle(db);
+
+      const selectedSessionId =
+        result.action === "message" || result.action === "agent_new"
+          ? result.session.id
+          : result.action === "handoff"
+            ? result.targetSessionId
+            : result.action === "context_compact" || result.action === "context_status"
+              ? result.sessionId
+              : null;
+
+      return context.json(
+        {
+          result,
+          workspace: createWorkspaceSnapshot(db, { selectedSessionId }),
+        },
+        201,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Feishu message failed";
+      if (message.startsWith("Session not found")) {
+        return context.json({ error: message }, 404);
+      }
+      if (message.includes("agent type") || message.includes("required") || message.includes("archived")) {
+        return context.json({ error: message }, 400);
+      }
+      if (message.startsWith("No events found")) {
+        return context.json({ error: message }, 409);
+      }
+      return context.json({ error: message }, 500);
+    }
+  });
 
   app.post("/api/sessions/:sessionId/context/compact", async (context) => {
     const db = context.get("db");

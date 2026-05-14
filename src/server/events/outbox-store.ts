@@ -128,7 +128,13 @@ export class OutboxStore {
     return row ? mapOutboxRow(row) : null;
   }
 
-  claimDue(options: { workerId: string; limit: number; leaseMs: number; now?: string }): OutboxItem[] {
+  claimDue(options: {
+    workerId: string;
+    limit: number;
+    leaseMs: number;
+    now?: string;
+    channelType?: OutboxChannel;
+  }): OutboxItem[] {
     if (options.limit <= 0) {
       throw new Error("limit must be positive");
     }
@@ -154,6 +160,7 @@ export class OutboxStore {
             SELECT id
             FROM outbox
             WHERE status IN ('pending', 'failed')
+              AND (@channelType IS NULL OR channel_type = @channelType)
               AND attempts < max_attempts
               AND (next_attempt_at IS NULL OR next_attempt_at <= @now)
             ORDER BY created_at ASC, id ASC
@@ -167,6 +174,7 @@ export class OutboxStore {
           now: timestamp,
           leaseExpiresAt,
           limit: options.limit,
+          channelType: options.channelType ?? null,
         }) as OutboxRow[];
 
       return rows.map(mapOutboxRow);

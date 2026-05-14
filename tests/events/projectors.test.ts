@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { EventStore } from "../../src/server/events/event-store.js";
 import { MessageStore } from "../../src/server/events/message-store.js";
 import { OutboxStore } from "../../src/server/events/outbox-store.js";
-import { MessageProjector, WebOutboxProjector } from "../../src/server/events/projectors.js";
+import { FeishuOutboxProjector, MessageProjector, WebOutboxProjector } from "../../src/server/events/projectors.js";
 import { ProjectorStore } from "../../src/server/events/projector-store.js";
 import { SessionStore } from "../../src/server/sessions/session-store.js";
 import { parseJson } from "../../src/shared/json.js";
@@ -90,6 +90,78 @@ describe("event projectors", () => {
 
     const count = testDb.db.prepare("SELECT COUNT(*) AS count FROM outbox").get() as { count: number };
     expect(count.count).toBe(5);
+  });
+
+  it("projects Feishu channel sessions into Feishu card Outbox work", () => {
+    sessionStore.createSession({
+      id: "session-feishu",
+      title: "Feishu session",
+      agentType: "codex",
+      workspacePath: "/tmp/miniagent-test",
+      channelType: "feishu",
+      channelRef: "chat-1",
+    });
+    const createdTask = sessionStore.createTask({
+      id: "task-feishu",
+      sessionId: "session-feishu",
+      sourceType: "feishu",
+      sourceRef: "msg-1",
+      type: "message",
+      input: { text: "Render a card" },
+    });
+    eventStore.append({
+      id: "event-feishu-text",
+      sessionId: "session-feishu",
+      type: "text_delta",
+      payload: { text: "Card content" },
+    });
+    eventStore.append({
+      id: "event-delivery",
+      sessionId: "session-feishu",
+      type: "delivery_succeeded",
+      payload: { outboxId: "outbox-1" },
+    });
+
+    const first = new FeishuOutboxProjector(testDb.db).projectNextBatch({ batchSize: 100 });
+    const second = new FeishuOutboxProjector(testDb.db).projectNextBatch({ batchSize: 100 });
+
+    expect(first.processed).toBeGreaterThan(0);
+    expect(second.processed).toBe(0);
+
+    const rows = testDb.db
+      .prepare(
+        `
+        SELECT channel_type, kind, target_ref, idempotency_key, view_model_json
+        FROM outbox
+        WHERE channel_type = 'feishu'
+        ORDER BY event_global_seq ASC
+      `,
+      )
+      .all() as Array<{
+      channel_type: string;
+      kind: string;
+      target_ref: string;
+      idempotency_key: string;
+      view_model_json: string;
+    }>;
+
+    expect(rows.map((row) => [row.kind, row.target_ref])).toEqual([
+      ["feishu_card_create", "chat-1"],
+      ["feishu_card_update", "chat-1"],
+    ]);
+    expect(rows.map((row) => row.idempotency_key)).toEqual([
+      `feishu:chat-1:${createdTask.event.id}`,
+      "feishu:chat-1:event-feishu-text",
+    ]);
+    expect(parseJson(rows[0].view_model_json)).toMatchObject({
+      type: "feishu_card",
+      event: {
+        type: "task_created",
+        payload: {
+          input: { text: "Render a card" },
+        },
+      },
+    });
   });
 
   it("keeps projector offset unchanged when projection work fails", () => {

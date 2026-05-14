@@ -332,6 +332,37 @@ describe("HTTP app", () => {
       });
       expect(missingMessageSessionResponse.status).toBe(404);
 
+      const feishuMessageResponse = await app.request("/api/feishu/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messageId: "feishu-msg-1",
+          chatId: "chat-1",
+          userId: "feishu-user-1",
+          text: "Start from Feishu",
+          workspacePath: "/tmp/miniagent-feishu",
+        }),
+      });
+      expect(feishuMessageResponse.status).toBe(201);
+
+      const feishuMessage = await feishuMessageResponse.json();
+      expect(feishuMessage).toMatchObject({
+        result: {
+          action: "message",
+          session: {
+            channelType: "feishu",
+            channelRef: "chat-1",
+          },
+          task: {
+            sourceType: "feishu",
+            sourceRef: "feishu-msg-1",
+          },
+        },
+      });
+      expect(feishuMessage.workspace.outboxRows).toEqual(
+        expect.arrayContaining([expect.arrayContaining(["Feishu"])]),
+      );
+
       const handoffResponse = await app.request("/api/sessions/session-1/handoffs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
