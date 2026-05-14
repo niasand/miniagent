@@ -1,9 +1,10 @@
 import { Hono } from "hono";
 import type { SqliteDatabase } from "../db/migrate.js";
+import { ContextBudgetService } from "../context/context-budget-service.js";
 import { EventStore } from "../events/event-store.js";
 import { projectReadModelsUntilIdle } from "../events/projector-runner.js";
 import { HandoffService } from "../handoff/handoff-service.js";
-import type { AuditActorType } from "../audit/audit-log-store.js";
+import { AuditLogStore, type AuditActorType } from "../audit/audit-log-store.js";
 import { UserMessageService } from "../messages/user-message-service.js";
 import type { AgentType } from "../runtime/types.js";
 import { RuntimeAdapterRegistry } from "../runtime/registry.js";
@@ -14,6 +15,7 @@ import { SessionStore } from "../sessions/session-store.js";
 import { createWorkspaceSnapshot } from "../workspace/workspace-service.js";
 import type {
   AgentsResponse,
+  CompactContextResponse,
   CreateHandoffResponse,
   CreateSessionResponse,
   SendMessageResponse,
@@ -62,6 +64,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
         "/api/agents",
         "/api/sessions",
         "/api/events",
+        "/api/sessions/:sessionId/context/compact",
       ],
     }),
   );
@@ -162,6 +165,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
         text,
         actorRef,
       });
+      new ContextBudgetService(db).evaluate({ sessionId: context.req.param("sessionId") });
       projectReadModelsUntilIdle(db);
 
       const response: SendMessageResponse = {
@@ -218,6 +222,9 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
         actorRef,
         targetTitle,
       });
+      const contextBudget = new ContextBudgetService(db);
+      contextBudget.evaluate({ sessionId: context.req.param("sessionId") });
+      contextBudget.evaluate({ sessionId: result.targetSession.id, autoCompact: false });
       projectReadModelsUntilIdle(db);
 
       const response: CreateHandoffResponse = {
@@ -247,6 +254,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
 
     try {
       const result = runtimeService.startNextQueuedTask(context.req.param("sessionId"));
+      new ContextBudgetService(db).evaluate({ sessionId: context.req.param("sessionId") });
       projectReadModelsUntilIdle(db);
 
       const response: StartRunResponse = {
@@ -290,6 +298,75 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
     return context.json({ events });
   });
 
+  app.post("/api/sessions/:sessionId/context/compact", async (context) => {
+    const db = context.get("db");
+    const body = await readOptionalJsonBody(context.req);
+    if (!body.ok) {
+      return context.json({ error: body.error }, 400);
+    }
+
+    const actorType = body.value.actorType ?? "web_user";
+    if (!isAuditActorType(actorType)) {
+      return context.json({ error: "actorType must be one of: web_user, feishu_user, system, agent" }, 400);
+    }
+
+    const actorRef = body.value.actorRef;
+    if (actorRef !== undefined && actorRef !== null && typeof actorRef !== "string") {
+      return context.json({ error: "actorRef must be a string or null" }, 400);
+    }
+
+    const budgetTokens = body.value.budgetTokens;
+    if (
+      budgetTokens !== undefined &&
+      (typeof budgetTokens !== "number" || !Number.isInteger(budgetTokens) || budgetTokens <= 0)
+    ) {
+      return context.json({ error: "budgetTokens must be a positive integer" }, 400);
+    }
+
+    try {
+      const result = new ContextBudgetService(db).compactNow({
+        sessionId: context.req.param("sessionId"),
+        createdBy: actorType === "agent" ? "agent" : actorType === "system" ? "system" : "user",
+        budgetTokens: typeof budgetTokens === "number" ? budgetTokens : undefined,
+      });
+      new AuditLogStore(db).insert({
+        actorType,
+        actorRef,
+        action: "compact",
+        resourceType: "session",
+        resourceId: context.req.param("sessionId"),
+        payload: {
+          contextPackId: result.compacted?.contextPack.id ?? result.contextPack?.id ?? null,
+          eventId: result.compacted?.event.id ?? null,
+          budgetTokens: typeof budgetTokens === "number" ? budgetTokens : null,
+        },
+      });
+      projectReadModelsUntilIdle(db);
+
+      const workspace = createWorkspaceSnapshot(db, { selectedSessionId: context.req.param("sessionId") });
+      const response: CompactContextResponse = {
+        contextPackId: result.compacted?.contextPack.id ?? result.contextPack?.id ?? "",
+        eventId: result.compacted?.event.id ?? "",
+        contextBudget: workspace.contextBudget,
+        workspace,
+      };
+
+      return context.json(response, 201);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Context compact failed";
+      if (message.startsWith("Session not found")) {
+        return context.json({ error: message }, 404);
+      }
+      if (message.startsWith("No events found")) {
+        return context.json({ error: message }, 409);
+      }
+      if (message.includes("budget") || message.includes("threshold")) {
+        return context.json({ error: message }, 400);
+      }
+      return context.json({ error: message }, 500);
+    }
+  });
+
   return app;
 }
 
@@ -305,6 +382,24 @@ async function readJsonBody(request: { json: () => Promise<unknown> }): Promise<
     return { ok: true, value };
   } catch {
     return { ok: false, error: "Request body must be valid JSON" };
+  }
+}
+
+async function readOptionalJsonBody(request: { json: () => Promise<unknown> }): Promise<
+  | { ok: true; value: Record<string, unknown> }
+  | { ok: false; error: string }
+> {
+  try {
+    const value = await request.json();
+    if (value === null || value === undefined) {
+      return { ok: true, value: {} };
+    }
+    if (!isRecord(value)) {
+      return { ok: false, error: "Request body must be a JSON object" };
+    }
+    return { ok: true, value };
+  } catch {
+    return { ok: true, value: {} };
   }
 }
 

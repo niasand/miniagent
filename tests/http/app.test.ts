@@ -191,11 +191,40 @@ describe("HTTP app", () => {
       expect(started.workspace.messages.map((item: { markdown: string }) => item.markdown)).toContain(
         "echo: Follow up on the migration",
       );
+      expect(started.workspace.contextBudget).toMatchObject({
+        status: expect.any(String),
+        tokenEstimate: expect.any(Number),
+        budgetTokens: 100_000,
+      });
 
       const noQueuedRunResponse = await app.request("/api/sessions/session-1/runs/start", {
         method: "POST",
       });
       expect(noQueuedRunResponse.status).toBe(409);
+
+      const compactResponse = await app.request("/api/sessions/session-1/context/compact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          actorType: "web_user",
+          budgetTokens: 1_000,
+        }),
+      });
+      expect(compactResponse.status).toBe(201);
+
+      const compact = await compactResponse.json();
+      expect(compact).toMatchObject({
+        contextPackId: expect.any(String),
+        eventId: expect.any(String),
+        contextBudget: expect.objectContaining({
+          currentContextPackId: expect.any(String),
+          budgetTokens: 1_000,
+        }),
+        workspace: expect.objectContaining({
+          selectedSessionId: "session-1",
+        }),
+      });
+      expect(readAuditActions(testDb.db, "session-1")).toContain("compact");
 
       const emptyMessageResponse = await app.request("/api/sessions/session-1/messages", {
         method: "POST",
@@ -259,6 +288,13 @@ describe("HTTP app", () => {
         body: JSON.stringify({ targetAgentType: "claude" }),
       });
       expect(missingSessionResponse.status).toBe(404);
+
+      const missingCompactSessionResponse = await app.request("/api/sessions/missing/context/compact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ actorType: "web_user" }),
+      });
+      expect(missingCompactSessionResponse.status).toBe(404);
     } finally {
       testDb.close();
     }
@@ -312,4 +348,11 @@ class EchoProcess implements RuntimeProcess {
   onExit(handler: (exit: RuntimeProcessExit) => void): void {
     this.exitHandler = handler;
   }
+}
+
+function readAuditActions(db: ReturnType<typeof createTestDatabase>["db"], sessionId: string): string[] {
+  return db
+    .prepare("SELECT action FROM audit_logs WHERE resource_type = 'session' AND resource_id = ? ORDER BY created_at ASC")
+    .all(sessionId)
+    .map((row) => (row as { action: string }).action);
 }

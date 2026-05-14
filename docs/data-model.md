@@ -34,6 +34,7 @@ agent_profiles 1 ── * sessions 1 ── * agent_runs 1 ── * events
                          ├── * tasks
                          ├── * messages
                          ├── * context_packs
+                         ├── * context_budgets
                          └── * audit_logs
 ```
 
@@ -281,6 +282,28 @@ Portable context for compact, resume, and handoff.
 | `strategy` | TEXT | `native_compact`, `miniagent_summary`, `manual` |
 | `created_at` | TEXT |  |
 
+### `context_budgets`
+
+Current context injection budget for a session. This is separate from raw history; compaction never deletes EventStore rows.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `session_id` | TEXT PK | Session being monitored |
+| `status` | TEXT | `healthy`, `warning`, `critical`, `overflow` |
+| `token_estimate` | INTEGER | Estimated tokens for current ContextPack plus recent events |
+| `budget_tokens` | INTEGER | Effective limit used for thresholds |
+| `usage_ratio` | REAL | `token_estimate / budget_tokens` |
+| `warning_threshold` | REAL | Default `0.70` |
+| `critical_threshold` | REAL | Default `0.85`; triggers auto ContextPack generation |
+| `overflow_threshold` | REAL | Default `0.95` |
+| `source_event_start_id` | TEXT NULL | First event represented by the current budget |
+| `source_event_end_id` | TEXT NULL | Latest event represented by the current budget |
+| `source_global_seq` | INTEGER | Replay cursor for UI and recovery |
+| `current_context_pack_id` | TEXT NULL | Latest ContextPack used for injection |
+| `last_compacted_at` | TEXT NULL | Last successful compact timestamp |
+| `overflow_reason` | TEXT NULL | Reason when status is `overflow` |
+| `updated_at` | TEXT |  |
+
 ### `schedules`
 
 Cron and one-shot task definitions.
@@ -459,5 +482,6 @@ The migration runner creates `schema_migrations` before applying domain migratio
 10. `context_packs`
 11. `schedules`
 12. `audit_logs`
+13. `context_budgets`
 
 Implement state transition tests before wiring real CLIs.

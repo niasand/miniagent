@@ -37,6 +37,7 @@ describe("SQLite schema", () => {
         "outbox",
         "projector_offsets",
         "messages",
+        "context_budgets",
         "context_packs",
         "schedules",
         "audit_logs",
@@ -169,7 +170,7 @@ describe("SQLite schema", () => {
       .all()
       .map((row) => (row as { version: string }).version);
 
-    expect(rows).toEqual(["0001_initial"]);
+    expect(rows).toEqual(["0001_initial", "0002_context_budgets"]);
   });
 });
 

@@ -117,6 +117,8 @@ Responsibilities:
 - Generate ContextPack from EventStore ranges.
 - Restart or handoff using ContextPack plus recent raw messages.
 
+Implementation rule: `context_budgets` tracks the effective injection budget (`current ContextPack + recent raw events`), not total raw EventStore history. Raw history remains append-only and queryable after compact.
+
 ### Scheduler
 
 Owns cron and one-shot task creation.

@@ -93,4 +93,15 @@ export const fallbackWorkspace: WorkspaceSnapshot = {
   messages,
   outboxRows,
   keyEvents,
+  contextBudget: {
+    status: "warning",
+    tokenEstimate: 72_000,
+    budgetTokens: 100_000,
+    usagePercent: 72,
+    warningPercent: 70,
+    criticalPercent: 85,
+    overflowPercent: 95,
+    currentContextPackId: "ctx_mock",
+    lastCompactedAt: "2026-05-13T23:46:00.000Z",
+  },
 };

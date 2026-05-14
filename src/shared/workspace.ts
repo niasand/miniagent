@@ -31,6 +31,19 @@ export type WorkspaceSnapshot = {
   messages: WorkspaceMessage[];
   outboxRows: Array<[string, string, string]>;
   keyEvents: Array<[string, string, string]>;
+  contextBudget: WorkspaceContextBudget;
+};
+
+export type WorkspaceContextBudget = {
+  status: "healthy" | "warning" | "critical" | "overflow";
+  tokenEstimate: number;
+  budgetTokens: number;
+  usagePercent: number;
+  warningPercent: number;
+  criticalPercent: number;
+  overflowPercent: number;
+  currentContextPackId: string | null;
+  lastCompactedAt: string | null;
 };
 
 export type CreateHandoffRequest = {
@@ -90,5 +103,17 @@ export type StartRunResponse = {
   taskId: string;
   runId: string;
   status: string;
+  workspace: WorkspaceSnapshot;
+};
+
+export type CompactContextRequest = {
+  actorType?: WorkspaceActorType;
+  budgetTokens?: number;
+};
+
+export type CompactContextResponse = {
+  contextPackId: string;
+  eventId: string;
+  contextBudget: WorkspaceContextBudget;
   workspace: WorkspaceSnapshot;
 };

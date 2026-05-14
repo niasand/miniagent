@@ -4,6 +4,7 @@ import { parseJson } from "../../shared/json.js";
 import type {
   WorkspaceAgentLabel,
   WorkspaceAgentType,
+  WorkspaceContextBudget,
   WorkspaceMessage,
   WorkspaceSessionStatus,
   WorkspaceSnapshot,
@@ -41,6 +42,18 @@ type EventRow = {
   run_id: string | null;
 };
 
+type ContextBudgetRow = {
+  status: WorkspaceContextBudget["status"];
+  token_estimate: number;
+  budget_tokens: number;
+  usage_ratio: number;
+  warning_threshold: number;
+  critical_threshold: number;
+  overflow_threshold: number;
+  current_context_pack_id: string | null;
+  last_compacted_at: string | null;
+};
+
 export type WorkspaceSnapshotOptions = {
   selectedSessionId?: string | null;
 };
@@ -56,6 +69,7 @@ export function createWorkspaceSnapshot(db: SqliteDatabase, options: WorkspaceSn
     messages: selectedSessionId ? readMessages(db, selectedSessionId) : [],
     outboxRows: readOutboxRows(db),
     keyEvents: readKeyEvents(db),
+    contextBudget: selectedSessionId ? readContextBudget(db, selectedSessionId) : defaultContextBudget(),
   };
 }
 
@@ -152,6 +166,42 @@ function readKeyEvents(db: SqliteDatabase): WorkspaceSnapshot["keyEvents"] {
     row.type,
     describeEvent(row),
   ]);
+}
+
+function readContextBudget(db: SqliteDatabase, sessionId: string): WorkspaceContextBudget {
+  const row = db.prepare("SELECT * FROM context_budgets WHERE session_id = ?").get(sessionId) as
+    | ContextBudgetRow
+    | undefined;
+
+  if (!row) {
+    return defaultContextBudget();
+  }
+
+  return {
+    status: row.status,
+    tokenEstimate: row.token_estimate,
+    budgetTokens: row.budget_tokens,
+    usagePercent: Math.round(row.usage_ratio * 100),
+    warningPercent: Math.round(row.warning_threshold * 100),
+    criticalPercent: Math.round(row.critical_threshold * 100),
+    overflowPercent: Math.round(row.overflow_threshold * 100),
+    currentContextPackId: row.current_context_pack_id,
+    lastCompactedAt: row.last_compacted_at,
+  };
+}
+
+function defaultContextBudget(): WorkspaceContextBudget {
+  return {
+    status: "healthy",
+    tokenEstimate: 0,
+    budgetTokens: 100_000,
+    usagePercent: 0,
+    warningPercent: 70,
+    criticalPercent: 85,
+    overflowPercent: 95,
+    currentContextPackId: null,
+    lastCompactedAt: null,
+  };
 }
 
 function describeEvent(row: EventRow): string {

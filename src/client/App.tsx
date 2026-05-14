@@ -7,6 +7,7 @@ import { motion } from "motion/react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { compactSessionContext } from "./api/context.js";
 import { createHandoff } from "./api/handoff.js";
 import { sendSessionMessage } from "./api/messages.js";
 import { createSession } from "./api/sessions.js";
@@ -25,6 +26,13 @@ const statusTone = {
   idle: "default",
   archived: "default",
   failed: "red",
+} as const;
+
+const contextTone = {
+  healthy: "green",
+  warning: "amber",
+  critical: "red",
+  overflow: "red",
 } as const;
 
 export default function App() {
@@ -57,6 +65,12 @@ export default function App() {
     onSuccess: (response) => {
       queryClient.setQueryData(["workspace", response.workspace.selectedSessionId], response.workspace);
       setSelectedSessionId(response.targetSessionId);
+    },
+  });
+  const compactContext = useMutation({
+    mutationFn: (sessionId: string) => compactSessionContext(sessionId, { actorType: "web_user" }),
+    onSuccess: (response) => {
+      queryClient.setQueryData(["workspace", response.workspace.selectedSessionId], response.workspace);
     },
   });
   const sendMessage = useMutation({
@@ -111,6 +125,7 @@ export default function App() {
           <Sidebar sessions={snapshot.sessions} selected={selected} />
           <Conversation
             selected={selected}
+            contextBudget={snapshot.contextBudget}
             messages={snapshot.messages}
             draft={draft}
             sendError={sendMessage.error?.message}
@@ -131,9 +146,17 @@ export default function App() {
           />
           <RightRail
             selected={selected}
+            contextBudget={snapshot.contextBudget}
             outboxRows={snapshot.outboxRows}
+            compactError={compactContext.error?.message}
+            compacting={compactContext.isPending}
             handoffError={handoff.error?.message}
             handoffPendingTarget={handoff.isPending ? handoff.variables?.targetAgentType ?? null : null}
+            onCompact={() => {
+              if (hasRealSelectedSession) {
+                compactContext.mutate(selected.id);
+              }
+            }}
             onHandoff={(targetAgentType) => handoff.mutate({ sessionId: selected.id, targetAgentType })}
           />
         </div>
@@ -227,6 +250,7 @@ function Sidebar({
 
 function Conversation({
   selected,
+  contextBudget,
   messages,
   draft,
   sendError,
@@ -235,6 +259,7 @@ function Conversation({
   onSend,
 }: {
   selected: WorkspaceSessionSummary;
+  contextBudget: typeof fallbackWorkspace.contextBudget;
   messages: typeof fallbackWorkspace.messages;
   draft: string;
   sendError?: string;
@@ -250,7 +275,7 @@ function Conversation({
       >
         <div className="flex flex-wrap justify-end gap-2">
           <Badge tone="green">EventStore synced</Badge>
-          <Badge tone="amber">Context 72%</Badge>
+          <Badge tone={contextTone[contextBudget.status]}>Context {contextBudget.usagePercent}%</Badge>
         </div>
       </SectionHeader>
       <div className="messages">
@@ -292,15 +317,23 @@ function Conversation({
 
 function RightRail({
   selected,
+  contextBudget,
   outboxRows,
+  compactError,
+  compacting,
   handoffError,
   handoffPendingTarget,
+  onCompact,
   onHandoff,
 }: {
   selected: WorkspaceSessionSummary;
+  contextBudget: typeof fallbackWorkspace.contextBudget;
   outboxRows: typeof fallbackWorkspace.outboxRows;
+  compactError?: string;
+  compacting: boolean;
   handoffError?: string;
   handoffPendingTarget: WorkspaceAgentType | null;
+  onCompact: () => void;
   onHandoff: (targetAgentType: WorkspaceAgentType) => void;
 }) {
   const allHandoffTargets: Array<{ agentType: WorkspaceAgentType; label: string }> = [
@@ -315,12 +348,19 @@ function RightRail({
       <RightSection title="RuntimeSupervisor" badge={<Badge tone="green">healthy</Badge>}>
         <Metric label="stdout batch window" value="126ms" progress={56} />
       </RightSection>
-      <RightSection title="ContextPack" badge={<Badge tone="amber">warning</Badge>}>
-        <Progress tone="amber" value={72} />
-        <p className="text-xs text-muted-foreground">Next compact at 85% - last pack 14 minutes ago</p>
-        <Button size="sm">
-          Compact now
+      <RightSection title="ContextPack" badge={<Badge tone={contextTone[contextBudget.status]}>{contextBudget.status}</Badge>}>
+        <Progress
+          tone={contextBudget.status === "healthy" ? "default" : contextBudget.status === "warning" ? "amber" : "red"}
+          value={Math.min(contextBudget.usagePercent, 100)}
+        />
+        <p className="text-xs text-muted-foreground">
+          {contextBudget.tokenEstimate.toLocaleString("en-US")} / {contextBudget.budgetTokens.toLocaleString("en-US")} tokens
+          - compact at {contextBudget.criticalPercent}% - {formatLastPack(contextBudget.lastCompactedAt)}
+        </p>
+        <Button size="sm" disabled={compacting} onClick={onCompact}>
+          {compacting ? "Compacting..." : "Compact now"}
         </Button>
+        {compactError ? <p className="text-xs text-red-600">{compactError}</p> : null}
       </RightSection>
       <RightSection title="Outbox" badge={<Badge tone="blue">8 pending</Badge>}>
         <div className="space-y-2">
@@ -348,6 +388,23 @@ function RightRail({
       </RightSection>
     </aside>
   );
+}
+
+function formatLastPack(value: string | null): string {
+  if (!value) {
+    return "no pack yet";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "last pack recorded";
+  }
+
+  return `last pack ${date.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  })}`;
 }
 
 function SectionHeader({
