@@ -202,6 +202,14 @@ describe("HTTP app", () => {
       const invalid = await app.request("/api/events?afterGlobalSeq=-1");
       expect(invalid.status).toBe(400);
 
+      const eventStreamResponse = await app.request("/api/events/stream?sessionId=session-1&afterGlobalSeq=2&limit=2");
+      expect(eventStreamResponse.headers.get("Content-Type")).toContain("text/event-stream");
+      const eventStream = await eventStreamResponse.text();
+      expect(eventStream).toContain("id: 3");
+      expect(eventStream).toContain("event: text_delta");
+      expect(eventStream).toContain("event: run_finished");
+      expect(eventStream).toContain(": cursor-ready");
+
       const messageResponse = await app.request("/api/sessions/session-1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

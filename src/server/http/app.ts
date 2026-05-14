@@ -79,6 +79,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
         "/api/agent-defaults",
         "/api/sessions",
         "/api/events",
+        "/api/events/stream",
         "/api/sessions/:sessionId/context/compact",
         "/api/schedules",
         "/api/schedules/due/run",
@@ -378,6 +379,40 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
     });
 
     return context.json({ events });
+  });
+
+  app.get("/api/events/stream", (context) => {
+    const sessionId = context.req.query("sessionId") || undefined;
+    const afterGlobalSeq = Number(context.req.query("afterGlobalSeq") ?? 0);
+    const limit = Number(context.req.query("limit") ?? 100);
+
+    if (!Number.isInteger(afterGlobalSeq) || afterGlobalSeq < 0) {
+      return context.json({ error: "afterGlobalSeq must be a non-negative integer" }, 400);
+    }
+    if (!Number.isInteger(limit) || limit <= 0 || limit > 500) {
+      return context.json({ error: "limit must be an integer between 1 and 500" }, 400);
+    }
+
+    const events = new EventStore(context.get("db")).listAfterGlobalSeq({
+      sessionId,
+      afterGlobalSeq,
+      limit,
+    });
+    const body =
+      events
+        .map(
+          (event) =>
+            `id: ${event.globalSeq}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`,
+        )
+        .join("") + ": cursor-ready\n\n";
+
+    return new Response(body, {
+      headers: {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+      },
+    });
   });
 
   app.get("/api/schedules", (context) => {
