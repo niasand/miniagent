@@ -6,6 +6,8 @@ import { EventStore } from "../events/event-store.js";
 import { projectReadModelsUntilIdle } from "../events/projector-runner.js";
 import { HandoffService } from "../handoff/handoff-service.js";
 import { AuditLogStore, type AuditActorType } from "../audit/audit-log-store.js";
+import { DefaultAgentService } from "../agents/default-agent-service.js";
+import type { AgentDefaultRecord, AgentDefaultScopeType } from "../agents/agent-default-store.js";
 import { UserMessageService } from "../messages/user-message-service.js";
 import type { AgentType } from "../runtime/types.js";
 import { RuntimeAdapterRegistry } from "../runtime/registry.js";
@@ -19,6 +21,7 @@ import { createWorkspaceSnapshot } from "../workspace/workspace-service.js";
 import type { JsonObject } from "../../shared/json.js";
 import type {
   AgentsResponse,
+  AgentDefault,
   CompactContextResponse,
   CreateHandoffResponse,
   CreateScheduleResponse,
@@ -26,6 +29,8 @@ import type {
   ListSchedulesResponse,
   RunDueSchedulesResponse,
   SendMessageResponse,
+  ResolveAgentDefaultResponse,
+  SetAgentDefaultResponse,
   StartRunResponse,
   UpdateScheduleResponse,
   WorkspaceSchedule,
@@ -71,6 +76,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
         "/api/health",
         "/api/workspace",
         "/api/agents",
+        "/api/agent-defaults",
         "/api/sessions",
         "/api/events",
         "/api/sessions/:sessionId/context/compact",
@@ -117,6 +123,65 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
     return context.json(response);
   });
 
+  app.get("/api/agent-defaults/resolve", (context) => {
+    try {
+      const resolved = new DefaultAgentService(context.get("db")).resolve({
+        userRef: context.req.query("userRef") ?? null,
+        channelRef: context.req.query("channelRef") ?? null,
+        workspacePath: context.req.query("workspacePath") ?? null,
+      });
+      const response: ResolveAgentDefaultResponse = { default: mapAgentDefault(resolved) };
+      return context.json(response);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Resolve default agent failed";
+      return context.json({ error: message }, 500);
+    }
+  });
+
+  app.post("/api/agent-defaults", async (context) => {
+    const body = await readJsonBody(context.req);
+    if (!body.ok) {
+      return context.json({ error: body.error }, 400);
+    }
+
+    const scopeType = body.value.scopeType;
+    if (!isAgentDefaultScopeType(scopeType)) {
+      return context.json({ error: "scopeType must be one of: user, channel, workspace, system" }, 400);
+    }
+
+    const scopeRef = body.value.scopeRef;
+    if (typeof scopeRef !== "string" || scopeRef.trim().length === 0) {
+      return context.json({ error: "scopeRef is required" }, 400);
+    }
+
+    const agentType = body.value.agentType;
+    if (!isAgentType(agentType)) {
+      return context.json({ error: "agentType must be one of: codex, claude, trae" }, 400);
+    }
+
+    const params = body.value.params;
+    if (params !== undefined && !isJsonRecord(params)) {
+      return context.json({ error: "params must be a JSON object" }, 400);
+    }
+
+    try {
+      const saved = new DefaultAgentService(context.get("db")).setDefault({
+        scopeType,
+        scopeRef,
+        agentType,
+        params: params ? (params as JsonObject) : {},
+      });
+      const response: SetAgentDefaultResponse = { default: mapAgentDefault(saved) };
+      return context.json(response, 201);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Set default agent failed";
+      if (message.includes("scopeRef")) {
+        return context.json({ error: message }, 400);
+      }
+      return context.json({ error: message }, 500);
+    }
+  });
+
   app.post("/api/sessions", async (context) => {
     const db = context.get("db");
     const body = await readJsonBody(context.req);
@@ -139,11 +204,16 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
       return context.json({ error: "workspacePath must be a string" }, 400);
     }
 
-    const agentType = requestedAgentType ?? "codex";
+    const effectiveWorkspacePath = workspacePath?.trim() || defaultWorkspacePath;
+    const agentType =
+      requestedAgentType ??
+      new DefaultAgentService(db).resolve({
+        workspacePath: effectiveWorkspacePath,
+      }).agentType;
     const session = new SessionStore(db).createSession({
       title: title?.trim() || `${displayAgent(agentType)} session`,
       agentType,
-      workspacePath: workspacePath?.trim() || defaultWorkspacePath,
+      workspacePath: effectiveWorkspacePath,
       channelType: "web",
     });
     const response: CreateSessionResponse = {
@@ -677,6 +747,10 @@ function isAuditActorType(value: unknown): value is AuditActorType {
   return value === "web_user" || value === "feishu_user" || value === "system" || value === "agent";
 }
 
+function isAgentDefaultScopeType(value: unknown): value is AgentDefaultScopeType {
+  return value === "user" || value === "channel" || value === "workspace" || value === "system";
+}
+
 function displayAgent(agentType: AgentType): string {
   if (agentType === "claude") {
     return "Claude";
@@ -749,5 +823,16 @@ function mapSchedule(schedule: ScheduleRecord): WorkspaceSchedule {
     timezone: schedule.timezone,
     nextRunAt: schedule.nextRunAt,
     lastRunAt: schedule.lastRunAt,
+  };
+}
+
+function mapAgentDefault(record: AgentDefaultRecord): AgentDefault {
+  return {
+    id: record.id,
+    scopeType: record.scopeType,
+    scopeRef: record.scopeRef,
+    agentType: record.agentType,
+    params: record.params,
+    updatedAt: record.updatedAt,
   };
 }

@@ -1,5 +1,6 @@
 import type { SqliteDatabase } from "../db/migrate.js";
 import { AuditLogStore } from "../audit/audit-log-store.js";
+import { DefaultAgentService } from "../agents/default-agent-service.js";
 import { ContextBudgetService } from "../context/context-budget-service.js";
 import { EventStore } from "../events/event-store.js";
 import { HandoffService } from "../handoff/handoff-service.js";
@@ -34,6 +35,12 @@ export type FeishuInboundResult =
       agents: AgentType[];
     }
   | {
+      action: "agent_use";
+      scopeType: "user" | "channel";
+      scopeRef: string;
+      agentType: AgentType;
+    }
+  | {
       action: "handoff";
       sourceSessionId: string;
       targetSessionId: string;
@@ -57,6 +64,7 @@ const AGENTS: AgentType[] = ["codex", "claude", "trae"];
 export class FeishuInboundService {
   private readonly auditLogs: AuditLogStore;
   private readonly contextBudget: ContextBudgetService;
+  private readonly defaultAgents: DefaultAgentService;
   private readonly events: EventStore;
   private readonly handoff: HandoffService;
   private readonly sessions: SessionStore;
@@ -64,6 +72,7 @@ export class FeishuInboundService {
   constructor(private readonly db: SqliteDatabase, events = new EventStore(db)) {
     this.auditLogs = new AuditLogStore(db);
     this.contextBudget = new ContextBudgetService(db, events);
+    this.defaultAgents = new DefaultAgentService(db);
     this.events = events;
     this.handoff = new HandoffService(db, events);
     this.sessions = new SessionStore(db, events);
@@ -86,9 +95,24 @@ export class FeishuInboundService {
       return { action: "agent_list", agents: AGENTS };
     }
 
+    if (command?.name === "agent" && command.args[0] === "use") {
+      const agentType = readAgentType(command.args[1]);
+      const scopeType = input.userId ? "user" : "channel";
+      const scopeRef = input.userId ?? input.chatId;
+      this.defaultAgents.setDefault({
+        scopeType,
+        scopeRef,
+        agentType,
+      });
+      this.auditRemoteCommand(input, "agent_use", { scopeType, scopeRef, agentType });
+      return { action: "agent_use", scopeType, scopeRef, agentType };
+    }
+
     if (command?.name === "agent" && command.args[0] === "new") {
-      const agentType = readAgentType(command.args[1] ?? input.defaultAgentType ?? "codex");
       const workspacePath = command.args[2] ?? input.workspacePath ?? process.cwd();
+      const agentType = command.args[1]
+        ? readAgentType(command.args[1])
+        : this.resolveDefaultAgent(input, workspacePath);
       const session = this.sessions.createSession({
         title: `Feishu ${displayAgent(agentType)}`,
         agentType,
@@ -170,8 +194,8 @@ export class FeishuInboundService {
 
     return this.sessions.createSession({
       title: "Feishu Codex",
-      agentType: input.defaultAgentType ?? "codex",
       workspacePath: input.workspacePath ?? process.cwd(),
+      agentType: this.resolveDefaultAgent(input, input.workspacePath ?? process.cwd()),
       channelType: "feishu",
       channelRef: input.chatId,
     });
@@ -237,6 +261,17 @@ export class FeishuInboundService {
       payload,
       createdAt: input.receivedAt ?? nowIso(),
     });
+  }
+
+  private resolveDefaultAgent(input: FeishuInboundMessageInput, workspacePath: string): AgentType {
+    return (
+      input.defaultAgentType ??
+      this.defaultAgents.resolve({
+        userRef: input.userId ?? null,
+        channelRef: input.chatId,
+        workspacePath,
+      }).agentType
+    );
   }
 }
 

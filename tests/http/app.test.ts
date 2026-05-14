@@ -148,6 +148,53 @@ describe("HTTP app", () => {
       });
       expect(invalidCreateSessionResponse.status).toBe(400);
 
+      const setDefaultResponse = await app.request("/api/agent-defaults", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scopeType: "workspace",
+          scopeRef: "/tmp/default-workspace",
+          agentType: "claude",
+        }),
+      });
+      expect(setDefaultResponse.status).toBe(201);
+      await expect(setDefaultResponse.json()).resolves.toMatchObject({
+        default: {
+          scopeType: "workspace",
+          scopeRef: "/tmp/default-workspace",
+          agentType: "claude",
+        },
+      });
+
+      const resolveDefaultResponse = await app.request(
+        "/api/agent-defaults/resolve?workspacePath=%2Ftmp%2Fdefault-workspace",
+      );
+      await expect(resolveDefaultResponse.json()).resolves.toMatchObject({
+        default: {
+          scopeType: "workspace",
+          agentType: "claude",
+        },
+      });
+
+      const defaultedSessionResponse = await app.request("/api/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "Defaulted session",
+          workspacePath: "/tmp/default-workspace",
+        }),
+      });
+      expect(defaultedSessionResponse.status).toBe(201);
+      const defaultedSession = await defaultedSessionResponse.json();
+      expect(defaultedSession.workspace.sessions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: defaultedSession.sessionId,
+            agentType: "claude",
+          }),
+        ]),
+      );
+
       const replayResponse = await app.request("/api/events?sessionId=session-1&afterGlobalSeq=2&limit=2");
       const replay = await replayResponse.json();
       expect(replay.events.map((event: { type: string }) => event.type)).toEqual(["text_delta", "run_finished"]);

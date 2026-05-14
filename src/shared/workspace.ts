@@ -99,6 +99,32 @@ export type AgentsResponse = {
   agents: WorkspaceAgentRuntime[];
 };
 
+export type AgentDefaultScopeType = "user" | "channel" | "workspace" | "system";
+
+export type AgentDefault = {
+  id: string;
+  scopeType: AgentDefaultScopeType;
+  scopeRef: string;
+  agentType: WorkspaceAgentType;
+  params: unknown;
+  updatedAt: string;
+};
+
+export type SetAgentDefaultRequest = {
+  scopeType: AgentDefaultScopeType;
+  scopeRef: string;
+  agentType: WorkspaceAgentType;
+  params?: Record<string, unknown>;
+};
+
+export type SetAgentDefaultResponse = {
+  default: AgentDefault;
+};
+
+export type ResolveAgentDefaultResponse = {
+  default: AgentDefault;
+};
+
 export type StartRunResponse = {
   taskId: string;
   runId: string;

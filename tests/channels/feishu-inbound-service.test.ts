@@ -22,6 +22,12 @@ describe("FeishuInboundService", () => {
   });
 
   it("creates a Feishu session and deduped message task from chat input", () => {
+    const selected = service.receiveMessage({
+      messageId: "msg-use",
+      chatId: "chat-1",
+      userId: "user-1",
+      text: "/agent use claude",
+    });
     const first = service.receiveMessage({
       messageId: "msg-1",
       chatId: "chat-1",
@@ -42,7 +48,7 @@ describe("FeishuInboundService", () => {
       session: {
         channelType: "feishu",
         channelRef: "chat-1",
-        agentType: "codex",
+        agentType: "claude",
       },
       task: {
         sourceType: "feishu",
@@ -50,6 +56,12 @@ describe("FeishuInboundService", () => {
         type: "message",
         dedupeKey: "feishu:msg-1",
       },
+    });
+    expect(selected).toMatchObject({
+      action: "agent_use",
+      scopeType: "user",
+      scopeRef: "user-1",
+      agentType: "claude",
     });
     expect(second).toMatchObject({
       action: "message",
