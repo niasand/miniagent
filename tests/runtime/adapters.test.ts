@@ -3,6 +3,7 @@ import type { CommandResult, CommandRunner } from "../../src/server/runtime/comm
 import { ClaudeRuntimeAdapter } from "../../src/server/runtime/adapters/claude-adapter.js";
 import { CodexRuntimeAdapter } from "../../src/server/runtime/adapters/codex-adapter.js";
 import { TraeRuntimeAdapter } from "../../src/server/runtime/adapters/trae-adapter.js";
+import { AcpRuntimeDriver } from "../../src/server/runtime/drivers/acp-runtime-driver.js";
 import { RuntimeAdapterRegistry } from "../../src/server/runtime/registry.js";
 
 describe("runtime adapters", () => {
@@ -16,6 +17,22 @@ describe("runtime adapters", () => {
     expect(registry.list().map((adapter) => adapter.agentType)).toEqual(["codex", "claude", "trae"]);
     expect(registry.get("codex").displayName).toBe("Codex CLI");
     expect(registry.get("claude").capabilities()).toMatchObject({ nativeCompact: true });
+  });
+
+  it("can register CLI and ACP variants for the same agent", () => {
+    const registry = new RuntimeAdapterRegistry([
+      new CodexRuntimeAdapter({ commandRunner: healthyRunner("codex 1.0.0") }),
+      new AcpRuntimeDriver({
+        agentType: "codex",
+        displayName: "Codex ACP",
+        command: "codex-acp",
+        commandRunner: healthyRunner("codex acp 1.0.0"),
+      }),
+    ]);
+
+    expect(registry.defaultRuntimeKind("codex")).toBe("cli");
+    expect(registry.get("codex").runtimeKind).toBe("cli");
+    expect(registry.get("codex", "acp")).toMatchObject({ runtimeKind: "acp", command: "codex-acp" });
   });
 
   it("probes command health without requiring real CLIs in tests", async () => {

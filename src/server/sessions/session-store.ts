@@ -501,6 +501,20 @@ export class SessionStore {
     return this.requireRun(runId);
   }
 
+  setRunStatus(runId: string, status: RunStatus, updatedAt = nowIso()): AgentRunRecord {
+    this.db
+      .prepare(
+        `
+        UPDATE agent_runs
+        SET status = @status, heartbeat_at = @heartbeatAt, updated_at = @updatedAt
+        WHERE id = @runId
+      `,
+      )
+      .run({ runId, status, heartbeatAt: updatedAt, updatedAt });
+
+    return this.requireRun(runId);
+  }
+
   setCurrentContextPack(sessionId: string, contextPackId: string, updatedAt = nowIso()): SessionRecord {
     this.db
       .prepare(

@@ -3,6 +3,7 @@ import { EventStore } from "../../src/server/events/event-store.js";
 import type { RuntimeProcess, RuntimeProcessExit, RuntimeProcessFactory } from "../../src/server/runtime/process.js";
 import { RuntimeAdapterRegistry } from "../../src/server/runtime/registry.js";
 import { RuntimeSupervisor } from "../../src/server/runtime/runtime-supervisor.js";
+import { PermissionRequestStore } from "../../src/server/runtime/permission-request-store.js";
 import type { RuntimeLaunchSpec, RuntimeOutputChunk } from "../../src/server/runtime/types.js";
 import { AcpRuntimeDriver } from "../../src/server/runtime/drivers/acp-runtime-driver.js";
 import { SessionStore } from "../../src/server/sessions/session-store.js";
@@ -79,6 +80,10 @@ describe("AcpRuntimeDriver", () => {
         fixture.eventStore.listAfterGlobalSeq({ afterGlobalSeq: 0 }).some((event) => event.type === "permission_prompt"),
       ).toBe(true);
     });
+    expect(fixture.permissionRequests.listByRun(started.run.id)).toMatchObject([
+      { acpRequestId: "permission-1", status: "pending" },
+    ]);
+    expect(fixture.sessionStore.getRun(started.run.id)).toMatchObject({ status: "waiting_permission" });
 
     fixture.supervisor.respondPermission(started.run.id, {
       requestId: "permission-1",
@@ -92,6 +97,9 @@ describe("AcpRuntimeDriver", () => {
 
     const permissionResponse = fixture.process.response("permission-1");
     expect(permissionResponse?.result).toEqual({ outcome: { outcome: "selected", optionId: "allow" } });
+    expect(fixture.permissionRequests.listByRun(started.run.id)).toMatchObject([
+      { acpRequestId: "permission-1", status: "approved", selectedOptionId: "allow" },
+    ]);
   });
 
   it("uses ACP resume and resource links when provided by the task input", async () => {
@@ -156,6 +164,7 @@ describe("AcpRuntimeDriver", () => {
 
     const process = new FakeAcpProcess(options);
     const factory = new FakeProcessFactory(process);
+    const permissionRequests = new PermissionRequestStore(testDb.db);
     const supervisor = new RuntimeSupervisor({
       adapterRegistry: new RuntimeAdapterRegistry([
         new AcpRuntimeDriver({
@@ -165,12 +174,13 @@ describe("AcpRuntimeDriver", () => {
         }),
       ]),
       eventStore,
+      permissionRequestStore: permissionRequests,
       sessionStore,
       processFactory: factory,
       maxTextDeltaBytes: 10_000,
     });
 
-    return { eventStore, factory, process, sessionStore, supervisor };
+    return { eventStore, factory, permissionRequests, process, sessionStore, supervisor };
   }
 });
 

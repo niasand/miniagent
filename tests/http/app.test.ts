@@ -6,9 +6,23 @@ import { ClaudeRuntimeAdapter } from "../../src/server/runtime/adapters/claude-a
 import { CodexRuntimeAdapter } from "../../src/server/runtime/adapters/codex-adapter.js";
 import { TraeRuntimeAdapter } from "../../src/server/runtime/adapters/trae-adapter.js";
 import type { CommandResult, CommandRunner } from "../../src/server/runtime/command-runner.js";
+import type {
+  RuntimeDriverCallbacks,
+  RuntimeDriverStartContext,
+  RuntimeRunHandle,
+  RuntimeSessionDriver,
+} from "../../src/server/runtime/driver.js";
 import type { RuntimeProcess, RuntimeProcessExit, RuntimeProcessFactory } from "../../src/server/runtime/process.js";
 import { RuntimeAdapterRegistry } from "../../src/server/runtime/registry.js";
-import type { RuntimeOutputChunk } from "../../src/server/runtime/types.js";
+import type {
+  AgentProbeResult,
+  RuntimeCapabilities,
+  RuntimeErrorClassification,
+  RuntimeInput,
+  RuntimeLaunchContext,
+  RuntimeLaunchSpec,
+  RuntimeOutputChunk,
+} from "../../src/server/runtime/types.js";
 import { SessionStore } from "../../src/server/sessions/session-store.js";
 import { createTestDatabase } from "../support/db.js";
 
@@ -638,6 +652,68 @@ describe("HTTP app", () => {
       testDb.close();
     }
   });
+
+  it("lists and responds to runtime permission requests", async () => {
+    const testDb = createTestDatabase();
+    try {
+      const eventStore = new EventStore(testDb.db);
+      const sessionStore = new SessionStore(testDb.db, eventStore);
+      sessionStore.createSession({
+        id: "session-permission",
+        title: "Permission session",
+        agentType: "codex",
+        workspacePath: "/tmp/miniagent-test",
+        defaultParams: { runtimeKind: "acp" },
+      });
+      sessionStore.createTask({
+        id: "task-permission",
+        sessionId: "session-permission",
+        sourceType: "web",
+        type: "message",
+        input: { text: "edit file" },
+      });
+
+      const driver = new PermissionPromptDriver();
+      const app = createApp(testDb.db, {
+        workspaceAllowlist: ["/tmp"],
+        processFactory: new IdleProcessFactory(),
+        runtimeRegistry: new RuntimeAdapterRegistry([driver]),
+      });
+
+      const startResponse = await app.request("/api/sessions/session-permission/runs/start", { method: "POST" });
+      const started = await startResponse.json();
+      expect(startResponse.status).toBe(201);
+
+      const listResponse = await app.request(`/api/runs/${started.runId}/permissions`);
+      await expect(listResponse.json()).resolves.toMatchObject({
+        permissions: [
+          {
+            requestId: "permission-http-1",
+            status: "pending",
+            options: [{ id: "allow", name: "Allow" }],
+          },
+        ],
+      });
+
+      const respondResponse = await app.request(`/api/runs/${started.runId}/permissions/permission-http-1/respond`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ outcome: "selected", optionId: "allow" }),
+      });
+
+      expect(respondResponse.status).toBe(200);
+      expect(driver.permissionResponse).toEqual({
+        requestId: "permission-http-1",
+        outcome: "selected",
+        optionId: "allow",
+      });
+      await expect(respondResponse.json()).resolves.toMatchObject({
+        permissions: [{ requestId: "permission-http-1", status: "approved", selectedOptionId: "allow" }],
+      });
+    } finally {
+      testDb.close();
+    }
+  });
 });
 
 function runner(result: CommandResult): CommandRunner {
@@ -710,6 +786,96 @@ class HangingProcess implements RuntimeProcess {
 
   onExit(handler: (exit: RuntimeProcessExit) => void): void {
     this.exitHandler = handler;
+  }
+}
+
+class IdleProcessFactory implements RuntimeProcessFactory {
+  spawn(): RuntimeProcess {
+    return new HangingProcess();
+  }
+}
+
+class PermissionPromptDriver implements RuntimeSessionDriver {
+  readonly runtimeKind = "acp";
+  readonly agentType = "codex";
+  readonly displayName = "Codex ACP";
+  readonly command = "fake-acp";
+  permissionResponse: unknown = null;
+
+  capabilities(): RuntimeCapabilities {
+    return {
+      textStreaming: true,
+      structuredEvents: true,
+      nativeCompact: false,
+      resume: true,
+      sessionExport: false,
+      permissionPrompt: true,
+      imageInput: false,
+    };
+  }
+
+  async probe(): Promise<AgentProbeResult> {
+    return {
+      agentType: "codex",
+      status: "healthy",
+      command: this.command,
+      version: "fake",
+      message: null,
+      checkedAt: "2026-05-14T00:00:00.000Z",
+    };
+  }
+
+  createLaunchSpec(context: RuntimeLaunchContext): RuntimeLaunchSpec {
+    return {
+      agentType: "codex",
+      runtimeKind: "acp",
+      command: this.command,
+      args: [],
+      cwd: context.session.workspacePath,
+      env: {},
+      envSummary: {},
+    };
+  }
+
+  classifyError(error: unknown): RuntimeErrorClassification {
+    return {
+      class: error instanceof Error && error.message.includes("cancel") ? "user_cancelled" : "process_crash",
+      message: error instanceof Error ? error.message : "runtime error",
+      retryable: false,
+    };
+  }
+
+  start(
+    _context: RuntimeDriverStartContext,
+    _process: RuntimeProcess,
+    callbacks: RuntimeDriverCallbacks,
+  ): RuntimeRunHandle {
+    return {
+      sendInput: (_input: RuntimeInput) => {
+        callbacks.emit({
+          type: "permission_prompt",
+          payload: {
+            protocol: "acp",
+            requestId: "permission-http-1",
+            prompt: "Allow file edit?",
+            options: [{ id: "allow", name: "Allow" }],
+            toolCall: { toolCallId: "tool-1" },
+            status: "waiting",
+          },
+        });
+      },
+      respondPermission: (input) => {
+        this.permissionResponse = input;
+        callbacks.exit({
+          exitCode: 0,
+          signal: null,
+          message: "end_turn",
+          exitedAt: "2026-05-14T00:00:01.000Z",
+        });
+      },
+      stop: () => {},
+      flush: () => [],
+    };
   }
 }
 

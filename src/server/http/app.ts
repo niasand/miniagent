@@ -16,6 +16,7 @@ import { UserMessageService } from "../messages/user-message-service.js";
 import type { AgentType } from "../runtime/types.js";
 import { RuntimeAdapterRegistry } from "../runtime/registry.js";
 import type { RuntimeProcessFactory } from "../runtime/process.js";
+import { PermissionRequestStore, type PermissionRequestRecord } from "../runtime/permission-request-store.js";
 import { RuntimeService } from "../runtime/runtime-service.js";
 import { RuntimeSupervisor } from "../runtime/runtime-supervisor.js";
 import { SchedulerService } from "../scheduler/scheduler-service.js";
@@ -75,10 +76,12 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
     options.workspacePolicy ?? new WorkspacePolicy(options.workspaceAllowlist ?? [defaultWorkspacePath, process.cwd()]);
   const eventStore = new EventStore(db);
   const sessionStore = new SessionStore(db, eventStore);
+  const permissionRequests = new PermissionRequestStore(db);
   const runtimeSupervisor = new RuntimeSupervisor({
     adapterRegistry: runtimeRegistry,
     eventStore,
     sessionStore,
+    permissionRequestStore: permissionRequests,
     processFactory: options.processFactory,
   });
   const runtimeService = new RuntimeService(db, runtimeSupervisor, workspacePolicy);
@@ -103,6 +106,8 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
         "/api/events/stream",
         "/api/sessions/:sessionId/context/compact",
         "/api/sessions/:sessionId/context/restart",
+        "/api/runs/:runId/permissions",
+        "/api/runs/:runId/permissions/:requestId/respond",
         "/api/runs/:runId/stop",
         "/api/schedules",
         "/api/schedules/due/run",
@@ -286,6 +291,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
         const probe = await adapter.probe();
         return {
           agentType: adapter.agentType,
+          runtimeKind: adapter.runtimeKind,
           label: adapter.displayName,
           status: probe.status,
           command: probe.command,
@@ -299,6 +305,47 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
     const response: AgentsResponse = { agents };
 
     return context.json(response);
+  });
+
+  app.get("/api/runs/:runId/permissions", (context) => {
+    const permissions = permissionRequests.listByRun(context.req.param("runId")).map(mapPermissionRequest);
+    return context.json({ permissions });
+  });
+
+  app.post("/api/runs/:runId/permissions/:requestId/respond", async (context) => {
+    const body = await readJsonBody(context.req);
+    if (!body.ok) {
+      return context.json({ error: body.error }, 400);
+    }
+
+    const outcome = body.value.outcome;
+    if (outcome !== "selected" && outcome !== "cancelled") {
+      return context.json({ error: "outcome must be selected or cancelled" }, 400);
+    }
+
+    const optionId = body.value.optionId;
+    if (optionId !== undefined && optionId !== null && typeof optionId !== "string") {
+      return context.json({ error: "optionId must be a string or null" }, 400);
+    }
+
+    try {
+      runtimeSupervisor.respondPermission(context.req.param("runId"), {
+        requestId: context.req.param("requestId"),
+        outcome,
+        optionId: optionId ?? undefined,
+      });
+      const permissions = permissionRequests.listByRun(context.req.param("runId")).map(mapPermissionRequest);
+      return context.json({ permissions });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Respond permission failed";
+      if (message.includes("not active") || message.includes("not pending")) {
+        return context.json({ error: message }, 409);
+      }
+      if (message.includes("not support")) {
+        return context.json({ error: message }, 400);
+      }
+      return context.json({ error: message }, 500);
+    }
   });
 
   app.get("/api/agent-defaults/resolve", (context) => {
@@ -1222,6 +1269,27 @@ function mapAgentDefault(record: AgentDefaultRecord): AgentDefault {
     scopeRef: record.scopeRef,
     agentType: record.agentType,
     params: record.params,
+    updatedAt: record.updatedAt,
+  };
+}
+
+function mapPermissionRequest(record: PermissionRequestRecord): JsonObject {
+  return {
+    id: record.id,
+    sessionId: record.sessionId,
+    runId: record.runId,
+    taskId: record.taskId,
+    eventId: record.eventId,
+    requestId: record.acpRequestId,
+    protocol: record.protocol,
+    status: record.status,
+    prompt: record.prompt,
+    options: record.options,
+    toolCall: record.toolCall,
+    selectedOptionId: record.selectedOptionId,
+    expiresAt: record.expiresAt,
+    resolvedAt: record.resolvedAt,
+    createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
 }

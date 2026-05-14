@@ -2,8 +2,9 @@ import { createId } from "../../shared/ids.js";
 import type { JsonObject, JsonValue } from "../../shared/json.js";
 import { nowIso } from "../../shared/time.js";
 import { EventStore } from "../events/event-store.js";
+import { PermissionRequestStore } from "./permission-request-store.js";
 import { SessionStore, type AgentRunRecord } from "../sessions/session-store.js";
-import type { RuntimePermissionResponseInput, RuntimeRunHandle, RuntimeSessionDriver } from "./driver.js";
+import type { RuntimeKind, RuntimePermissionResponseInput, RuntimeRunHandle, RuntimeSessionDriver } from "./driver.js";
 import { RuntimeAdapterRegistry } from "./registry.js";
 import type { RuntimeProcess, RuntimeProcessExit, RuntimeProcessFactory } from "./process.js";
 import { ChildProcessFactory } from "./process.js";
@@ -19,6 +20,7 @@ import type {
 export type RuntimeSupervisorOptions = {
   adapterRegistry?: RuntimeAdapterRegistry;
   sessionStore: SessionStore;
+  permissionRequestStore?: PermissionRequestStore;
   eventStore: EventStore;
   processFactory?: RuntimeProcessFactory;
   maxTextDeltaBytes?: number;
@@ -70,7 +72,8 @@ export class RuntimeSupervisor {
     }
 
     const agentType = input.agentType ?? toAgentType(session.agentType);
-    const driver = this.adapterRegistry.get(agentType);
+    const runtimeKind = readRuntimeKind(session.defaultParams) ?? this.adapterRegistry.defaultRuntimeKind(agentType);
+    const driver = this.adapterRegistry.get(agentType, runtimeKind);
     const runId = createId("run");
     const launchContext = {
       session: {
@@ -168,6 +171,15 @@ export class RuntimeSupervisor {
       throw new Error(`Runtime run does not support permission responses: ${runId}`);
     }
     activeRun.handle.respondPermission(input);
+    this.options.permissionRequestStore?.resolve({
+      runId,
+      requestId: input.requestId,
+      status: input.outcome === "cancelled" ? "cancelled" : "approved",
+      selectedOptionId: input.optionId ?? null,
+    });
+    if (this.options.sessionStore.getRun(runId)?.status === "waiting_permission") {
+      this.options.sessionStore.setRunStatus(runId, "running");
+    }
   }
 
   stop(runId: string): void {
@@ -219,7 +231,7 @@ export class RuntimeSupervisor {
 
   private appendDrafts(activeRun: ActiveRun, drafts: RuntimeEventDraft[]): void {
     for (const draft of drafts) {
-      this.options.eventStore.append({
+      const event = this.options.eventStore.append({
         sessionId: activeRun.sessionId,
         runId: activeRun.runId,
         taskId: activeRun.taskId,
@@ -227,6 +239,10 @@ export class RuntimeSupervisor {
         payload: draft.payload,
         createdAt: nowIso(),
       });
+      if (draft.type === "permission_prompt") {
+        this.options.permissionRequestStore?.upsertPrompt({ event, payload: draft.payload });
+        this.options.sessionStore.setRunStatus(activeRun.runId, "waiting_permission");
+      }
     }
   }
 
@@ -271,4 +287,9 @@ function asJsonObject(value: JsonValue): JsonObject {
     return value;
   }
   return {};
+}
+
+function readRuntimeKind(value: JsonValue): RuntimeKind | null {
+  const object = asJsonObject(value);
+  return object.runtimeKind === "acp" || object.runtimeKind === "cli" ? object.runtimeKind : null;
 }

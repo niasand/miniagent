@@ -111,6 +111,7 @@ export type CreateSessionResponse = {
 
 export type WorkspaceAgentRuntime = {
   agentType: WorkspaceAgentType;
+  runtimeKind?: "cli" | "acp";
   label: string;
   status: WorkspaceAgentHealthStatus;
   command: string;
