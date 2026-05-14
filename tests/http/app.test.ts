@@ -48,6 +48,7 @@ describe("HTTP app", () => {
 
       const app = createApp(testDb.db, {
         defaultWorkspacePath: "/tmp/miniagent-default",
+        workspaceAllowlist: ["/tmp"],
         processFactory: new EchoProcessFactory(),
         runtimeRegistry: new RuntimeAdapterRegistry([
           new CodexRuntimeAdapter({ commandRunner: runner({ exitCode: 0, stdout: "codex 1.0.0", stderr: "" }) }),
@@ -147,6 +148,15 @@ describe("HTTP app", () => {
         body: JSON.stringify({ agentType: "unknown" }),
       });
       expect(invalidCreateSessionResponse.status).toBe(400);
+
+      const deniedCreateSessionResponse = await app.request("/api/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentType: "codex", workspacePath: "/etc" }),
+      });
+      expect(deniedCreateSessionResponse.status).toBe(403);
+      const deniedAudit = testDb.db.prepare("SELECT action FROM audit_logs WHERE action = 'workspace_denied'").get();
+      expect(deniedAudit).toEqual({ action: "workspace_denied" });
 
       const setDefaultResponse = await app.request("/api/agent-defaults", {
         method: "POST",

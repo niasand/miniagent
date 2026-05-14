@@ -17,6 +17,7 @@ import type { RuntimeProcessFactory } from "../runtime/process.js";
 import { RuntimeService } from "../runtime/runtime-service.js";
 import { RuntimeSupervisor } from "../runtime/runtime-supervisor.js";
 import { SchedulerService } from "../scheduler/scheduler-service.js";
+import { WorkspacePolicy, WorkspacePolicyError } from "../security/workspace-policy.js";
 import type { ScheduleRecord } from "../scheduler/schedule-store.js";
 import { SessionStore } from "../sessions/session-store.js";
 import { createWorkspaceSnapshot } from "../workspace/workspace-service.js";
@@ -51,12 +52,16 @@ export type AppOptions = {
   runtimeRegistry?: RuntimeAdapterRegistry;
   processFactory?: RuntimeProcessFactory;
   defaultWorkspacePath?: string;
+  workspaceAllowlist?: string[];
+  workspacePolicy?: WorkspacePolicy;
 };
 
 export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
   const app = new Hono<AppBindings>();
   const runtimeRegistry = options.runtimeRegistry ?? new RuntimeAdapterRegistry();
   const defaultWorkspacePath = options.defaultWorkspacePath ?? process.cwd();
+  const workspacePolicy =
+    options.workspacePolicy ?? new WorkspacePolicy(options.workspaceAllowlist ?? [defaultWorkspacePath, process.cwd()]);
   const eventStore = new EventStore(db);
   const sessionStore = new SessionStore(db, eventStore);
   const runtimeSupervisor = new RuntimeSupervisor({
@@ -65,7 +70,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
     sessionStore,
     processFactory: options.processFactory,
   });
-  const runtimeService = new RuntimeService(db, runtimeSupervisor);
+  const runtimeService = new RuntimeService(db, runtimeSupervisor, workspacePolicy);
 
   app.use("*", async (context, next) => {
     context.set("db", db);
@@ -211,7 +216,22 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
       return context.json({ error: "workspacePath must be a string" }, 400);
     }
 
-    const effectiveWorkspacePath = workspacePath?.trim() || defaultWorkspacePath;
+    let effectiveWorkspacePath: string;
+    try {
+      effectiveWorkspacePath = workspacePolicy.assertAllowed(workspacePath?.trim() || defaultWorkspacePath);
+    } catch (error) {
+      if (error instanceof WorkspacePolicyError) {
+        auditWorkspaceDenied(db, {
+          actorType: "web_user",
+          actorRef: null,
+          resourceType: "workspace",
+          resourceId: error.workspacePath,
+          error,
+        });
+        return context.json({ error: error.message }, 403);
+      }
+      throw error;
+    }
     const agentType =
       requestedAgentType ??
       new DefaultAgentService(db).resolve({
@@ -361,6 +381,9 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
       }
       if (message.includes("No queued task") || message.includes("active run")) {
         return context.json({ error: message }, 409);
+      }
+      if (error instanceof WorkspacePolicyError || message.startsWith("Workspace denied")) {
+        return context.json({ error: message }, 403);
       }
       return context.json({ error: message }, 500);
     }
@@ -622,7 +645,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
     }
 
     try {
-      const result = new FeishuInboundService(db).receiveMessage({
+      const result = new FeishuInboundService(db, undefined, { workspacePolicy }).receiveMessage({
         messageId,
         chatId,
         text,
@@ -662,6 +685,9 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
       }
       if (message.startsWith("No events found")) {
         return context.json({ error: message }, 409);
+      }
+      if (error instanceof WorkspacePolicyError || message.startsWith("Workspace denied")) {
+        return context.json({ error: message }, 403);
       }
       return context.json({ error: message }, 500);
     }
@@ -929,6 +955,31 @@ function mapAgentDefault(record: AgentDefaultRecord): AgentDefault {
     params: record.params,
     updatedAt: record.updatedAt,
   };
+}
+
+function auditWorkspaceDenied(
+  db: SqliteDatabase,
+  input: {
+    actorType: AuditActorType;
+    actorRef?: string | null;
+    resourceType: string;
+    resourceId: string | null;
+    error: WorkspacePolicyError;
+  },
+): void {
+  new AuditLogStore(db).insert({
+    actorType: input.actorType,
+    actorRef: input.actorRef ?? null,
+    action: "workspace_denied",
+    resourceType: input.resourceType,
+    resourceId: input.resourceId,
+    payload: {
+      workspacePath: input.error.workspacePath,
+      normalizedPath: input.error.normalizedPath,
+      reason: input.error.reason,
+      allowlist: input.error.allowlist,
+    },
+  });
 }
 
 function mapMemoryArchive(record: MemoryArchiveRecord): MemoryArchive {

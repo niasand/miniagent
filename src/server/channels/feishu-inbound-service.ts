@@ -5,6 +5,7 @@ import { ContextBudgetService } from "../context/context-budget-service.js";
 import { EventStore } from "../events/event-store.js";
 import { HandoffService } from "../handoff/handoff-service.js";
 import type { AgentType } from "../runtime/types.js";
+import { WorkspacePolicy, WorkspacePolicyError } from "../security/workspace-policy.js";
 import { SessionStore, type SessionRecord, type TaskRecord } from "../sessions/session-store.js";
 import { nowIso } from "../../shared/time.js";
 import type { JsonObject } from "../../shared/json.js";
@@ -59,6 +60,10 @@ export type FeishuInboundResult =
       tokenEstimate: number;
     };
 
+export type FeishuInboundOptions = {
+  workspacePolicy?: WorkspacePolicy;
+};
+
 const AGENTS: AgentType[] = ["codex", "claude", "trae"];
 
 export class FeishuInboundService {
@@ -68,14 +73,16 @@ export class FeishuInboundService {
   private readonly events: EventStore;
   private readonly handoff: HandoffService;
   private readonly sessions: SessionStore;
+  private readonly workspacePolicy: WorkspacePolicy;
 
-  constructor(private readonly db: SqliteDatabase, events = new EventStore(db)) {
+  constructor(private readonly db: SqliteDatabase, events = new EventStore(db), options: FeishuInboundOptions = {}) {
     this.auditLogs = new AuditLogStore(db);
     this.contextBudget = new ContextBudgetService(db, events);
     this.defaultAgents = new DefaultAgentService(db);
     this.events = events;
     this.handoff = new HandoffService(db, events);
     this.sessions = new SessionStore(db, events);
+    this.workspacePolicy = options.workspacePolicy ?? WorkspacePolicy.fromEnvironment([process.cwd()]);
   }
 
   receiveMessage(input: FeishuInboundMessageInput): FeishuInboundResult {
@@ -109,7 +116,11 @@ export class FeishuInboundService {
     }
 
     if (command?.name === "agent" && command.args[0] === "new") {
-      const workspacePath = command.args[2] ?? input.workspacePath ?? process.cwd();
+      const workspacePath = this.requireAllowedWorkspace(
+        input,
+        command.args[2] ?? input.workspacePath ?? process.cwd(),
+        "agent_new",
+      );
       const agentType = command.args[1]
         ? readAgentType(command.args[1])
         : this.resolveDefaultAgent(input, workspacePath);
@@ -184,18 +195,21 @@ export class FeishuInboundService {
       if (!session) {
         throw new Error(`Session not found: ${input.sessionId}`);
       }
+      this.requireAllowedWorkspace(input, session.workspacePath, "session_use");
       return session;
     }
 
     const existing = this.findLatestSessionByChat(input.chatId);
     if (existing) {
+      this.requireAllowedWorkspace(input, existing.workspacePath, "session_use");
       return existing;
     }
 
+    const workspacePath = this.requireAllowedWorkspace(input, input.workspacePath ?? process.cwd(), "session_create");
     return this.sessions.createSession({
       title: "Feishu Codex",
-      workspacePath: input.workspacePath ?? process.cwd(),
-      agentType: this.resolveDefaultAgent(input, input.workspacePath ?? process.cwd()),
+      workspacePath,
+      agentType: this.resolveDefaultAgent(input, workspacePath),
       channelType: "feishu",
       channelRef: input.chatId,
     });
@@ -261,6 +275,23 @@ export class FeishuInboundService {
       payload,
       createdAt: input.receivedAt ?? nowIso(),
     });
+  }
+
+  private requireAllowedWorkspace(input: FeishuInboundMessageInput, workspacePath: string, action: string): string {
+    try {
+      return this.workspacePolicy.assertAllowed(workspacePath);
+    } catch (error) {
+      if (error instanceof WorkspacePolicyError) {
+        this.auditRemoteCommand(input, "workspace_denied", {
+          action,
+          workspacePath: error.workspacePath,
+          normalizedPath: error.normalizedPath,
+          reason: error.reason,
+          allowlist: error.allowlist,
+        });
+      }
+      throw error;
+    }
   }
 
   private resolveDefaultAgent(input: FeishuInboundMessageInput, workspacePath: string): AgentType {

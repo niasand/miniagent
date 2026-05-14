@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { EventStore } from "../../src/server/events/event-store.js";
 import { FeishuInboundService } from "../../src/server/channels/feishu-inbound-service.js";
+import { WorkspacePolicy } from "../../src/server/security/workspace-policy.js";
 import { SessionStore } from "../../src/server/sessions/session-store.js";
 import { createTestDatabase, type TestDatabase } from "../support/db.js";
 
@@ -14,7 +15,9 @@ describe("FeishuInboundService", () => {
     testDb = createTestDatabase();
     events = new EventStore(testDb.db);
     sessions = new SessionStore(testDb.db, events);
-    service = new FeishuInboundService(testDb.db, events);
+    service = new FeishuInboundService(testDb.db, events, {
+      workspacePolicy: new WorkspacePolicy(["/tmp", process.cwd()]),
+    });
   });
 
   afterEach(() => {
@@ -136,6 +139,19 @@ describe("FeishuInboundService", () => {
       status: "healthy",
       tokenEstimate: expect.any(Number),
     });
+  });
+
+  it("rejects remote sessions outside the workspace allowlist", () => {
+    expect(() =>
+      service.receiveMessage({
+        messageId: "msg-denied",
+        chatId: "chat-1",
+        userId: "user-1",
+        text: "/agent new codex /etc",
+      }),
+    ).toThrow("Workspace denied");
+
+    expect(readAuditActions()).toContain("workspace_denied");
   });
 
   function countRows(table: string): number {
