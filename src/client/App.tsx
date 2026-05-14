@@ -11,6 +11,7 @@ import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { setAgentDefault } from "./api/agents.js";
 import { compactSessionContext, restartSessionContext } from "./api/context.js";
 import { fetchEvents } from "./api/events.js";
 import { createHandoff } from "./api/handoff.js";
@@ -109,6 +110,20 @@ export default function App() {
       queryClient.setQueryData(["workspace", response.workspace.selectedSessionId], response.workspace);
     },
   });
+  const defaultAgent = useMutation({
+    mutationFn: (agentType: WorkspaceAgentType) =>
+      setAgentDefault({
+        scopeType: "system",
+        scopeRef: "global",
+        agentType,
+      }),
+    onMutate: (agentType) => {
+      setDefaultAgentType(agentType);
+    },
+    onSuccess: (response) => {
+      setDefaultAgentType(response.default.agentType);
+    },
+  });
   const restartContext = useMutation({
     mutationFn: (sessionId: string) => restartSessionContext(sessionId, { actorType: "web_user" }),
     onSuccess: (response) => {
@@ -158,7 +173,9 @@ export default function App() {
       <div className="app-shell">
         <Topbar
           creatingSession={newSession.isPending}
-          onSelectDefaultAgent={setDefaultAgentType}
+          defaultAgentType={defaultAgentType}
+          defaultAgentError={defaultAgent.error?.message}
+          onSelectDefaultAgent={(agentType) => defaultAgent.mutate(agentType)}
           onNewSession={() => setNewSessionOpen(true)}
         />
         <NewSessionDialog
@@ -283,10 +300,14 @@ function useWorkspaceEventStream(sessionId: string, enabled: boolean) {
 
 function Topbar({
   creatingSession,
+  defaultAgentType,
+  defaultAgentError,
   onSelectDefaultAgent,
   onNewSession,
 }: {
   creatingSession: boolean;
+  defaultAgentType: WorkspaceAgentType;
+  defaultAgentError?: string;
   onSelectDefaultAgent: (agentType: WorkspaceAgentType) => void;
   onNewSession: () => void;
 }) {
@@ -307,21 +328,25 @@ function Topbar({
           <p className="truncate text-xs text-muted-foreground">Local multi-agent control plane</p>
         </div>
       </div>
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        {agentButtons.map((agent) => (
-          <Button
-            key={agent.agentType}
-            size="sm"
-            onClick={() => onSelectDefaultAgent(agent.agentType)}
-          >
-            <Bot className="h-4 w-4" />
-            {agent.label}
+      <div className="grid justify-items-end gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {agentButtons.map((agent) => (
+            <Button
+              key={agent.agentType}
+              size="sm"
+              variant={defaultAgentType === agent.agentType ? "primary" : "default"}
+              onClick={() => onSelectDefaultAgent(agent.agentType)}
+            >
+              <Bot className="h-4 w-4" />
+              {agent.label}
+            </Button>
+          ))}
+          <Button size="sm" variant="primary" disabled={creatingSession} onClick={onNewSession}>
+            <Plus className="h-4 w-4" />
+            {creatingSession ? "Creating..." : "New Session"}
           </Button>
-        ))}
-        <Button size="sm" variant="primary" disabled={creatingSession} onClick={onNewSession}>
-          <Plus className="h-4 w-4" />
-          {creatingSession ? "Creating..." : "New Session"}
-        </Button>
+        </div>
+        {defaultAgentError ? <p className="text-xs text-red-600">{defaultAgentError}</p> : null}
       </div>
     </header>
   );
