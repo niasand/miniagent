@@ -81,6 +81,28 @@ describe("EventStore", () => {
     expect(count.count).toBe(0);
   });
 
+  it("redacts secrets before events are persisted", () => {
+    const event = events.append({
+      sessionId: "session-1",
+      runId: "run-1",
+      taskId: "task-1",
+      type: "runtime_stderr",
+      payload: {
+        text: "Authorization: Bearer abcdefghijklmnop and api_key=secret-value",
+        env: {
+          OPENAI_API_KEY: "sk-1234567890abcdefghijklmnop",
+        },
+      },
+    });
+
+    expect(event.payload).toEqual({
+      text: "Authorization: Bearer [REDACTED] and api_key=[REDACTED]",
+      env: {
+        OPENAI_API_KEY: "[REDACTED]",
+      },
+    });
+  });
+
   it("rejects run_seq without a run_id before touching SQLite", () => {
     expect(() => {
       events.append({

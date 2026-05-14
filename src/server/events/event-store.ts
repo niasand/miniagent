@@ -2,6 +2,7 @@ import type { SqliteDatabase } from "../db/migrate.js";
 import { createId } from "../../shared/ids.js";
 import { parseJson, stringifyJson, type JsonValue } from "../../shared/json.js";
 import { nowIso } from "../../shared/time.js";
+import { redactJson } from "../security/redaction.js";
 
 export type AppendEventInput = {
   id?: string;
@@ -122,7 +123,7 @@ export class EventStore {
         taskId: input.taskId ?? null,
         runSeq,
         type: input.type,
-        payloadJson: stringifyJson(input.payload ?? {}),
+        payloadJson: stringifyJson(redactJson(input.payload ?? {})),
         schemaVersion: input.schemaVersion ?? 1,
         causationId: input.causationId ?? null,
         correlationId: input.correlationId ?? null,

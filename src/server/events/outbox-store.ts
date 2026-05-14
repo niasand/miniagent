@@ -2,6 +2,7 @@ import type { SqliteDatabase } from "../db/migrate.js";
 import { createId } from "../../shared/ids.js";
 import { stringifyJson, type JsonValue } from "../../shared/json.js";
 import { addMillisecondsIso, nowIso } from "../../shared/time.js";
+import { redactJson } from "../security/redaction.js";
 
 export type OutboxChannel = "web" | "feishu";
 export type OutboxKind = "web_event" | "feishu_card_create" | "feishu_card_update" | "feishu_text";
@@ -99,7 +100,7 @@ export class OutboxStore {
         channelType: input.channelType,
         targetRef: input.targetRef,
         kind: input.kind,
-        viewModelJson: stringifyJson(input.viewModel),
+        viewModelJson: stringifyJson(redactJson(input.viewModel)),
         idempotencyKey: input.idempotencyKey,
         status: input.status ?? "pending",
         maxAttempts: input.maxAttempts ?? 5,

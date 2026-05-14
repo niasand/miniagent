@@ -2,6 +2,7 @@ import type { SqliteDatabase } from "../db/migrate.js";
 import { createId } from "../../shared/ids.js";
 import { parseJson, stringifyJson, type JsonValue } from "../../shared/json.js";
 import { nowIso } from "../../shared/time.js";
+import { redactJson } from "../security/redaction.js";
 
 export type AuditActorType = "web_user" | "feishu_user" | "system" | "agent";
 
@@ -62,7 +63,7 @@ export class AuditLogStore {
         action: input.action,
         resourceType: input.resourceType,
         resourceId: input.resourceId ?? null,
-        payloadJson: stringifyJson(input.payload ?? {}),
+        payloadJson: stringifyJson(redactJson(input.payload ?? {})),
         createdAt,
       }) as AuditLogRow;
 
