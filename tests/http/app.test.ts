@@ -586,6 +586,58 @@ describe("HTTP app", () => {
       testDb.close();
     }
   });
+
+  it("stops an active runtime run", async () => {
+    const testDb = createTestDatabase();
+    try {
+      const eventStore = new EventStore(testDb.db);
+      const sessionStore = new SessionStore(testDb.db, eventStore);
+      sessionStore.createSession({
+        id: "session-stop",
+        title: "Stop session",
+        agentType: "codex",
+        workspacePath: "/tmp/miniagent-test",
+      });
+      sessionStore.createTask({
+        id: "task-stop",
+        sessionId: "session-stop",
+        sourceType: "web",
+        type: "message",
+        input: { text: "keep running" },
+      });
+
+      const process = new HangingProcess();
+      const app = createApp(testDb.db, {
+        workspaceAllowlist: ["/tmp"],
+        processFactory: { spawn: () => process },
+        runtimeRegistry: new RuntimeAdapterRegistry([
+          new CodexRuntimeAdapter({ commandRunner: runner({ exitCode: 0, stdout: "codex 1.0.0", stderr: "" }) }),
+        ]),
+      });
+
+      const startResponse = await app.request("/api/sessions/session-stop/runs/start", { method: "POST" });
+      const started = await startResponse.json();
+      expect(startResponse.status).toBe(201);
+      expect(started).toMatchObject({ status: "running", runId: expect.any(String) });
+
+      const stopResponse = await app.request(`/api/runs/${started.runId}/stop`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ actorType: "web_user", actorRef: "user-1" }),
+      });
+      expect(stopResponse.status).toBe(200);
+      await expect(stopResponse.json()).resolves.toMatchObject({
+        runId: started.runId,
+        status: "cancelled",
+        workspace: {
+          selectedSessionId: "session-stop",
+        },
+      });
+      expect(process.stoppedSignal).toBe("SIGTERM");
+    } finally {
+      testDb.close();
+    }
+  });
 });
 
 function runner(result: CommandResult): CommandRunner {
@@ -631,6 +683,30 @@ class EchoProcess implements RuntimeProcess {
   onOutput(handler: (chunk: RuntimeOutputChunk) => void): void {
     this.outputHandler = handler;
   }
+
+  onExit(handler: (exit: RuntimeProcessExit) => void): void {
+    this.exitHandler = handler;
+  }
+}
+
+class HangingProcess implements RuntimeProcess {
+  readonly pid = 6789;
+  stoppedSignal: string | null = null;
+  private exitHandler: ((exit: RuntimeProcessExit) => void) | null = null;
+
+  write(): void {}
+
+  stop(signal = "SIGTERM"): void {
+    this.stoppedSignal = signal;
+    this.exitHandler?.({
+      exitCode: null,
+      signal,
+      message: signal,
+      exitedAt: "2026-05-13T00:00:01.000Z",
+    });
+  }
+
+  onOutput(): void {}
 
   onExit(handler: (exit: RuntimeProcessExit) => void): void {
     this.exitHandler = handler;

@@ -46,6 +46,7 @@ import type {
   RestartContextResponse,
   SetAgentDefaultResponse,
   StartRunResponse,
+  StopRunResponse,
   UpdateScheduleResponse,
   WorkspaceSchedule,
   MemoryArchive,
@@ -102,6 +103,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
         "/api/events/stream",
         "/api/sessions/:sessionId/context/compact",
         "/api/sessions/:sessionId/context/restart",
+        "/api/runs/:runId/stop",
         "/api/schedules",
         "/api/schedules/due/run",
         "/api/feishu/messages",
@@ -548,6 +550,59 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
       }
       if (error instanceof WorkspacePolicyError || message.startsWith("Workspace denied")) {
         return context.json({ error: message }, 403);
+      }
+      return context.json({ error: message }, 500);
+    }
+  });
+
+  app.post("/api/runs/:runId/stop", async (context) => {
+    const db = context.get("db");
+    const body = await readOptionalJsonBody(context.req);
+    if (!body.ok) {
+      return context.json({ error: body.error }, 400);
+    }
+
+    const actorType = body.value.actorType ?? "web_user";
+    if (!isAuditActorType(actorType)) {
+      return context.json({ error: "actorType must be one of: web_user, feishu_user, system, agent" }, 400);
+    }
+
+    const actorRef = body.value.actorRef;
+    if (actorRef !== undefined && actorRef !== null && typeof actorRef !== "string") {
+      return context.json({ error: "actorRef must be a string or null" }, 400);
+    }
+
+    const runId = context.req.param("runId");
+    const run = new SessionStore(db).getRun(runId);
+    if (!run) {
+      return context.json({ error: `Run not found: ${runId}` }, 404);
+    }
+
+    try {
+      runtimeSupervisor.stop(runId);
+      new AuditLogStore(db).insert({
+        actorType,
+        actorRef: typeof actorRef === "string" ? actorRef : null,
+        action: "run_stop",
+        resourceType: "run",
+        resourceId: runId,
+        payload: {
+          sessionId: run.sessionId,
+        },
+      });
+      projectReadModelsUntilIdle(db);
+
+      const stopped = new SessionStore(db).getRun(runId) ?? run;
+      const response: StopRunResponse = {
+        runId,
+        status: stopped.status,
+        workspace: createWorkspaceSnapshot(db, { selectedSessionId: run.sessionId }),
+      };
+      return context.json(response);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Runtime stop failed";
+      if (message.includes("not active")) {
+        return context.json({ error: message }, 409);
       }
       return context.json({ error: message }, 500);
     }

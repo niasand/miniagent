@@ -148,6 +148,12 @@ export type StartRunResponse = {
   workspace: WorkspaceSnapshot;
 };
 
+export type StopRunResponse = {
+  runId: string;
+  status: string;
+  workspace: WorkspaceSnapshot;
+};
+
 export type CompactContextRequest = {
   actorType?: WorkspaceActorType;
   budgetTokens?: number;
