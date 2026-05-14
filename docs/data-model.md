@@ -319,6 +319,10 @@ Cron and one-shot task definitions.
 | `timezone` | TEXT | Default `Asia/Shanghai` |
 | `payload_json` | TEXT | Task payload |
 | `next_run_at` | TEXT NULL | Scheduler cursor |
+| `locked_by` | TEXT NULL | Worker lease owner |
+| `locked_at` | TEXT NULL | Lease acquisition time |
+| `lease_expires_at` | TEXT NULL | Lease expiry for recovery |
+| `last_run_at` | TEXT NULL | Last successful trigger time |
 | `created_at` | TEXT |  |
 | `updated_at` | TEXT |  |
 

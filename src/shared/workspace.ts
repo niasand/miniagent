@@ -117,3 +117,49 @@ export type CompactContextResponse = {
   contextBudget: WorkspaceContextBudget;
   workspace: WorkspaceSnapshot;
 };
+
+export type WorkspaceScheduleKind = "once" | "cron";
+export type WorkspaceScheduleStatus = "active" | "paused" | "cancelled";
+
+export type WorkspaceSchedule = {
+  id: string;
+  sessionId: string;
+  status: WorkspaceScheduleStatus;
+  kind: WorkspaceScheduleKind;
+  cronExpr: string | null;
+  runAt: string | null;
+  timezone: string;
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+};
+
+export type CreateScheduleRequest = {
+  sessionId: string;
+  kind: WorkspaceScheduleKind;
+  cronExpr?: string | null;
+  runAt?: string | null;
+  timezone?: string;
+  payload?: Record<string, unknown>;
+  actorType?: WorkspaceActorType;
+  actorRef?: string | null;
+};
+
+export type CreateScheduleResponse = {
+  schedule: WorkspaceSchedule;
+};
+
+export type ListSchedulesResponse = {
+  schedules: WorkspaceSchedule[];
+};
+
+export type UpdateScheduleResponse = {
+  schedule: WorkspaceSchedule;
+};
+
+export type RunDueSchedulesResponse = {
+  triggered: Array<{
+    schedule: WorkspaceSchedule;
+    taskId: string;
+  }>;
+  workspace: WorkspaceSnapshot;
+};

@@ -137,6 +137,35 @@ describe("SQLite schema", () => {
     });
   });
 
+  it("keeps Scheduler lease fields available", () => {
+    insertActiveRun(db);
+
+    db.prepare(
+      `
+      INSERT INTO schedules (
+        id, session_id, status, kind, run_at, timezone, payload_json, next_run_at,
+        locked_by, locked_at, lease_expires_at, last_run_at
+      )
+      VALUES (
+        'schedule-1', 'session-1', 'active', 'once', '2026-05-13T00:00:00.000Z',
+        'Asia/Shanghai', '{}', '2026-05-13T00:00:00.000Z',
+        'worker-1', '2026-05-13T00:00:00.000Z', '2026-05-13T00:00:30.000Z',
+        '2026-05-13T00:00:00.000Z'
+      )
+    `,
+    ).run();
+
+    const row = db
+      .prepare("SELECT locked_by, lease_expires_at, last_run_at FROM schedules WHERE id = 'schedule-1'")
+      .get() as { locked_by: string; lease_expires_at: string; last_run_at: string };
+
+    expect(row).toEqual({
+      locked_by: "worker-1",
+      lease_expires_at: "2026-05-13T00:00:30.000Z",
+      last_run_at: "2026-05-13T00:00:00.000Z",
+    });
+  });
+
   it("stores projector replay offsets by global sequence", () => {
     insertActiveRun(db);
     const event = insertEvent(db, "event-1", 1);
@@ -170,7 +199,7 @@ describe("SQLite schema", () => {
       .all()
       .map((row) => (row as { version: string }).version);
 
-    expect(rows).toEqual(["0001_initial", "0002_context_budgets"]);
+    expect(rows).toEqual(["0001_initial", "0002_context_budgets", "0003_schedule_leases"]);
   });
 });
 

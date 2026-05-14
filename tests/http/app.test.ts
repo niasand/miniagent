@@ -202,6 +202,98 @@ describe("HTTP app", () => {
       });
       expect(noQueuedRunResponse.status).toBe(409);
 
+      const createScheduleResponse = await app.request("/api/schedules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: "session-1",
+          kind: "once",
+          runAt: "2026-05-13T00:10:00.000Z",
+          payload: {
+            taskType: "message",
+            input: { text: "Scheduled follow up" },
+          },
+          actorType: "web_user",
+          actorRef: "user-1",
+        }),
+      });
+      expect(createScheduleResponse.status).toBe(201);
+
+      const createdSchedule = await createScheduleResponse.json();
+      expect(createdSchedule.schedule).toMatchObject({
+        id: expect.any(String),
+        sessionId: "session-1",
+        kind: "once",
+        status: "active",
+        nextRunAt: "2026-05-13T00:10:00.000Z",
+      });
+
+      const listSchedulesResponse = await app.request("/api/schedules?sessionId=session-1");
+      const schedules = await listSchedulesResponse.json();
+      expect(schedules.schedules).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: createdSchedule.schedule.id })]),
+      );
+
+      const runDueResponse = await app.request("/api/schedules/due/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workerId: "worker-1",
+          now: "2026-05-13T00:10:00.000Z",
+        }),
+      });
+      expect(runDueResponse.status).toBe(200);
+
+      const runDue = await runDueResponse.json();
+      expect(runDue.triggered).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            schedule: expect.objectContaining({
+              id: createdSchedule.schedule.id,
+              nextRunAt: null,
+            }),
+            taskId: expect.any(String),
+          }),
+        ]),
+      );
+      expect(runDue.workspace.keyEvents.at(-1)).toMatchObject([expect.any(String), "task_created", "system"]);
+
+      const createCronResponse = await app.request("/api/schedules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: "session-1",
+          kind: "cron",
+          cronExpr: "*/5 * * * *",
+        }),
+      });
+      expect(createCronResponse.status).toBe(201);
+      const createdCron = await createCronResponse.json();
+
+      const pauseScheduleResponse = await app.request(`/api/schedules/${createdCron.schedule.id}/pause`, {
+        method: "POST",
+      });
+      expect(pauseScheduleResponse.status).toBe(200);
+      await expect(pauseScheduleResponse.json()).resolves.toMatchObject({
+        schedule: { status: "paused" },
+      });
+
+      const resumeScheduleResponse = await app.request(`/api/schedules/${createdCron.schedule.id}/resume`, {
+        method: "POST",
+      });
+      expect(resumeScheduleResponse.status).toBe(200);
+      await expect(resumeScheduleResponse.json()).resolves.toMatchObject({
+        schedule: { status: "active", nextRunAt: expect.any(String) },
+      });
+
+      const cancelScheduleResponse = await app.request(`/api/schedules/${createdCron.schedule.id}/cancel`, {
+        method: "POST",
+      });
+      expect(cancelScheduleResponse.status).toBe(200);
+      await expect(cancelScheduleResponse.json()).resolves.toMatchObject({
+        schedule: { status: "cancelled" },
+      });
+
       const compactResponse = await app.request("/api/sessions/session-1/context/compact", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

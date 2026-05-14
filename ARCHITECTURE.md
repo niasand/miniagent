@@ -126,6 +126,8 @@ Owns cron and one-shot task creation.
 Responsibilities:
 
 - Create tasks at scheduled time.
+- Claim due schedules through SQLite leases and idempotent task dedupe keys.
+- Advance cron cursors only after a normal Task is created.
 - Respect Session concurrency policy.
 - Record skipped, queued, failed, and completed scheduled runs.
 
