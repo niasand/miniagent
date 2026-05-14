@@ -47,6 +47,7 @@ export default function App() {
     snapshot.sessions.find((session) => session.id === selectedSessionId) ??
     snapshot.sessions.find((session) => session.id === snapshot.selectedSessionId) ??
     snapshot.sessions[0];
+  const hasRealSelectedSession = workspace.data.sessions.some((session) => session.id === selected.id);
   const handoff = useMutation({
     mutationFn: (input: { sessionId: string; targetAgentType: WorkspaceAgentType }) =>
       createHandoff(input.sessionId, {
@@ -59,12 +60,31 @@ export default function App() {
     },
   });
   const sendMessage = useMutation({
-    mutationFn: (input: { sessionId: string; text: string }) =>
-      sendSessionMessage(input.sessionId, {
+    mutationFn: async (input: {
+      sessionId: string;
+      text: string;
+      hasRealSession: boolean;
+      agentType: WorkspaceAgentType;
+      title: string;
+    }) => {
+      const sessionId = input.hasRealSession
+        ? input.sessionId
+        : (
+            await createSession({
+              agentType: input.agentType,
+              title: input.title,
+            })
+          ).sessionId;
+
+      return sendSessionMessage(sessionId, {
         text: input.text,
-    }),
+      });
+    },
     onSuccess: (response) => {
       queryClient.setQueryData(["workspace", response.workspace.selectedSessionId], response.workspace);
+      if (response.workspace.selectedSessionId) {
+        setSelectedSessionId(response.workspace.selectedSessionId);
+      }
       setDraft("");
     },
   });
@@ -99,7 +119,13 @@ export default function App() {
             onSend={() => {
               const text = draft.trim();
               if (text) {
-                sendMessage.mutate({ sessionId: selected.id, text });
+                sendMessage.mutate({
+                  sessionId: selected.id,
+                  text,
+                  hasRealSession: hasRealSelectedSession,
+                  agentType: selected.agentType,
+                  title: selected.title,
+                });
               }
             }}
           />
