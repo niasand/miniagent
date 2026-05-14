@@ -562,6 +562,24 @@ export class SessionStore {
     return row ? mapAgentRunRow(row) : null;
   }
 
+  getLatestExternalSessionId(sessionId: string, agentType: string): string | null {
+    const row = this.db
+      .prepare(
+        `
+        SELECT external_session_id
+        FROM agent_runs
+        WHERE session_id = ?
+          AND agent_type = ?
+          AND external_session_id IS NOT NULL
+        ORDER BY COALESCE(started_at, created_at) DESC, id DESC
+        LIMIT 1
+      `,
+      )
+      .get(sessionId, agentType) as { external_session_id: string | null } | undefined;
+
+    return row?.external_session_id ?? null;
+  }
+
   private insertTask(input: CreateTaskInput, timestamp: string): TaskRecord {
     const row = this.db
       .prepare(

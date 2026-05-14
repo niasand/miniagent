@@ -24,6 +24,7 @@ export type RuntimeSupervisorOptions = {
   eventStore: EventStore;
   processFactory?: RuntimeProcessFactory;
   maxTextDeltaBytes?: number;
+  cancelKillTimeoutMs?: number;
 };
 
 export type StartRuntimeTaskInput = {
@@ -46,18 +47,21 @@ type ActiveRun = {
   process: RuntimeProcess;
   handle: RuntimeRunHandle;
   batcher: TextDeltaBatcher;
+  cancelTimer: ReturnType<typeof setTimeout> | null;
 };
 
 export class RuntimeSupervisor {
   private readonly adapterRegistry: RuntimeAdapterRegistry;
   private readonly processFactory: RuntimeProcessFactory;
   private readonly maxTextDeltaBytes: number;
+  private readonly cancelKillTimeoutMs: number;
   private readonly activeRuns = new Map<string, ActiveRun>();
 
   constructor(private readonly options: RuntimeSupervisorOptions) {
     this.adapterRegistry = options.adapterRegistry ?? new RuntimeAdapterRegistry();
     this.processFactory = options.processFactory ?? new ChildProcessFactory();
     this.maxTextDeltaBytes = options.maxTextDeltaBytes ?? 4_096;
+    this.cancelKillTimeoutMs = options.cancelKillTimeoutMs ?? 5_000;
   }
 
   startTask(input: StartRuntimeTaskInput): StartedRuntimeRun {
@@ -75,6 +79,12 @@ export class RuntimeSupervisor {
     const runtimeKind = readRuntimeKind(session.defaultParams) ?? this.adapterRegistry.defaultRuntimeKind(agentType);
     const driver = this.adapterRegistry.get(agentType, runtimeKind);
     const runId = createId("run");
+    const taskInput = withResolvedResumeInput({
+      input: task.input,
+      taskType: task.type,
+      runtimeKind,
+      externalSessionId: this.options.sessionStore.getLatestExternalSessionId(session.id, agentType),
+    });
     const launchContext = {
       session: {
         id: session.id,
@@ -85,7 +95,7 @@ export class RuntimeSupervisor {
       task: {
         id: task.id,
         type: task.type,
-        input: task.input,
+        input: taskInput,
       },
       run: { id: runId },
     };
@@ -138,6 +148,7 @@ export class RuntimeSupervisor {
         process,
         handle,
         batcher: new TextDeltaBatcher(this.maxTextDeltaBytes),
+        cancelTimer: null,
       };
       this.activeRuns.set(run.id, activeRun);
       if (earlyDrafts.length > 0) {
@@ -183,7 +194,24 @@ export class RuntimeSupervisor {
   }
 
   stop(runId: string): void {
-    this.requireActiveRun(runId).handle.stop();
+    const activeRun = this.requireActiveRun(runId);
+    this.options.sessionStore.setRunStatus(runId, "stopping");
+    activeRun.handle.stop();
+    if (!this.activeRuns.has(runId)) {
+      return;
+    }
+    if (this.cancelKillTimeoutMs <= 0 || activeRun.cancelTimer) {
+      return;
+    }
+
+    activeRun.cancelTimer = setTimeout(() => {
+      const current = this.activeRuns.get(runId);
+      if (!current) {
+        return;
+      }
+      this.options.sessionStore.updateRunProtocolState(runId, { cancelState: "killed" });
+      current.process.stop("SIGTERM");
+    }, this.cancelKillTimeoutMs);
   }
 
   flush(runId: string): void {
@@ -215,6 +243,9 @@ export class RuntimeSupervisor {
     }
 
     this.appendDrafts(activeRun, activeRun.batcher.flush());
+    if (activeRun.cancelTimer) {
+      clearTimeout(activeRun.cancelTimer);
+    }
 
     const classification = classifyExit(activeRun.driver, exit);
     this.options.sessionStore.finishRun({
@@ -292,4 +323,22 @@ function asJsonObject(value: JsonValue): JsonObject {
 function readRuntimeKind(value: JsonValue): RuntimeKind | null {
   const object = asJsonObject(value);
   return object.runtimeKind === "acp" || object.runtimeKind === "cli" ? object.runtimeKind : null;
+}
+
+function withResolvedResumeInput(input: {
+  input: JsonValue;
+  taskType: string;
+  runtimeKind: RuntimeKind;
+  externalSessionId: string | null;
+}): JsonValue {
+  if (input.runtimeKind !== "acp" || input.taskType !== "resume" || !input.externalSessionId) {
+    return input.input;
+  }
+
+  const object = asJsonObject(input.input);
+  if (typeof object.externalSessionId === "string") {
+    return input.input;
+  }
+
+  return { ...object, externalSessionId: input.externalSessionId };
 }

@@ -146,6 +146,57 @@ describe("AcpRuntimeDriver", () => {
     ]);
   });
 
+  it("auto-resumes the latest ACP session for resume tasks", async () => {
+    const fixture = createAcpSupervisorFixture();
+    const first = fixture.supervisor.startTask({ sessionId: "session-1", taskId: "task-1" });
+    fixture.supervisor.sendInput(first.run.id, { taskType: "message", input: { text: "first" } });
+    await eventually(() => {
+      expect(fixture.sessionStore.getRun(first.run.id)).toMatchObject({ status: "succeeded" });
+    });
+
+    fixture.sessionStore.createTask({
+      id: "task-auto-resume",
+      sessionId: "session-1",
+      sourceType: "system",
+      type: "resume",
+      input: { text: "continue from previous ACP session" },
+    });
+    const second = fixture.supervisor.startTask({ sessionId: "session-1", taskId: "task-auto-resume" });
+    fixture.supervisor.sendInput(second.run.id, {
+      taskType: "resume",
+      input: { text: "continue from previous ACP session" },
+    });
+
+    await eventually(() => {
+      expect(fixture.sessionStore.getRun(second.run.id)).toMatchObject({ status: "succeeded" });
+    });
+
+    expect(fixture.process.messagesFor("session/resume").at(-1)?.params).toMatchObject({
+      sessionId: "acp-session-1",
+    });
+  });
+
+  it("kills the ACP process when cancel is not acknowledged", async () => {
+    const fixture = createAcpSupervisorFixture({
+      holdPromptUntilCancel: true,
+      ignoreCancel: true,
+      cancelKillTimeoutMs: 1,
+    });
+    const started = fixture.supervisor.startTask({ sessionId: "session-1", taskId: "task-1" });
+
+    fixture.supervisor.sendInput(started.run.id, { taskType: "message", input: { text: "long task" } });
+    await eventually(() => {
+      expect(fixture.process.methods()).toContain("session/prompt");
+    });
+
+    fixture.supervisor.stop(started.run.id);
+
+    await eventually(() => {
+      expect(fixture.process.stoppedSignal).toBe("SIGTERM");
+      expect(fixture.sessionStore.getRun(started.run.id)).toMatchObject({ cancelState: "killed" });
+    });
+  });
+
   it("serves ACP file reads from the session workspace with redaction", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "miniagent-acp-fs-"));
     const filePath = join(tempDir, "notes.txt");
@@ -208,6 +259,7 @@ describe("AcpRuntimeDriver", () => {
       sessionStore,
       processFactory: factory,
       maxTextDeltaBytes: 10_000,
+      cancelKillTimeoutMs: options.cancelKillTimeoutMs,
     });
 
     return { eventStore, factory, permissionRequests, process, sessionStore, supervisor };
@@ -224,9 +276,11 @@ type JsonRpcMessage = {
 
 type FakeAcpProcessOptions = {
   holdPromptUntilCancel?: boolean;
+  ignoreCancel?: boolean;
   requestPermission?: boolean;
   readFilePath?: string;
   workspacePath?: string;
+  cancelKillTimeoutMs?: number;
   cleanup?: () => void;
 };
 
@@ -286,6 +340,10 @@ class FakeAcpProcess implements RuntimeProcess {
     return this.messages.find((message) => message.method === method) ?? null;
   }
 
+  messagesFor(method: string): JsonRpcMessage[] {
+    return this.messages.filter((message) => message.method === method);
+  }
+
   response(id: string): JsonRpcMessage | null {
     return this.responses.find((message) => String(message.id) === id) ?? null;
   }
@@ -321,6 +379,9 @@ class FakeAcpProcess implements RuntimeProcess {
         this.handlePrompt(message);
         break;
       case "session/cancel":
+        if (this.options.ignoreCancel) {
+          break;
+        }
         if (this.pendingPromptId !== null) {
           this.send({ jsonrpc: "2.0", id: this.pendingPromptId, result: { stopReason: "cancelled" } });
           this.pendingPromptId = null;
