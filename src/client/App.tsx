@@ -1,7 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Bot,
   Boxes,
   CircleDot,
+  Folder,
+  Plus,
+  X,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
@@ -17,7 +21,7 @@ import { Button } from "./components/ui/button.js";
 import { fallbackWorkspace } from "./data/mock-workspace.js";
 import { cn } from "./lib/utils.js";
 import { useWorkspaceStore } from "./state/workspace-store.js";
-import type { WorkspaceAgentType, WorkspaceSessionSummary } from "../shared/workspace.js";
+import type { CreateSessionRequest, WorkspaceAgentType, WorkspaceSessionSummary } from "../shared/workspace.js";
 
 const statusTone = {
   running: "green",
@@ -59,6 +63,7 @@ export default function App() {
   const setDefaultAgentType = useWorkspaceStore((state) => state.setDefaultAgentType);
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState("Ask Codex to turn the data model into migrations...");
+  const [newSessionOpen, setNewSessionOpen] = useState(false);
 
   const workspace = useQuery({
     queryKey: ["workspace", selectedSessionId],
@@ -121,13 +126,11 @@ export default function App() {
     },
   });
   const newSession = useMutation({
-    mutationFn: () =>
-      createSession({
-        agentType: defaultAgentType,
-      }),
+    mutationFn: (request: CreateSessionRequest) => createSession(request),
     onSuccess: (response) => {
       queryClient.setQueryData(["workspace", response.workspace.selectedSessionId], response.workspace);
       setSelectedSessionId(response.sessionId);
+      setNewSessionOpen(false);
     },
   });
 
@@ -137,7 +140,15 @@ export default function App() {
         <Topbar
           creatingSession={newSession.isPending}
           onSelectDefaultAgent={setDefaultAgentType}
-          onNewSession={() => newSession.mutate()}
+          onNewSession={() => setNewSessionOpen(true)}
+        />
+        <NewSessionDialog
+          open={newSessionOpen}
+          creating={newSession.isPending}
+          defaultAgentType={defaultAgentType}
+          error={newSession.error?.message}
+          onClose={() => setNewSessionOpen(false)}
+          onCreate={(request) => newSession.mutate(request)}
         />
         <div className="deck">
           <Sidebar sessions={snapshot.sessions} selected={selected} />
@@ -268,14 +279,126 @@ function Topbar({
             size="sm"
             onClick={() => onSelectDefaultAgent(agent.agentType)}
           >
+            <Bot className="h-4 w-4" />
             {agent.label}
           </Button>
         ))}
         <Button size="sm" variant="primary" disabled={creatingSession} onClick={onNewSession}>
+          <Plus className="h-4 w-4" />
           {creatingSession ? "Creating..." : "New Session"}
         </Button>
       </div>
     </header>
+  );
+}
+
+function NewSessionDialog({
+  open,
+  creating,
+  defaultAgentType,
+  error,
+  onClose,
+  onCreate,
+}: {
+  open: boolean;
+  creating: boolean;
+  defaultAgentType: WorkspaceAgentType;
+  error?: string;
+  onClose: () => void;
+  onCreate: (request: CreateSessionRequest) => void;
+}) {
+  const [agentType, setAgentType] = useState<WorkspaceAgentType>(defaultAgentType);
+  const [title, setTitle] = useState("");
+  const [workspacePath, setWorkspacePath] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setAgentType(defaultAgentType);
+      setTitle("");
+      setWorkspacePath("");
+    }
+  }, [defaultAgentType, open]);
+
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <form
+        className="modal-panel"
+        aria-label="New session"
+        onMouseDown={(event) => event.stopPropagation()}
+        onSubmit={(event) => {
+          event.preventDefault();
+          onCreate({
+            agentType,
+            title: title.trim() || undefined,
+            workspacePath: workspacePath.trim() || undefined,
+          });
+        }}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-base font-semibold">New Session</h2>
+            <p className="mt-1 text-xs text-muted-foreground">Choose the runtime and workspace before launch.</p>
+          </div>
+          <Button type="button" size="icon" variant="ghost" onClick={onClose} aria-label="Close new session dialog">
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <div className="grid gap-3">
+          <label className="field">
+            <span>Agent</span>
+            <div className="segmented" role="group" aria-label="Agent type">
+              {(["codex", "claude", "trae"] as WorkspaceAgentType[]).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={cn("segmented-item", agentType === value && "active")}
+                  onClick={() => setAgentType(value)}
+                >
+                  {value === "codex" ? "Codex CLI" : value === "claude" ? "Claude Code" : "Trae CLI"}
+                </button>
+              ))}
+            </div>
+          </label>
+
+          <label className="field">
+            <span>Title</span>
+            <input
+              value={title}
+              placeholder="Optional session title"
+              onChange={(event) => setTitle(event.currentTarget.value)}
+            />
+          </label>
+
+          <label className="field">
+            <span>Workspace</span>
+            <div className="field-with-icon">
+              <Folder className="h-4 w-4 text-muted-foreground" />
+              <input
+                value={workspacePath}
+                placeholder="Defaults to the MiniAgent working directory"
+                onChange={(event) => setWorkspacePath(event.currentTarget.value)}
+              />
+            </div>
+          </label>
+        </div>
+
+        {error ? <p className="text-xs text-red-600">{error}</p> : null}
+
+        <div className="flex justify-end gap-2">
+          <Button type="button" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={creating}>
+            {creating ? "Creating..." : "Create"}
+          </Button>
+        </div>
+      </form>
+    </div>
   );
 }
 
