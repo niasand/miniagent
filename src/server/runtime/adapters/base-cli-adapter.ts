@@ -96,6 +96,20 @@ export abstract class BaseCliRuntimeAdapter implements AgentRuntimeAdapter {
       return [];
     }
 
+    if (looksLikePermissionPrompt(text)) {
+      return [
+        {
+          type: "permission_prompt",
+          payload: {
+            text,
+            stream: chunk.stream,
+            receivedAt: chunk.receivedAt,
+            status: "waiting",
+          },
+        },
+      ];
+    }
+
     if (chunk.stream === "stderr") {
       return [{ type: "runtime_stderr", payload: { text, receivedAt: chunk.receivedAt } }];
     }
@@ -173,4 +187,14 @@ function readErrorMessage(error: unknown): string {
 function looksLikeAuthFailure(message: string): boolean {
   const lower = message.toLowerCase();
   return lower.includes("auth") || lower.includes("login") || lower.includes("credential");
+}
+
+function looksLikePermissionPrompt(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("permission") ||
+    lower.includes("approval required") ||
+    lower.includes("requires approval") ||
+    lower.includes("approve this")
+  );
 }

@@ -90,6 +90,23 @@ describe("runtime adapters", () => {
         payload: { text: "warning", receivedAt: "2026-05-13T00:00:01.000Z" },
       },
     ]);
+    expect(
+      adapter.decodeOutput({
+        stream: "stderr",
+        text: "approval required before editing files",
+        receivedAt: "2026-05-13T00:00:02.000Z",
+      }),
+    ).toEqual([
+      {
+        type: "permission_prompt",
+        payload: {
+          text: "approval required before editing files",
+          stream: "stderr",
+          receivedAt: "2026-05-13T00:00:02.000Z",
+          status: "waiting",
+        },
+      },
+    ]);
   });
 
   it("classifies common runtime failures", () => {
