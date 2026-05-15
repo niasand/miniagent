@@ -7,7 +7,7 @@ import { fetchChannels, saveChannelConfig, type ChannelInfo } from "./api/channe
 import { createSession } from "./api/sessions.js";
 import { fetchSkills } from "./api/skills.js";
 import { sendSessionMessage } from "./api/messages.js";
-import type { AgentType, ChatMessage, SkillMeta } from "./api/types.js";
+import type { AgentType, ChatMessage, RunStats, SkillMeta } from "./api/types.js";
 
 const AGENT_OPTIONS: Array<{ value: AgentType; label: string }> = [
   { value: "codex", label: "Codex" },
@@ -15,15 +15,6 @@ const AGENT_OPTIONS: Array<{ value: AgentType; label: string }> = [
 ];
 
 type DrawerTab = "skills" | "channels";
-
-function calcDuration(startTime: string, endTime: string): string {
-  const toMs = (t: string) => {
-    const [h, m, s] = t.split(":").map(Number);
-    return (h * 3600 + m * 60 + s) * 1000;
-  };
-  const diff = (toMs(endTime) - toMs(startTime)) / 1000;
-  return diff < 0.1 ? "<0.1" : diff.toFixed(1);
-}
 
 export default function App() {
   const queryClient = useQueryClient();
@@ -37,6 +28,9 @@ export default function App() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const skillsSearchRef = useRef<HTMLInputElement>(null);
   const prevMsgCountRef = useRef(0);
+  const streamingTextRef = useRef("");
+  const isStreamingRef = useRef(false);
+  const [streamingText, setStreamingText] = useState("");
 
   const { data: skillsData } = useQuery({
     queryKey: ["skills"],
@@ -65,15 +59,16 @@ export default function App() {
     queryFn: async () => {
       const res = await fetch(`/api/workspace?sessionId=${sessionId}`);
       if (!res.ok) throw new Error("Failed");
-      return res.json() as Promise<{ messages: ChatMessage[] }>;
+      return res.json() as Promise<{ messages: ChatMessage[]; runStats: RunStats }>;
     },
     enabled: !!sessionId,
     refetchInterval: 3_000,
   });
 
   const messages: ChatMessage[] = snapshot?.messages ?? [];
+  const runStats: RunStats = snapshot?.runStats ?? { durationSeconds: null, tokensUsed: null, tokensTotal: null };
 
-  // SSE as refetch trigger only
+  // SSE: capture text_delta for streaming + trigger workspace refresh
   useEffect(() => {
     if (!sessionId) return;
     let stopped = false;
@@ -83,9 +78,21 @@ export default function App() {
         `/api/events/stream?sessionId=${encodeURIComponent(sessionId)}&afterGlobalSeq=0&limit=100`,
       );
       const refresh = () => queryClient.invalidateQueries({ queryKey: ["workspace", sessionId] });
-      for (const type of ["message_created", "text_delta", "run_started", "run_completed", "run_output_appended"]) {
+      for (const type of ["message_created", "run_started", "run_completed", "run_output_appended"]) {
         source.addEventListener(type, refresh);
       }
+      source.addEventListener("text_delta", (e: MessageEvent) => {
+        if (isStreamingRef.current) {
+          try {
+            const evt = JSON.parse(e.data);
+            if (evt.payload?.text) {
+              streamingTextRef.current += evt.payload.text;
+              setStreamingText(streamingTextRef.current);
+            }
+          } catch { /* ignore parse errors */ }
+        }
+        refresh();
+      });
       source.onerror = () => {
         source?.close();
         if (!stopped) setTimeout(connect, 2_000);
@@ -98,13 +105,31 @@ export default function App() {
     };
   }, [sessionId, queryClient]);
 
-  // Auto-scroll on new messages
+  // Auto-scroll on new messages or streaming text
   useEffect(() => {
     if (messages.length > prevMsgCountRef.current) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
     prevMsgCountRef.current = messages.length;
   }, [messages.length]);
+
+  useEffect(() => {
+    if (streamingText) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [streamingText]);
+
+  // Clear streaming text when agent message arrives in workspace
+  useEffect(() => {
+    if (messages.length > 0 && isStreamingRef.current) {
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg.role === "agent") {
+        streamingTextRef.current = "";
+        setStreamingText("");
+        isStreamingRef.current = false;
+      }
+    }
+  }, [messages]);
 
   // Focus search on drawer open + skills tab
   useEffect(() => {
@@ -125,6 +150,9 @@ export default function App() {
 
   const sendMessage = useMutation({
     mutationFn: async (text: string) => {
+      streamingTextRef.current = "";
+      setStreamingText("");
+      isStreamingRef.current = true;
       let sid = sessionId;
       if (!sid) {
         const res = await createSession({ agentType });
@@ -235,13 +263,10 @@ export default function App() {
           {messages.map((msg, index) => {
             // System "Run succeeded" → stat card
             if (msg.role === "system" && msg.markdown.startsWith("Run succeeded")) {
-              const prev = messages[index - 1];
-              const duration = prev?.time && msg.time
-                ? calcDuration(prev.time, msg.time)
-                : null;
               return (
                 <div key={msg.id} className="chat-stat">
-                  {duration !== null && <span>耗时 {duration}s</span>}
+                  {runStats.durationSeconds !== null && <span>{runStats.durationSeconds}s</span>}
+                  {runStats.tokensUsed !== null && <span>{runStats.tokensUsed.toLocaleString()} tokens</span>}
                   <span>完成</span>
                 </div>
               );
@@ -260,12 +285,18 @@ export default function App() {
               </div>
             );
           })}
-          {sendMessage.isPending && (
+          {(sendMessage.isPending || streamingText) && (
             <div className="chat-bubble agent">
               <div className="chat-bubble-header"><strong>Agent</strong></div>
-              <div className="chat-typing">
-                <span className="typing-dots"><span/><span/><span/></span>
-              </div>
+              {streamingText ? (
+                <div className="prose-mini">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamingText}</ReactMarkdown>
+                </div>
+              ) : (
+                <div className="chat-typing">
+                  <span className="typing-dots"><span/><span/><span/></span>
+                </div>
+              )}
             </div>
           )}
           <div ref={messagesEndRef} />

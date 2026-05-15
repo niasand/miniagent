@@ -6,6 +6,7 @@ import type {
   WorkspaceAgentType,
   WorkspaceContextBudget,
   WorkspaceMessage,
+  WorkspaceRunStats,
   WorkspaceRuntimeSummary,
   WorkspaceSessionStatus,
   WorkspaceSnapshot,
@@ -64,6 +65,16 @@ type RuntimeRow = {
   started_at: string | null;
 };
 
+type RunRow = {
+  id: string;
+  started_at: string | null;
+  stopped_at: string | null;
+};
+
+type UsageEventRow = {
+  payload_json: string;
+};
+
 export type WorkspaceSnapshotOptions = {
   selectedSessionId?: string | null;
 };
@@ -77,6 +88,7 @@ export function createWorkspaceSnapshot(db: SqliteDatabase, options: WorkspaceSn
     selectedSessionId,
     sessions,
     messages: selectedSessionId ? readMessages(db, selectedSessionId) : [],
+    runStats: selectedSessionId ? readRunStats(db, selectedSessionId) : defaultRunStats(),
     outboxRows: readOutboxRows(db),
     keyEvents: readKeyEvents(db),
     contextBudget: selectedSessionId ? readContextBudget(db, selectedSessionId) : defaultContextBudget(),
@@ -135,6 +147,7 @@ function readMessages(db: SqliteDatabase, sessionId: string): WorkspaceMessage[]
       role: mapMessageRole(row.role),
       author: mapAuthor(row.role),
       time: formatTime(row.created_at),
+      createdAt: row.created_at,
       badge: typeof badge === "string" ? badge : undefined,
       markdown: row.content,
     };
@@ -251,6 +264,72 @@ function defaultRuntime(): WorkspaceRuntimeSummary {
     runtimeKind: null,
     startedAt: null,
   };
+}
+
+function readRunStats(db: SqliteDatabase, sessionId: string): WorkspaceRunStats {
+  const run = db
+    .prepare(
+      `
+      SELECT id, started_at, stopped_at
+      FROM agent_runs
+      WHERE session_id = ?
+      ORDER BY created_at DESC
+      LIMIT 1
+    `,
+    )
+    .get(sessionId) as RunRow | undefined;
+
+  if (!run?.started_at) {
+    return defaultRunStats();
+  }
+
+  const durationMs = run.stopped_at
+    ? new Date(run.stopped_at).getTime() - new Date(run.started_at).getTime()
+    : null;
+
+  // Try usage_update event first, then fall back to context_budgets token_estimate
+  let tokensUsed: number | null = null;
+  let tokensTotal: number | null = null;
+
+  const usageRow = db
+    .prepare(
+      `
+      SELECT payload_json
+      FROM events
+      WHERE session_id = ? AND run_id = ? AND type = 'usage_update'
+      ORDER BY global_seq DESC
+      LIMIT 1
+    `,
+    )
+    .get(sessionId, run.id) as UsageEventRow | undefined;
+
+  if (usageRow) {
+    const payload = parseJson(usageRow.payload_json);
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+      if (typeof payload.used === "number") tokensUsed = payload.used;
+      if (typeof payload.size === "number") tokensTotal = payload.size;
+    }
+  }
+
+  if (tokensUsed === null) {
+    const budgetRow = db
+      .prepare("SELECT token_estimate, budget_tokens FROM context_budgets WHERE session_id = ?")
+      .get(sessionId) as { token_estimate: number; budget_tokens: number } | undefined;
+    if (budgetRow) {
+      tokensUsed = budgetRow.token_estimate;
+      tokensTotal = budgetRow.budget_tokens;
+    }
+  }
+
+  return {
+    durationSeconds: durationMs !== null ? Math.round(durationMs / 100) / 10 : null,
+    tokensUsed,
+    tokensTotal,
+  };
+}
+
+function defaultRunStats(): WorkspaceRunStats {
+  return { durationSeconds: null, tokensUsed: null, tokensTotal: null };
 }
 
 function isActiveRunStatus(status: string): boolean {

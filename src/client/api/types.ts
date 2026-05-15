@@ -5,8 +5,15 @@ export type ChatMessage = {
   role: "user" | "agent" | "tool" | "system";
   author: string;
   time?: string;
+  createdAt?: string;
   badge?: string;
   markdown: string;
+};
+
+export type RunStats = {
+  durationSeconds: number | null;
+  tokensUsed: number | null;
+  tokensTotal: number | null;
 };
 
 export type SkillMeta = {

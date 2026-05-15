@@ -22,14 +22,22 @@ export type WorkspaceMessage = {
   role: "user" | "agent" | "tool" | "system";
   author: string;
   time?: string;
+  createdAt?: string;
   badge?: string;
   markdown: string;
+};
+
+export type WorkspaceRunStats = {
+  durationSeconds: number | null;
+  tokensUsed: number | null;
+  tokensTotal: number | null;
 };
 
 export type WorkspaceSnapshot = {
   selectedSessionId: string | null;
   sessions: WorkspaceSessionSummary[];
   messages: WorkspaceMessage[];
+  runStats: WorkspaceRunStats;
   outboxRows: Array<[string, string, string]>;
   keyEvents: Array<[string, string, string]>;
   contextBudget: WorkspaceContextBudget;
