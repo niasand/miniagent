@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, SendHorizontal, Sparkles } from "lucide-react";
+import { ChevronDown, Search, SendHorizontal, Sparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -20,7 +20,9 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
+  const [skillsQuery, setSkillsQuery] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const skillsSearchRef = useRef<HTMLInputElement>(null);
   const prevMsgCountRef = useRef(0);
 
   const { data: skillsData } = useQuery({
@@ -29,6 +31,14 @@ export default function App() {
     refetchInterval: 30_000,
   });
   const skills: SkillMeta[] = skillsData?.skills ?? [];
+
+  const filteredSkills = skillsQuery
+    ? skills.filter(
+        (s) =>
+          s.name.toLowerCase().includes(skillsQuery.toLowerCase()) ||
+          s.description.toLowerCase().includes(skillsQuery.toLowerCase()),
+      )
+    : skills;
 
   // Single source of truth: workspace polling
   const { data: snapshot } = useQuery({
@@ -77,6 +87,14 @@ export default function App() {
     prevMsgCountRef.current = messages.length;
   }, [messages.length]);
 
+  // Focus search on drawer open
+  useEffect(() => {
+    if (skillsOpen) {
+      setSkillsQuery("");
+      requestAnimationFrame(() => skillsSearchRef.current?.focus());
+    }
+  }, [skillsOpen]);
+
   const sendMessage = useMutation({
     mutationFn: async (text: string) => {
       let sid = sessionId;
@@ -115,86 +133,111 @@ export default function App() {
 
   return (
     <main className="app-root">
-      <div className="chat-messages">
-        {messages.length === 0 && (
-          <div className="chat-empty">
-            <Sparkles className="chat-empty-icon" />
-            <p>Send a message to start</p>
-          </div>
-        )}
-        {messages.map((msg) => (
-          <div key={msg.id} className={`chat-bubble ${msg.role}`}>
-            <div className="chat-bubble-header">
-              <strong>{msg.author}</strong>
-              {msg.time && <span className="chat-time">{msg.time}</span>}
-            </div>
-            <div className="prose-mini">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.markdown}</ReactMarkdown>
-            </div>
-          </div>
-        ))}
-        {sendMessage.isPending && (
-          <div className="chat-bubble agent">
-            <div className="chat-bubble-header"><strong>Agent</strong></div>
-            <div className="chat-typing">Thinking...</div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
+      {/* Skills drawer */}
+      <div className={`skills-drawer ${skillsOpen ? "open" : ""}`}>
+        <div className="skills-drawer-header">
+          <strong>Skills</strong>
+          <button className="skills-close-btn" onClick={() => setSkillsOpen(false)}>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="skills-search">
+          <Search className="h-4 w-4 skills-search-icon" />
+          <input
+            ref={skillsSearchRef}
+            className="skills-search-input"
+            value={skillsQuery}
+            onChange={(e) => setSkillsQuery(e.currentTarget.value)}
+            placeholder="Search skills..."
+          />
+        </div>
+        <div className="skills-list">
+          {filteredSkills.length === 0 && (
+            <div className="skills-empty">No matching skills</div>
+          )}
+          {filteredSkills.map((skill) => (
+            <button key={skill.name} className="skills-item" onClick={() => handleSkillSelect(skill)}>
+              <strong>{skill.name}</strong>
+              {skill.description && (
+                <span className="dropdown-desc">{skill.description.slice(0, 10)}...</span>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="chat-bar">
-        <div className="chat-bar-left">
-          <div className="dropdown-wrapper">
+      {/* Main content */}
+      <div className={`chat-main ${skillsOpen ? "shifted" : ""}`}>
+        <div className="chat-messages">
+          {messages.length === 0 && (
+            <div className="chat-empty">
+              <Sparkles className="chat-empty-icon" />
+              <p>Send a message to start</p>
+            </div>
+          )}
+          {messages.map((msg) => (
+            <div key={msg.id} className={`chat-bubble ${msg.role}`}>
+              <div className="chat-bubble-header">
+                <strong>{msg.author}</strong>
+                {msg.time && <span className="chat-time">{msg.time}</span>}
+              </div>
+              <div className="prose-mini">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.markdown}</ReactMarkdown>
+              </div>
+            </div>
+          ))}
+          {sendMessage.isPending && (
+            <div className="chat-bubble agent">
+              <div className="chat-bubble-header"><strong>Agent</strong></div>
+              <div className="chat-typing">Thinking...</div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        <div className="chat-bar">
+          <div className="chat-bar-left">
             <button className="bar-btn" onClick={() => setSkillsOpen(!skillsOpen)} title="Skills">
               <Sparkles className="h-4 w-4" />
               <span className="bar-btn-label">Skills</span>
             </button>
-            {skillsOpen && skills.length > 0 && (
-              <div className="dropdown-menu">
-                {skills.map((skill) => (
-                  <button key={skill.name} className="dropdown-item" onClick={() => handleSkillSelect(skill)}>
-                    <strong>{skill.name}</strong>
-                    {skill.description && <span className="dropdown-desc">{skill.description.slice(0, 10)}...</span>}
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="dropdown-wrapper">
+              <button className="bar-btn" onClick={() => setAgentMenuOpen(!agentMenuOpen)} title="Switch agent">
+                <span className="bar-btn-label">{currentAgent.label}</span>
+                <ChevronDown className="h-3 w-3" />
+              </button>
+              {agentMenuOpen && (
+                <div className="dropdown-menu">
+                  {AGENT_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      className={`dropdown-item ${agentType === opt.value ? "active" : ""}`}
+                      onClick={() => { setAgentType(opt.value); setAgentMenuOpen(false); }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-          <div className="dropdown-wrapper">
-            <button className="bar-btn" onClick={() => setAgentMenuOpen(!agentMenuOpen)} title="Switch agent">
-              <span className="bar-btn-label">{currentAgent.label}</span>
-              <ChevronDown className="h-3 w-3" />
-            </button>
-            {agentMenuOpen && (
-              <div className="dropdown-menu">
-                {AGENT_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    className={`dropdown-item ${agentType === opt.value ? "active" : ""}`}
-                    onClick={() => { setAgentType(opt.value); setAgentMenuOpen(false); }}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <textarea
+            className="chat-input"
+            value={draft}
+            onChange={(e) => setDraft(e.currentTarget.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Type a message..."
+            rows={1}
+          />
+          <button className="send-btn" onClick={handleSend} disabled={sendMessage.isPending || !draft.trim()}>
+            <SendHorizontal className="h-4 w-4" />
+          </button>
         </div>
-        <textarea
-          className="chat-input"
-          value={draft}
-          onChange={(e) => setDraft(e.currentTarget.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Type a message..."
-          rows={1}
-        />
-        <button className="send-btn" onClick={handleSend} disabled={sendMessage.isPending || !draft.trim()}>
-          <SendHorizontal className="h-4 w-4" />
-        </button>
       </div>
 
-      {(agentMenuOpen || skillsOpen) && (
-        <div className="dropdown-backdrop" onClick={() => { setAgentMenuOpen(false); setSkillsOpen(false); }} />
+      {/* Agent dropdown backdrop only */}
+      {agentMenuOpen && (
+        <div className="dropdown-backdrop" onClick={() => setAgentMenuOpen(false)} />
       )}
     </main>
   );
