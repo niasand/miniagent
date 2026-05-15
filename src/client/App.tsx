@@ -11,7 +11,6 @@ import type { AgentType, ChatMessage, SkillMeta } from "./api/types.js";
 const AGENT_OPTIONS: Array<{ value: AgentType; label: string }> = [
   { value: "codex", label: "Codex" },
   { value: "claude", label: "Claude" },
-  { value: "trae", label: "Trae" },
 ];
 
 export default function App() {
@@ -155,7 +154,7 @@ export default function App() {
                 {skills.map((skill) => (
                   <button key={skill.name} className="dropdown-item" onClick={() => handleSkillSelect(skill)}>
                     <strong>{skill.name}</strong>
-                    {skill.description && <span className="dropdown-desc">{skill.description}</span>}
+                    {skill.description && <span className="dropdown-desc">{skill.description.slice(0, 10)}...</span>}
                   </button>
                 ))}
               </div>
