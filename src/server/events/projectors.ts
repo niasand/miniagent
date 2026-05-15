@@ -1,5 +1,6 @@
 import type { SqliteDatabase } from "../db/migrate.js";
 import type { JsonObject, JsonValue } from "../../shared/json.js";
+import { parseJson } from "../../shared/json.js";
 import { MessageStore, type MessageRole } from "./message-store.js";
 import { OutboxStore } from "./outbox-store.js";
 import { ProjectorStore, type ProjectBatchResult } from "./projector-store.js";
@@ -120,9 +121,21 @@ export class QQOutboxProjector {
         if (event.type.startsWith("delivery_")) {
           continue;
         }
+        // Only send run results, not per-delta chunks or user messages
+        if (event.type !== "run_finished" && event.type !== "run_failed") {
+          continue;
+        }
 
         const targetRef = this.readQQTargetRef(event.sessionId);
         if (!targetRef) {
+          continue;
+        }
+
+        const text = event.type === "run_finished"
+          ? this.collectRunText(event.runId)
+          : this.runStatusText(event);
+
+        if (!text) {
           continue;
         }
 
@@ -133,7 +146,7 @@ export class QQOutboxProjector {
           channelType: "qq",
           targetRef,
           kind: "qq_markdown",
-          viewModel: mapEventToQQMarkdown(event),
+          viewModel: { type: "qq_markdown", eventType: event.type, text },
           idempotencyKey: `qq:${targetRef}:${event.id}`,
         });
       }
@@ -146,6 +159,26 @@ export class QQOutboxProjector {
       .get(sessionId) as { channel_ref: string | null } | undefined;
 
     return row?.channel_ref ?? null;
+  }
+
+  private collectRunText(runId: string | null): string {
+    if (!runId) return "";
+    const rows = this.db
+      .prepare(
+        "SELECT payload_json FROM events WHERE run_id = ? AND type = 'text_delta' ORDER BY global_seq",
+      )
+      .all(runId) as Array<{ payload_json: string }>;
+    return rows.map((r) => {
+      const p = parseJson(r.payload_json) as Record<string, unknown>;
+      return typeof p.text === "string" ? p.text : "";
+    }).join("");
+  }
+
+  private runStatusText(event: StoredEvent): string {
+    const payload = readObject(event.payload);
+    const status = typeof payload.status === "string" ? payload.status : "failed";
+    const reason = typeof payload.stopReason === "string" && payload.stopReason ? `: ${payload.stopReason}` : "";
+    return `Run ${status}${reason}`;
   }
 }
 
