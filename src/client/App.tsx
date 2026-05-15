@@ -15,7 +15,7 @@ const AGENT_OPTIONS: Array<{ value: AgentType; label: string }> = [
 
 export default function App() {
   const queryClient = useQueryClient();
-  const [agentType, setAgentType] = useState<AgentType>("codex");
+  const [agentType, setAgentType] = useState<AgentType>("claude");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
