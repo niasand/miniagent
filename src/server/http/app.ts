@@ -131,31 +131,36 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
   );
 
   app.get("/api/skills", async () => {
-    const skillsDir = join(homedir(), ".claude", "skills");
-    const results: Array<{ name: string; description: string }> = [];
-    let entries: string[];
-    try {
-      entries = await readdir(skillsDir);
-    } catch {
-      return new Response(JSON.stringify({ skills: [] }), {
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-    for (const entry of entries) {
-      const entryPath = join(skillsDir, entry);
-      const s = await stat(entryPath).catch(() => null);
-      if (!s?.isDirectory()) continue;
-      // Try SKILL.md, skill.md, README.md
-      let mdContent = "";
-      for (const file of ["SKILL.md", "skill.md", "README.md"]) {
-        mdContent = await readFile(join(entryPath, file), "utf-8").catch(() => "");
-        if (mdContent) break;
+    const dirs = [
+      join(defaultWorkspacePath, ".claude", "skills"),
+      join(homedir(), ".claude", "skills"),
+    ];
+    const seen = new Set<string>();
+    const results: Array<{ name: string; description: string; source: string }> = [];
+    for (const skillsDir of dirs) {
+      let entries: string[];
+      try {
+        entries = await readdir(skillsDir);
+      } catch {
+        continue;
       }
-      const desc = parseFrontmatterDescription(mdContent);
-      results.push({
-        name: entry,
-        description: desc ?? "",
-      });
+      for (const entry of entries) {
+        if (seen.has(entry)) continue;
+        const entryPath = join(skillsDir, entry);
+        const s = await stat(entryPath).catch(() => null);
+        if (!s?.isDirectory()) continue;
+        seen.add(entry);
+        let mdContent = "";
+        for (const file of ["SKILL.md", "skill.md", "README.md"]) {
+          mdContent = await readFile(join(entryPath, file), "utf-8").catch(() => "");
+          if (mdContent) break;
+        }
+        results.push({
+          name: entry,
+          description: parseFrontmatterDescription(mdContent) ?? "",
+          source: skillsDir === dirs[0] ? "project" : "user",
+        });
+      }
     }
     return new Response(JSON.stringify({ skills: results }), {
       headers: { "Content-Type": "application/json" },

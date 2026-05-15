@@ -12,6 +12,7 @@ export type ChatMessage = {
 export type SkillMeta = {
   name: string;
   description: string;
+  source: "project" | "user";
 };
 
 export type ListSkillsResponse = {

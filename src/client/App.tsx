@@ -18,12 +18,11 @@ export default function App() {
   const queryClient = useQueryClient();
   const [agentType, setAgentType] = useState<AgentType>("codex");
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
-  const [selectedSkill, setSelectedSkill] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const prevMsgCountRef = useRef(0);
 
   const { data: skillsData } = useQuery({
     queryKey: ["skills"],
@@ -32,29 +31,21 @@ export default function App() {
   });
   const skills: SkillMeta[] = skillsData?.skills ?? [];
 
-  const sendMessage = useMutation({
-    mutationFn: async (text: string) => {
-      let sid = sessionId;
-      if (!sid) {
-        const res = await createSession({ agentType });
-        sid = res.sessionId;
-        setSessionId(sid);
-      }
-      return sendSessionMessage(sid, { text });
+  // Single source of truth: workspace polling
+  const { data: snapshot } = useQuery({
+    queryKey: ["workspace", sessionId],
+    queryFn: async () => {
+      const res = await fetch(`/api/workspace?sessionId=${sessionId}`);
+      if (!res.ok) throw new Error("Failed");
+      return res.json() as Promise<{ messages: ChatMessage[] }>;
     },
-    onSuccess: (response) => {
-      setSessionId(response.sessionId ?? sessionId);
-      setDraft("");
-      setSelectedSkill(null);
-      queryClient.invalidateQueries({ queryKey: ["workspace"] });
-    },
+    enabled: !!sessionId,
+    refetchInterval: 3_000,
   });
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  const messages: ChatMessage[] = snapshot?.messages ?? [];
 
-  // Listen for SSE events
+  // SSE as refetch trigger only
   useEffect(() => {
     if (!sessionId) return;
     let stopped = false;
@@ -63,29 +54,10 @@ export default function App() {
       source = new EventSource(
         `/api/events/stream?sessionId=${encodeURIComponent(sessionId)}&afterGlobalSeq=0&limit=100`,
       );
-      source.addEventListener("message_created", (event: MessageEvent) => {
-        try {
-          const payload = JSON.parse(event.data);
-          const msg: ChatMessage = {
-            id: payload.id ?? crypto.randomUUID(),
-            role: payload.role === "assistant" ? "agent" : payload.role ?? "agent",
-            author: payload.role === "assistant" ? "Agent" : payload.role === "user" ? "You" : "Agent",
-            markdown: payload.text ?? payload.content ?? "",
-            time: payload.createdAt ? new Date(payload.createdAt).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }) : undefined,
-          };
-          setMessages((prev) => {
-            if (prev.some((m) => m.id === msg.id)) return prev;
-            return [...prev, msg];
-          });
-        } catch { /* ignore parse errors */ }
-      });
-      source.addEventListener("text_delta", () => {
-        // Refresh messages from workspace snapshot
-        queryClient.invalidateQueries({ queryKey: ["workspace"] });
-      });
-      source.addEventListener("run_completed", () => {
-        queryClient.invalidateQueries({ queryKey: ["workspace"] });
-      });
+      const refresh = () => queryClient.invalidateQueries({ queryKey: ["workspace", sessionId] });
+      for (const type of ["message_created", "text_delta", "run_started", "run_completed", "run_output_appended"]) {
+        source.addEventListener(type, refresh);
+      }
       source.onerror = () => {
         source?.close();
         if (!stopped) setTimeout(connect, 2_000);
@@ -98,42 +70,39 @@ export default function App() {
     };
   }, [sessionId, queryClient]);
 
-  // Poll workspace for messages
-  const { data: snapshot } = useQuery({
-    queryKey: ["workspace", sessionId],
-    queryFn: async () => {
-      const res = await fetch(`/api/workspace?sessionId=${sessionId}`);
-      if (!res.ok) throw new Error("Failed");
-      return res.json();
-    },
-    enabled: !!sessionId,
-    refetchInterval: 3_000,
-  });
-
+  // Auto-scroll on new messages
   useEffect(() => {
-    if (snapshot?.messages) {
-      setMessages(snapshot.messages);
+    if (messages.length > prevMsgCountRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [snapshot?.messages]);
+    prevMsgCountRef.current = messages.length;
+  }, [messages.length]);
+
+  const sendMessage = useMutation({
+    mutationFn: async (text: string) => {
+      let sid = sessionId;
+      if (!sid) {
+        const res = await createSession({ agentType });
+        sid = res.sessionId;
+        setSessionId(sid);
+      }
+      return sendSessionMessage(sid, { text });
+    },
+    onSuccess: () => {
+      setDraft("");
+      queryClient.invalidateQueries({ queryKey: ["workspace", sessionId] });
+    },
+  });
 
   const handleSend = () => {
     const text = draft.trim();
     if (!text || sendMessage.isPending) return;
-    const userMsg: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: "user",
-      author: "You",
-      markdown: text,
-      time: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false }),
-    };
-    setMessages((prev) => [...prev, userMsg]);
     sendMessage.mutate(text);
   };
 
   const handleSkillSelect = (skill: SkillMeta) => {
     setDraft(`/${skill.name} `);
     setSkillsOpen(false);
-    setSelectedSkill(skill.name);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -147,7 +116,6 @@ export default function App() {
 
   return (
     <main className="app-root">
-      {/* Messages */}
       <div className="chat-messages">
         {messages.length === 0 && (
           <div className="chat-empty">
@@ -168,36 +136,24 @@ export default function App() {
         ))}
         {sendMessage.isPending && (
           <div className="chat-bubble agent">
-            <div className="chat-bubble-header">
-              <strong>Agent</strong>
-            </div>
+            <div className="chat-bubble-header"><strong>Agent</strong></div>
             <div className="chat-typing">Thinking...</div>
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Bottom bar */}
       <div className="chat-bar">
         <div className="chat-bar-left">
-          {/* Skills button */}
           <div className="dropdown-wrapper">
-            <button
-              className="bar-btn"
-              onClick={() => setSkillsOpen(!skillsOpen)}
-              title="Skills"
-            >
+            <button className="bar-btn" onClick={() => setSkillsOpen(!skillsOpen)} title="Skills">
               <Sparkles className="h-4 w-4" />
               <span className="bar-btn-label">Skills</span>
             </button>
             {skillsOpen && skills.length > 0 && (
               <div className="dropdown-menu">
                 {skills.map((skill) => (
-                  <button
-                    key={skill.name}
-                    className="dropdown-item"
-                    onClick={() => handleSkillSelect(skill)}
-                  >
+                  <button key={skill.name} className="dropdown-item" onClick={() => handleSkillSelect(skill)}>
                     <strong>{skill.name}</strong>
                     {skill.description && <span className="dropdown-desc">{skill.description}</span>}
                   </button>
@@ -205,14 +161,8 @@ export default function App() {
               </div>
             )}
           </div>
-
-          {/* Agent switcher */}
           <div className="dropdown-wrapper">
-            <button
-              className="bar-btn"
-              onClick={() => setAgentMenuOpen(!agentMenuOpen)}
-              title="Switch agent"
-            >
+            <button className="bar-btn" onClick={() => setAgentMenuOpen(!agentMenuOpen)} title="Switch agent">
               <span className="bar-btn-label">{currentAgent.label}</span>
               <ChevronDown className="h-3 w-3" />
             </button>
@@ -222,10 +172,7 @@ export default function App() {
                   <button
                     key={opt.value}
                     className={`dropdown-item ${agentType === opt.value ? "active" : ""}`}
-                    onClick={() => {
-                      setAgentType(opt.value);
-                      setAgentMenuOpen(false);
-                    }}
+                    onClick={() => { setAgentType(opt.value); setAgentMenuOpen(false); }}
                   >
                     {opt.label}
                   </button>
@@ -234,7 +181,6 @@ export default function App() {
             )}
           </div>
         </div>
-
         <textarea
           className="chat-input"
           value={draft}
@@ -243,24 +189,13 @@ export default function App() {
           placeholder="Type a message..."
           rows={1}
         />
-        <button
-          className="send-btn"
-          onClick={handleSend}
-          disabled={sendMessage.isPending || !draft.trim()}
-        >
+        <button className="send-btn" onClick={handleSend} disabled={sendMessage.isPending || !draft.trim()}>
           <SendHorizontal className="h-4 w-4" />
         </button>
       </div>
 
-      {/* Click-away backdrop for dropdowns */}
       {(agentMenuOpen || skillsOpen) && (
-        <div
-          className="dropdown-backdrop"
-          onClick={() => {
-            setAgentMenuOpen(false);
-            setSkillsOpen(false);
-          }}
-        />
+        <div className="dropdown-backdrop" onClick={() => { setAgentMenuOpen(false); setSkillsOpen(false); }} />
       )}
     </main>
   );
