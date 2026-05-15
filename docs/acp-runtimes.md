@@ -1,6 +1,6 @@
 # ACP Runtime Setup
 
-MiniAgent treats ACP as the primary runtime path for real agent sessions. The legacy CLI adapters remain as a fallback, but `runtimeKind: "acp"` should be used for new sessions when the local machine has the required agent installed and authenticated.
+MiniAgent treats ACP as the primary runtime path for real agent sessions. Starting without `MINIAGENT_RUNTIME` registers ACP adapters only. The legacy CLI adapters remain as an explicit fallback through `MINIAGENT_RUNTIME=cli`, or as a migration comparison mode through `MINIAGENT_RUNTIME=hybrid`.
 
 ## Default Commands
 
@@ -13,6 +13,10 @@ MiniAgent treats ACP as the primary runtime path for real agent sessions. The le
 Override commands and arguments with:
 
 ```bash
+MINIAGENT_RUNTIME=acp      # default when unset
+MINIAGENT_RUNTIME=cli      # legacy fallback only
+MINIAGENT_RUNTIME=hybrid   # CLI and ACP side by side
+
 MINIAGENT_CODEX_ACP_COMMAND=/path/to/codex-acp
 MINIAGENT_CODEX_ACP_ARGS="--flag value"
 

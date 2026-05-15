@@ -86,7 +86,10 @@ function adapterKey(agentType: AgentType, runtimeKind: RuntimeKind): string {
 
 function readRuntimeMode(): "cli" | "acp" | "hybrid" {
   const value = process.env.MINIAGENT_RUNTIME;
-  return value === "acp" || value === "hybrid" ? value : "cli";
+  if (value === "cli" || value === "acp" || value === "hybrid") {
+    return value;
+  }
+  return "acp";
 }
 
 function readEnvArgs(name: string, fallback: string[] = []): string[] {

@@ -412,14 +412,14 @@ function NewSessionDialog({
   onCreate: (request: CreateSessionRequest) => void;
 }) {
   const [agentType, setAgentType] = useState<WorkspaceAgentType>(defaultAgentType);
-  const [runtimeKind, setRuntimeKind] = useState<WorkspaceRuntimeKind>("cli");
+  const [runtimeKind, setRuntimeKind] = useState<WorkspaceRuntimeKind>("acp");
   const [title, setTitle] = useState("");
   const [workspacePath, setWorkspacePath] = useState("");
 
   useEffect(() => {
     if (open) {
       setAgentType(defaultAgentType);
-      setRuntimeKind("cli");
+      setRuntimeKind("acp");
       setTitle("");
       setWorkspacePath("");
     }

@@ -1,12 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CommandResult, CommandRunner } from "../../src/server/runtime/command-runner.js";
 import { ClaudeRuntimeAdapter } from "../../src/server/runtime/adapters/claude-adapter.js";
 import { CodexRuntimeAdapter } from "../../src/server/runtime/adapters/codex-adapter.js";
 import { TraeRuntimeAdapter } from "../../src/server/runtime/adapters/trae-adapter.js";
 import { AcpRuntimeDriver } from "../../src/server/runtime/drivers/acp-runtime-driver.js";
-import { RuntimeAdapterRegistry } from "../../src/server/runtime/registry.js";
+import { defaultRuntimeAdapters, RuntimeAdapterRegistry } from "../../src/server/runtime/registry.js";
 
 describe("runtime adapters", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("registers Codex, Claude, and Trae adapters", () => {
     const registry = new RuntimeAdapterRegistry([
       new CodexRuntimeAdapter({ commandRunner: healthyRunner("codex 1.0.0") }),
@@ -33,6 +37,26 @@ describe("runtime adapters", () => {
     expect(registry.defaultRuntimeKind("codex")).toBe("cli");
     expect(registry.get("codex").runtimeKind).toBe("cli");
     expect(registry.get("codex", "acp")).toMatchObject({ runtimeKind: "acp", command: "codex-acp" });
+  });
+
+  it("uses ACP adapters by default when MINIAGENT_RUNTIME is unset", () => {
+    vi.stubEnv("MINIAGENT_RUNTIME", "");
+
+    expect(new RuntimeAdapterRegistry(defaultRuntimeAdapters()).list().map((adapter) => adapter.runtimeKind)).toEqual([
+      "acp",
+      "acp",
+      "acp",
+    ]);
+  });
+
+  it("keeps CLI adapters available behind MINIAGENT_RUNTIME=cli", () => {
+    vi.stubEnv("MINIAGENT_RUNTIME", "cli");
+
+    expect(new RuntimeAdapterRegistry(defaultRuntimeAdapters()).list().map((adapter) => adapter.runtimeKind)).toEqual([
+      "cli",
+      "cli",
+      "cli",
+    ]);
   });
 
   it("probes command health without requiring real CLIs in tests", async () => {
