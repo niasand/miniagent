@@ -105,6 +105,50 @@ export class FeishuOutboxProjector {
   }
 }
 
+export class QQOutboxProjector {
+  private readonly outbox: OutboxStore;
+  private readonly projectors: ProjectorStore;
+
+  constructor(private readonly db: SqliteDatabase) {
+    this.outbox = new OutboxStore(db);
+    this.projectors = new ProjectorStore(db);
+  }
+
+  projectNextBatch(options: ProjectorOptions = {}): ProjectBatchResult {
+    return this.projectors.projectBatch("qq_outbox", { limit: options.batchSize ?? DEFAULT_BATCH_SIZE }, (events) => {
+      for (const event of events) {
+        if (event.type.startsWith("delivery_")) {
+          continue;
+        }
+
+        const targetRef = this.readQQTargetRef(event.sessionId);
+        if (!targetRef) {
+          continue;
+        }
+
+        this.outbox.enqueueOnce({
+          sessionId: event.sessionId,
+          eventId: event.id,
+          eventGlobalSeq: event.globalSeq,
+          channelType: "qq",
+          targetRef,
+          kind: "qq_markdown",
+          viewModel: mapEventToQQMarkdown(event),
+          idempotencyKey: `qq:${targetRef}:${event.id}`,
+        });
+      }
+    });
+  }
+
+  private readQQTargetRef(sessionId: string): string | null {
+    const row = this.db
+      .prepare("SELECT channel_ref FROM sessions WHERE id = ? AND channel_type = 'qq'")
+      .get(sessionId) as { channel_ref: string | null } | undefined;
+
+    return row?.channel_ref ?? null;
+  }
+}
+
 type MessageInput = Parameters<MessageStore["upsert"]>[0];
 
 function mapEventToMessage(event: StoredEvent): MessageInput | null {
@@ -176,6 +220,26 @@ function mapEventToFeishuCard(event: StoredEvent): JsonObject {
       createdAt: event.createdAt,
     },
   };
+}
+
+function mapEventToQQMarkdown(event: StoredEvent): JsonObject {
+  return {
+    type: "qq_markdown",
+    eventType: event.type,
+    text: extractMarkdownText(event),
+  };
+}
+
+function extractMarkdownText(event: StoredEvent): string {
+  const payload = readObject(event.payload);
+  if (typeof payload.text === "string") {
+    return payload.text;
+  }
+  if (event.type === "task_created") {
+    const input = readObject(payload.input);
+    return readText(input);
+  }
+  return "";
 }
 
 function readRunStatusMessage(event: StoredEvent): string {

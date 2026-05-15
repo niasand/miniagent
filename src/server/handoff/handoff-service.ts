@@ -76,7 +76,7 @@ export class HandoffService {
         title: request.targetTitle ?? sourceSession.title,
         agentType: request.targetAgentType,
         workspacePath: sourceSession.workspacePath,
-        channelType: sourceSession.channelType === "web" || sourceSession.channelType === "feishu" ? sourceSession.channelType : null,
+        channelType: sourceSession.channelType === "web" || sourceSession.channelType === "feishu" || sourceSession.channelType === "qq" ? sourceSession.channelType : null,
         channelRef: sourceSession.channelRef,
         defaultParams: sourceSession.defaultParams,
         sourceSessionId: sourceSession.id,

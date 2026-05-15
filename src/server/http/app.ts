@@ -6,6 +6,7 @@ import type { SqliteDatabase } from "../db/migrate.js";
 import { ContextBudgetService } from "../context/context-budget-service.js";
 import { ContextRestartService } from "../context/context-restart-service.js";
 import { FeishuInboundService } from "../channels/feishu-inbound-service.js";
+import { QQInboundService } from "../channels/qq-inbound-service.js";
 import { EventStore } from "../events/event-store.js";
 import { projectReadModelsUntilIdle } from "../events/projector-runner.js";
 import { HandoffService } from "../handoff/handoff-service.js";
@@ -69,6 +70,7 @@ export type AppOptions = {
   defaultWorkspacePath?: string;
   workspaceAllowlist?: string[];
   workspacePolicy?: WorkspacePolicy;
+  runtimeSupervisor?: RuntimeSupervisor;
 };
 
 export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
@@ -80,7 +82,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
   const eventStore = new EventStore(db);
   const sessionStore = new SessionStore(db, eventStore);
   const permissionRequests = new PermissionRequestStore(db);
-  const runtimeSupervisor = new RuntimeSupervisor({
+  const runtimeSupervisor = options.runtimeSupervisor ?? new RuntimeSupervisor({
     adapterRegistry: runtimeRegistry,
     eventStore,
     sessionStore,
@@ -265,7 +267,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
 
     const actorType = body.value.actorType ?? "web_user";
     if (!isAuditActorType(actorType)) {
-      return context.json({ error: "actorType must be one of: web_user, feishu_user, system, agent" }, 400);
+      return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, system, agent" }, 400);
     }
 
     const actorRef = body.value.actorRef;
@@ -638,7 +640,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
 
     const actorType = body.value.actorType ?? "web_user";
     if (!isAuditActorType(actorType)) {
-      return context.json({ error: "actorType must be one of: web_user, feishu_user, system, agent" }, 400);
+      return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, system, agent" }, 400);
     }
 
     const actorRef = body.value.actorRef;
@@ -726,7 +728,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
 
     const actorType = body.value.actorType ?? "web_user";
     if (!isAuditActorType(actorType)) {
-      return context.json({ error: "actorType must be one of: web_user, feishu_user, system, agent" }, 400);
+      return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, system, agent" }, 400);
     }
 
     const actorRef = body.value.actorRef;
@@ -928,7 +930,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
 
     const actorType = body.value.actorType ?? "web_user";
     if (!isAuditActorType(actorType)) {
-      return context.json({ error: "actorType must be one of: web_user, feishu_user, system, agent" }, 400);
+      return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, system, agent" }, 400);
     }
 
     const actorRef = body.value.actorRef;
@@ -1119,6 +1121,73 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
     }
   });
 
+  app.post("/api/qq/messages", async (context) => {
+    const db = context.get("db");
+    const body = await readJsonBody(context.req);
+    if (!body.ok) {
+      return context.json({ error: body.error }, 400);
+    }
+
+    const messageId = body.value.messageId;
+    if (typeof messageId !== "string" || messageId.trim().length === 0) {
+      return context.json({ error: "messageId is required" }, 400);
+    }
+
+    const chatId = body.value.chatId;
+    if (typeof chatId !== "string" || chatId.trim().length === 0) {
+      return context.json({ error: "chatId is required" }, 400);
+    }
+
+    const text = body.value.text;
+    if (typeof text !== "string" || text.trim().length === 0) {
+      return context.json({ error: "text is required" }, 400);
+    }
+
+    const userId = body.value.userId;
+    const chatType = body.value.chatType;
+    if (chatType !== "c2c" && chatType !== "group") {
+      return context.json({ error: "chatType must be 'c2c' or 'group'" }, 400);
+    }
+    const sessionId = body.value.sessionId;
+    const workspacePath = body.value.workspacePath;
+
+    try {
+      const result = new QQInboundService(db, undefined, { workspacePolicy }).receiveMessage({
+        messageId,
+        chatId,
+        text,
+        userId: typeof userId === "string" ? userId : null,
+        chatType,
+        sessionId: typeof sessionId === "string" ? sessionId : null,
+        workspacePath: typeof workspacePath === "string" ? workspacePath : defaultWorkspacePath,
+      });
+      if (result.action === "message") {
+        new ContextBudgetService(db).evaluate({ sessionId: result.session.id });
+      }
+      projectReadModelsUntilIdle(db);
+
+      const selectedSessionId =
+        result.action === "message" || result.action === "agent_new"
+          ? result.session.id
+          : result.action === "handoff"
+            ? result.targetSessionId
+            : result.action === "context_compact" || result.action === "context_status"
+              ? result.sessionId
+              : null;
+
+      return context.json(
+        { result, workspace: createWorkspaceSnapshot(db, { selectedSessionId }) },
+        201,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "QQ message failed";
+      if (message.startsWith("Session not found")) return context.json({ error: message }, 404);
+      if (message.includes("agent type") || message.includes("required") || message.includes("archived")) return context.json({ error: message }, 400);
+      if (error instanceof WorkspacePolicyError || message.startsWith("Workspace denied")) return context.json({ error: message }, 403);
+      return context.json({ error: message }, 500);
+    }
+  });
+
   app.get("/api/sessions/:sessionId/memory/archives", (context) => {
     try {
       const archives = new MemoryArchiveService(context.get("db"))
@@ -1181,7 +1250,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
 
     const actorType = body.value.actorType ?? "web_user";
     if (!isAuditActorType(actorType)) {
-      return context.json({ error: "actorType must be one of: web_user, feishu_user, system, agent" }, 400);
+      return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, system, agent" }, 400);
     }
 
     const actorRef = body.value.actorRef;
@@ -1250,7 +1319,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
 
     const actorType = body.value.actorType ?? "web_user";
     if (!isAuditActorType(actorType)) {
-      return context.json({ error: "actorType must be one of: web_user, feishu_user, system, agent" }, 400);
+      return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, system, agent" }, 400);
     }
 
     const actorRef = body.value.actorRef;
@@ -1344,7 +1413,7 @@ function readRuntimeKind(value: JsonObject): "cli" | "acp" | null {
 }
 
 function isAuditActorType(value: unknown): value is AuditActorType {
-  return value === "web_user" || value === "feishu_user" || value === "system" || value === "agent";
+  return value === "web_user" || value === "feishu_user" || value === "qq_user" || value === "system" || value === "agent";
 }
 
 function isOperationRiskLevel(value: unknown): value is "medium" | "high" | "critical" {
@@ -1382,7 +1451,7 @@ async function updateScheduleStatus(
 
   const actorType = body.value.actorType ?? "web_user";
   if (!isAuditActorType(actorType)) {
-    return context.json({ error: "actorType must be one of: web_user, feishu_user, system, agent" }, 400);
+    return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, system, agent" }, 400);
   }
 
   const actorRef = body.value.actorRef;

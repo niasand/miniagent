@@ -293,10 +293,10 @@ function readLimit(args: JsonObject, fallback: number): number {
 
 function readActorType(args: JsonObject): AuditActorType {
   const value = args.actorType ?? "agent";
-  if (value === "web_user" || value === "feishu_user" || value === "system" || value === "agent") {
+  if (value === "web_user" || value === "feishu_user" || value === "qq_user" || value === "system" || value === "agent") {
     return value;
   }
-  throw new Error("actorType must be one of: web_user, feishu_user, system, agent");
+  throw new Error("actorType must be one of: web_user, feishu_user, qq_user, system, agent");
 }
 
 function readScheduleKind(args: JsonObject): "once" | "cron" {

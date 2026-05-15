@@ -1,10 +1,11 @@
 import type { SqliteDatabase } from "../db/migrate.js";
-import { FeishuOutboxProjector, MessageProjector, WebOutboxProjector, type ProjectorOptions } from "./projectors.js";
+import { FeishuOutboxProjector, MessageProjector, QQOutboxProjector, WebOutboxProjector, type ProjectorOptions } from "./projectors.js";
 
 export type ProjectReadModelsResult = {
   messagesProcessed: number;
   webOutboxProcessed: number;
   feishuOutboxProcessed: number;
+  qqOutboxProcessed: number;
 };
 
 export function projectReadModelsUntilIdle(
@@ -16,24 +17,28 @@ export function projectReadModelsUntilIdle(
   const messages = new MessageProjector(db);
   const webOutbox = new WebOutboxProjector(db);
   const feishuOutbox = new FeishuOutboxProjector(db);
+  const qqOutbox = new QQOutboxProjector(db);
   let messagesProcessed = 0;
   let webOutboxProcessed = 0;
   let feishuOutboxProcessed = 0;
+  let qqOutboxProcessed = 0;
 
   for (let batch = 0; batch < maxBatches; batch += 1) {
     const messageResult = messages.projectNextBatch({ batchSize });
     const outboxResult = webOutbox.projectNextBatch({ batchSize });
     const feishuOutboxResult = feishuOutbox.projectNextBatch({ batchSize });
+    const qqOutboxResult = qqOutbox.projectNextBatch({ batchSize });
     messagesProcessed += messageResult.processed;
     webOutboxProcessed += outboxResult.processed;
     feishuOutboxProcessed += feishuOutboxResult.processed;
+    qqOutboxProcessed += qqOutboxResult.processed;
 
-    if (messageResult.processed === 0 && outboxResult.processed === 0 && feishuOutboxResult.processed === 0) {
+    if (messageResult.processed === 0 && outboxResult.processed === 0 && feishuOutboxResult.processed === 0 && qqOutboxResult.processed === 0) {
       break;
     }
   }
 
-  return { messagesProcessed, webOutboxProcessed, feishuOutboxProcessed };
+  return { messagesProcessed, webOutboxProcessed, feishuOutboxProcessed, qqOutboxProcessed };
 }
 
 export type ProjectorLoopOptions = ProjectorOptions & {

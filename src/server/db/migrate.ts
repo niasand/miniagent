@@ -50,6 +50,8 @@ export function migrate(db: SqliteDatabase, migrationsDir = defaultMigrationsDir
     }
 
     const sql = readFileSync(join(migrationsDir, file), "utf8");
+    // Temporarily disable FK checks for migrations that recreate tables
+    db.pragma("foreign_keys = OFF");
     const runMigration = db.transaction(() => {
       db.exec(sql);
       db.prepare(
@@ -58,6 +60,7 @@ export function migrate(db: SqliteDatabase, migrationsDir = defaultMigrationsDir
     });
 
     runMigration();
+    db.pragma("foreign_keys = ON");
     applied.add(version);
   }
 }

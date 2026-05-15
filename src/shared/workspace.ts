@@ -309,7 +309,7 @@ export type OperationConfirmation = {
   prompt: string;
   payload: unknown;
   status: "pending" | "confirmed" | "expired" | "consumed" | "cancelled";
-  actorType: "web_user" | "feishu_user" | "system" | "agent";
+  actorType: "web_user" | "feishu_user" | "qq_user" | "system" | "agent";
   actorRef: string | null;
   requestedAt: string;
   expiresAt: string;
