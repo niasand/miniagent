@@ -3,7 +3,7 @@ import { ChevronDown, Search, SendHorizontal, Settings, Sparkles, X } from "luci
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { fetchChannels, type ChannelInfo } from "./api/channels.js";
+import { fetchChannels, saveChannelConfig, type ChannelInfo } from "./api/channels.js";
 import { createSession } from "./api/sessions.js";
 import { fetchSkills } from "./api/skills.js";
 import { sendSessionMessage } from "./api/messages.js";
@@ -206,16 +206,7 @@ export default function App() {
         {drawerTab === "channels" && (
           <div className="drawer-list">
             {channels.map((ch) => (
-              <div key={ch.id} className="channel-card">
-                <div className="channel-card-header">
-                  <strong>{ch.label}</strong>
-                  <span className={`channel-status channel-status--${ch.status}`}>
-                    <span className="channel-dot" />
-                    {ch.status === "connected" ? "Connected" : ch.status === "available" ? "Available" : "Offline"}
-                  </span>
-                </div>
-                <p className="channel-card-desc">{ch.description}</p>
-              </div>
+              <ChannelCard key={ch.id} channel={ch} onSaved={() => queryClient.invalidateQueries({ queryKey: ["channels"] })} />
             ))}
           </div>
         )}
@@ -297,5 +288,96 @@ export default function App() {
         <div className="dropdown-backdrop" onClick={() => setAgentMenuOpen(false)} />
       )}
     </main>
+  );
+}
+
+const FEISHU_FIELDS = [
+  { key: "app_id", label: "App ID" },
+  { key: "app_secret", label: "App Secret" },
+  { key: "verification_token", label: "Verification Token" },
+  { key: "encrypt_key", label: "Encrypt Key" },
+];
+
+function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSaved: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isFeishu = channel.id === "feishu";
+  const initialConfig = channel.config ?? {};
+  const [form, setForm] = useState<Record<string, string>>({});
+
+  const startEdit = () => {
+    const startValues: Record<string, string> = {};
+    if (isFeishu) {
+      for (const f of FEISHU_FIELDS) {
+        startValues[f.key] = initialConfig[f.key] ?? "";
+      }
+    }
+    setForm(startValues);
+    setEditing(true);
+    setError(null);
+  };
+
+  const handleSave = async () => {
+    if (!isFeishu) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await saveChannelConfig("feishu", form);
+      setEditing(false);
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    setEditing(false);
+    setError(null);
+  };
+
+  return (
+    <div className="channel-card">
+      <div className="channel-card-header">
+        <strong>{channel.label}</strong>
+        <span className={`channel-status channel-status--${channel.status}`}>
+          <span className="channel-dot" />
+          {channel.status === "connected" ? "Connected" : channel.status === "available" ? "Available" : "Offline"}
+        </span>
+      </div>
+      <p className="channel-card-desc">{channel.description}</p>
+
+      {isFeishu && !editing && (
+        <button className="channel-config-btn" onClick={startEdit}>
+          Configure
+        </button>
+      )}
+
+      {isFeishu && editing && (
+        <div className="channel-form">
+          {FEISHU_FIELDS.map((f) => (
+            <label key={f.key} className="channel-field">
+              <span>{f.label}</span>
+              <input
+                type={f.key.includes("secret") ? "password" : "text"}
+                value={form[f.key] ?? ""}
+                onChange={(e) => setForm((prev) => ({ ...prev, [f.key]: e.currentTarget.value }))}
+                placeholder={f.label}
+              />
+            </label>
+          ))}
+          {error && <p className="channel-form-error">{error}</p>}
+          <div className="channel-form-actions">
+            <button className="channel-form-cancel" onClick={handleCancel}>Cancel</button>
+            <button className="channel-form-save" onClick={handleSave} disabled={saving}>
+              {saving ? "Saving..." : "Save"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

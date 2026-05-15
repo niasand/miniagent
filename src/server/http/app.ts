@@ -169,24 +169,52 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
 
   app.get("/api/channels", (context) => {
     const db = context.get("db");
-    const rows = db
-      .prepare(
-        `SELECT DISTINCT channel_type FROM (
-          SELECT channel_type FROM sessions WHERE channel_type IS NOT NULL
-          UNION SELECT 'web' AS channel_type
-        )`,
-      )
-      .all() as Array<{ channel_type: string }>;
-    const feishuEnabled = rows.some((r) => r.channel_type === "feishu");
-    const channels = [
+    const hasFeishuSessions = db
+      .prepare("SELECT 1 FROM sessions WHERE channel_type = 'feishu' LIMIT 1")
+      .get();
+    const feishuConfig = readChannelConfig(db, "feishu");
+    const feishuConfigured = Boolean(feishuConfig["app_id"] && feishuConfig["app_secret"]);
+    const channels: Array<{
+      id: string;
+      label: string;
+      status: "connected" | "available" | "disconnected";
+      description: string;
+      config?: Record<string, string>;
+    }> = [
       { id: "web", label: "Web", status: "connected", description: "Built-in web channel" },
     ];
-    if (feishuEnabled) {
-      channels.push({ id: "feishu", label: "Feishu", status: "connected", description: "Feishu bot integration" });
+    if (hasFeishuSessions || feishuConfigured) {
+      channels.push({ id: "feishu", label: "Feishu", status: "connected", description: "Feishu bot integration", config: feishuConfig });
     } else {
-      channels.push({ id: "feishu", label: "Feishu", status: "available", description: "Feishu bot integration" });
+      channels.push({ id: "feishu", label: "Feishu", status: "available", description: "Feishu bot integration", config: feishuConfig });
     }
     return context.json({ channels });
+  });
+
+  app.put("/api/channels/:channelId/config", async (context) => {
+    const db = context.get("db");
+    const channelId = context.req.param("channelId");
+    const body = await readJsonBody(context.req);
+    if (!body.ok) {
+      return context.json({ error: body.error }, 400);
+    }
+    if (!isRecord(body.value)) {
+      return context.json({ error: "Body must be a JSON object" }, 400);
+    }
+    const upsert = db.prepare(
+      `INSERT INTO channel_configs (id, channel_id, key, value) VALUES (?, ?, ?, ?)
+       ON CONFLICT(channel_id, key) DO UPDATE SET value = excluded.value, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
+    );
+    const run = db.transaction(() => {
+      for (const [key, value] of Object.entries(body.value)) {
+        if (typeof value !== "string") continue;
+        const id = `${channelId}:${key}`;
+        upsert.run(id, channelId, key, value);
+      }
+    });
+    run();
+    const config = readChannelConfig(db, channelId);
+    return context.json({ config });
   });
 
   app.post("/api/security/confirmations", async (context) => {
@@ -1430,12 +1458,20 @@ function parseFrontmatterDescription(content: string): string | null {
   const match = content.match(/^---\n([\s\S]*?)\n---/);
   if (!match) return null;
   const frontmatter = match[1];
-  // Handle description: >- multiline and simple description: value
   const descMatch = frontmatter.match(/^description:\s*>-?\s*\n([\s\S]*?)(?=\n\w|\n---|$)/m);
-  if (descMatch) {
-    return descMatch[1].replace(/^\s+/, "").trim();
-  }
+  if (descMatch) return descMatch[1].replace(/^\s+/, "").trim();
   const simpleMatch = frontmatter.match(/^description:\s*(.+)/m);
   if (simpleMatch) return simpleMatch[1].trim();
   return null;
+}
+
+function readChannelConfig(db: SqliteDatabase, channelId: string): Record<string, string> {
+  const rows = db
+    .prepare("SELECT key, value FROM channel_configs WHERE channel_id = ?")
+    .all(channelId) as Array<{ key: string; value: string }>;
+  const config: Record<string, string> = {};
+  for (const row of rows) {
+    config[row.key] = row.value;
+  }
+  return config;
 }

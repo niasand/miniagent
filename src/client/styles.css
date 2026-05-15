@@ -231,6 +231,97 @@ button { cursor: pointer; }
 .channel-status--disconnected .channel-dot { background: #ef4444; }
 .channel-status--disconnected { color: #ef4444; }
 
+.channel-config-btn {
+  margin-top: 8px;
+  height: 30px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-muted);
+  padding: 0 14px;
+  color: var(--color-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 120ms;
+}
+
+.channel-config-btn:hover {
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-muted));
+}
+
+.channel-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 10px;
+}
+
+.channel-field {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.channel-field input {
+  width: 100%;
+  height: 34px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-background);
+  padding: 0 10px;
+  color: var(--color-foreground);
+  font-size: 13px;
+  font-weight: 400;
+  outline: none;
+}
+
+.channel-field input:focus {
+  border-color: var(--color-ring);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-ring) 16%, transparent);
+}
+
+.channel-form-error {
+  margin: 0;
+  color: #ef4444;
+  font-size: 12px;
+}
+
+.channel-form-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.channel-form-cancel,
+.channel-form-save {
+  height: 30px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0 16px;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 120ms;
+}
+
+.channel-form-cancel {
+  background: var(--color-muted);
+  color: var(--color-foreground);
+}
+
+.channel-form-cancel:hover {
+  background: color-mix(in srgb, var(--color-foreground) 10%, var(--color-muted));
+}
+
+.channel-form-save {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
+}
+
+.channel-form-save:hover:not(:disabled) { opacity: 0.88; }
+.channel-form-save:disabled { opacity: 0.4; }
+
 /* ── Main content ── */
 
 .chat-main {
