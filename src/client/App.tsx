@@ -294,8 +294,6 @@ export default function App() {
 const FEISHU_FIELDS = [
   { key: "app_id", label: "App ID" },
   { key: "app_secret", label: "App Secret" },
-  { key: "verification_token", label: "Verification Token" },
-  { key: "encrypt_key", label: "Encrypt Key" },
 ];
 
 function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSaved: () => void }) {
