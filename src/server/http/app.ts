@@ -167,6 +167,28 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
     });
   });
 
+  app.get("/api/channels", (context) => {
+    const db = context.get("db");
+    const rows = db
+      .prepare(
+        `SELECT DISTINCT channel_type FROM (
+          SELECT channel_type FROM sessions WHERE channel_type IS NOT NULL
+          UNION SELECT 'web' AS channel_type
+        )`,
+      )
+      .all() as Array<{ channel_type: string }>;
+    const feishuEnabled = rows.some((r) => r.channel_type === "feishu");
+    const channels = [
+      { id: "web", label: "Web", status: "connected", description: "Built-in web channel" },
+    ];
+    if (feishuEnabled) {
+      channels.push({ id: "feishu", label: "Feishu", status: "connected", description: "Feishu bot integration" });
+    } else {
+      channels.push({ id: "feishu", label: "Feishu", status: "available", description: "Feishu bot integration" });
+    }
+    return context.json({ channels });
+  });
+
   app.post("/api/security/confirmations", async (context) => {
     const body = await readJsonBody(context.req);
     if (!body.ok) {

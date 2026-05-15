@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Search, SendHorizontal, Sparkles, X } from "lucide-react";
+import { ChevronDown, Search, SendHorizontal, Settings, Sparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { fetchChannels, type ChannelInfo } from "./api/channels.js";
 import { createSession } from "./api/sessions.js";
 import { fetchSkills } from "./api/skills.js";
 import { sendSessionMessage } from "./api/messages.js";
@@ -13,13 +14,16 @@ const AGENT_OPTIONS: Array<{ value: AgentType; label: string }> = [
   { value: "claude", label: "Claude" },
 ];
 
+type DrawerTab = "skills" | "channels";
+
 export default function App() {
   const queryClient = useQueryClient();
   const [agentType, setAgentType] = useState<AgentType>("claude");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
-  const [skillsOpen, setSkillsOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerTab, setDrawerTab] = useState<DrawerTab>("skills");
   const [skillsQuery, setSkillsQuery] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const skillsSearchRef = useRef<HTMLInputElement>(null);
@@ -31,6 +35,12 @@ export default function App() {
     refetchInterval: 30_000,
   });
   const skills: SkillMeta[] = skillsData?.skills ?? [];
+
+  const { data: channelsData } = useQuery({
+    queryKey: ["channels"],
+    queryFn: fetchChannels,
+  });
+  const channels: ChannelInfo[] = channelsData?.channels ?? [];
 
   const filteredSkills = skillsQuery
     ? skills.filter(
@@ -87,13 +97,22 @@ export default function App() {
     prevMsgCountRef.current = messages.length;
   }, [messages.length]);
 
-  // Focus search on drawer open
+  // Focus search on drawer open + skills tab
   useEffect(() => {
-    if (skillsOpen) {
+    if (drawerOpen && drawerTab === "skills") {
       setSkillsQuery("");
       requestAnimationFrame(() => skillsSearchRef.current?.focus());
     }
-  }, [skillsOpen]);
+  }, [drawerOpen, drawerTab]);
+
+  const openDrawer = (tab: DrawerTab) => {
+    if (drawerOpen && drawerTab === tab) {
+      setDrawerOpen(false);
+    } else {
+      setDrawerTab(tab);
+      setDrawerOpen(true);
+    }
+  };
 
   const sendMessage = useMutation({
     mutationFn: async (text: string) => {
@@ -119,7 +138,7 @@ export default function App() {
 
   const handleSkillSelect = (skill: SkillMeta) => {
     setDraft(`/${skill.name} `);
-    setSkillsOpen(false);
+    setDrawerOpen(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -133,41 +152,77 @@ export default function App() {
 
   return (
     <main className="app-root">
-      {/* Skills drawer */}
-      <div className={`skills-drawer ${skillsOpen ? "open" : ""}`}>
-        <div className="skills-drawer-header">
-          <strong>Skills</strong>
-          <button className="skills-close-btn" onClick={() => setSkillsOpen(false)}>
+      {/* Left drawer */}
+      <div className={`drawer ${drawerOpen ? "open" : ""}`}>
+        {/* Tab header */}
+        <div className="drawer-tabs">
+          <button
+            className={`drawer-tab ${drawerTab === "skills" ? "active" : ""}`}
+            onClick={() => setDrawerTab("skills")}
+          >
+            <Sparkles className="h-3.5 w-3.5" /> Skills
+          </button>
+          <button
+            className={`drawer-tab ${drawerTab === "channels" ? "active" : ""}`}
+            onClick={() => setDrawerTab("channels")}
+          >
+            <Settings className="h-3.5 w-3.5" /> Channels
+          </button>
+          <button className="drawer-close" onClick={() => setDrawerOpen(false)}>
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="skills-search">
-          <Search className="h-4 w-4 skills-search-icon" />
-          <input
-            ref={skillsSearchRef}
-            className="skills-search-input"
-            value={skillsQuery}
-            onChange={(e) => setSkillsQuery(e.currentTarget.value)}
-            placeholder="Search skills..."
-          />
-        </div>
-        <div className="skills-list">
-          {filteredSkills.length === 0 && (
-            <div className="skills-empty">No matching skills</div>
-          )}
-          {filteredSkills.map((skill) => (
-            <button key={skill.name} className="skills-item" onClick={() => handleSkillSelect(skill)}>
-              <strong>{skill.name}</strong>
-              {skill.description && (
-                <span className="dropdown-desc">{skill.description.slice(0, 30)}...</span>
+
+        {/* Skills tab */}
+        {drawerTab === "skills" && (
+          <>
+            <div className="drawer-search">
+              <Search className="h-4 w-4 drawer-search-icon" />
+              <input
+                ref={skillsSearchRef}
+                className="drawer-search-input"
+                value={skillsQuery}
+                onChange={(e) => setSkillsQuery(e.currentTarget.value)}
+                placeholder="Search skills..."
+              />
+            </div>
+            <div className="drawer-list">
+              {filteredSkills.length === 0 && (
+                <div className="drawer-empty">No matching skills</div>
               )}
-            </button>
-          ))}
-        </div>
+              {filteredSkills.map((skill) => (
+                <button key={skill.name} className="drawer-item" onClick={() => handleSkillSelect(skill)}>
+                  <strong>{skill.name}</strong>
+                  {skill.description && (
+                    <span className="drawer-item-desc">{skill.description.slice(0, 30)}...</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* Channels tab */}
+        {drawerTab === "channels" && (
+          <div className="drawer-list">
+            {channels.map((ch) => (
+              <div key={ch.id} className="channel-card">
+                <div className="channel-card-header">
+                  <strong>{ch.label}</strong>
+                  <span className={`channel-status channel-status--${ch.status}`}>
+                    <span className="channel-dot" />
+                    {ch.status === "connected" ? "Connected" : ch.status === "available" ? "Available" : "Offline"}
+                  </span>
+                </div>
+                <p className="channel-card-desc">{ch.description}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Main content */}
-      <div className={`chat-main ${skillsOpen ? "shifted" : ""}`}>
+      <div className="chat-main">
         <div className="chat-messages">
           {messages.length === 0 && (
             <div className="chat-empty">
@@ -197,9 +252,12 @@ export default function App() {
 
         <div className="chat-bar">
           <div className="chat-bar-left">
-            <button className="bar-btn" onClick={() => setSkillsOpen(!skillsOpen)} title="Skills">
+            <button className={`bar-btn ${drawerOpen && drawerTab === "skills" ? "bar-btn--active" : ""}`} onClick={() => openDrawer("skills")} title="Skills">
               <Sparkles className="h-4 w-4" />
               <span className="bar-btn-label">Skills</span>
+            </button>
+            <button className={`bar-btn ${drawerOpen && drawerTab === "channels" ? "bar-btn--active" : ""}`} onClick={() => openDrawer("channels")} title="Channels">
+              <Settings className="h-4 w-4" />
             </button>
             <div className="dropdown-wrapper">
               <button className="bar-btn" onClick={() => setAgentMenuOpen(!agentMenuOpen)} title="Switch agent">
@@ -235,7 +293,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* Agent dropdown backdrop only */}
       {agentMenuOpen && (
         <div className="dropdown-backdrop" onClick={() => setAgentMenuOpen(false)} />
       )}
