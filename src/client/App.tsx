@@ -433,7 +433,10 @@ function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSaved: () =
               <input
                 type={f.key.includes("secret") ? "password" : "text"}
                 value={form[f.key] ?? ""}
-                onChange={(e) => setForm((prev) => ({ ...prev, [f.key]: e.currentTarget.value }))}
+                onChange={(e) => {
+	                  const value = e.currentTarget.value;
+	                  setForm((prev) => ({ ...prev, [f.key]: value }));
+	                }}
                 placeholder={f.label}
               />
             </label>
