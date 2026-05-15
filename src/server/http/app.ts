@@ -811,8 +811,19 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
     const stream = new ReadableStream({
       async start(controller) {
         const send = (text: string) => {
-          if (!stopped) controller.enqueue(encoder.encode(text));
+          if (stopped) return;
+          try {
+            controller.enqueue(encoder.encode(text));
+          } catch {
+            stopped = true;
+            clearInterval(pollInterval);
+            clearInterval(keepalive);
+            try { controller.close(); } catch { /* already closed */ }
+          }
         };
+
+        let pollInterval: ReturnType<typeof setInterval>;
+        let keepalive: ReturnType<typeof setInterval>;
 
         // Send initial historical events
         const initial = new EventStore(db).listAfterGlobalSeq({ sessionId, afterGlobalSeq, limit });
@@ -823,17 +834,19 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
         send(": cursor-ready\n\n");
 
         // Poll for new events every 500ms
-        const pollInterval = setInterval(() => {
+        pollInterval = setInterval(() => {
           if (stopped) return;
-          const newEvents = new EventStore(db).listAfterGlobalSeq({ sessionId, afterGlobalSeq: cursor, limit: 50 });
-          for (const event of newEvents) {
-            send(`id: ${event.globalSeq}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
-            cursor = event.globalSeq;
-          }
+          try {
+            const newEvents = new EventStore(db).listAfterGlobalSeq({ sessionId, afterGlobalSeq: cursor, limit: 50 });
+            for (const event of newEvents) {
+              send(`id: ${event.globalSeq}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+              cursor = event.globalSeq;
+            }
+          } catch { /* db error, skip this tick */ }
         }, 500);
 
         // Keepalive every 25s
-        const keepalive = setInterval(() => send(": keepalive\n\n"), 25_000);
+        keepalive = setInterval(() => send(": keepalive\n\n"), 25_000);
 
         // Clean up on abort
         context.req.raw.signal.addEventListener("abort", () => {
