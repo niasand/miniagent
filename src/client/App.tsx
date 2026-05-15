@@ -16,6 +16,15 @@ const AGENT_OPTIONS: Array<{ value: AgentType; label: string }> = [
 
 type DrawerTab = "skills" | "channels";
 
+function calcDuration(startTime: string, endTime: string): string {
+  const toMs = (t: string) => {
+    const [h, m, s] = t.split(":").map(Number);
+    return (h * 3600 + m * 60 + s) * 1000;
+  };
+  const diff = (toMs(endTime) - toMs(startTime)) / 1000;
+  return diff < 0.1 ? "<0.1" : diff.toFixed(1);
+}
+
 export default function App() {
   const queryClient = useQueryClient();
   const [agentType, setAgentType] = useState<AgentType>("claude");
@@ -122,11 +131,13 @@ export default function App() {
         sid = res.sessionId;
         setSessionId(sid);
       }
-      return sendSessionMessage(sid, { text });
+      const result = await sendSessionMessage(sid, { text });
+      return { ...result, sessionId: sid };
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       setDraft("");
-      queryClient.invalidateQueries({ queryKey: ["workspace", sessionId] });
+      setSessionId(data.sessionId);
+      queryClient.invalidateQueries({ queryKey: ["workspace", data.sessionId] });
     },
   });
 
@@ -221,21 +232,40 @@ export default function App() {
               <p>Send a message to start</p>
             </div>
           )}
-          {messages.map((msg) => (
-            <div key={msg.id} className={`chat-bubble ${msg.role}`}>
-              <div className="chat-bubble-header">
-                <strong>{msg.author}</strong>
-                {msg.time && <span className="chat-time">{msg.time}</span>}
+          {messages.map((msg, index) => {
+            // System "Run succeeded" → stat card
+            if (msg.role === "system" && msg.markdown.startsWith("Run succeeded")) {
+              const prev = messages[index - 1];
+              const duration = prev?.time && msg.time
+                ? calcDuration(prev.time, msg.time)
+                : null;
+              return (
+                <div key={msg.id} className="chat-stat">
+                  {duration !== null && <span>耗时 {duration}s</span>}
+                  <span>完成</span>
+                </div>
+              );
+            }
+            // System messages → skip others
+            if (msg.role === "system") return null;
+            return (
+              <div key={msg.id} className={`chat-bubble ${msg.role}`}>
+                <div className="chat-bubble-header">
+                  <strong>{msg.author}</strong>
+                  {msg.time && <span className="chat-time">{msg.time}</span>}
+                </div>
+                <div className="prose-mini">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.markdown}</ReactMarkdown>
+                </div>
               </div>
-              <div className="prose-mini">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.markdown}</ReactMarkdown>
-              </div>
-            </div>
-          ))}
+            );
+          })}
           {sendMessage.isPending && (
             <div className="chat-bubble agent">
               <div className="chat-bubble-header"><strong>Agent</strong></div>
-              <div className="chat-typing">Thinking...</div>
+              <div className="chat-typing">
+                <span className="typing-dots"><span/><span/><span/></span>
+              </div>
             </div>
           )}
           <div ref={messagesEndRef} />
