@@ -15,9 +15,13 @@ class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryStat
   render() {
     if (this.state.error) {
       return (
-        <div style={{ padding: 24, color: "#ef4444", fontFamily: "monospace" }}>
-          <p>Something went wrong:</p>
-          <pre>{this.state.error.message}</pre>
+        <div style={{ padding: 24, color: "#ef4444", fontFamily: "monospace", fontSize: 13, whiteSpace: "pre-wrap", maxWidth: 800 }}>
+          <p style={{ fontWeight: 700 }}>Something went wrong:</p>
+          <p>{this.state.error.message}</p>
+          <details>
+            <summary style={{ cursor: "pointer", margin: "8px 0" }}>Stack trace</summary>
+            <pre style={{ fontSize: 11, overflow: "auto" }}>{this.state.error.stack}</pre>
+          </details>
           <button onClick={() => this.setState({ error: null })} style={{ marginTop: 8, padding: "6px 12px" }}>
             Retry
           </button>

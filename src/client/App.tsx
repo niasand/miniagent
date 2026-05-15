@@ -72,9 +72,11 @@ export default function App() {
   const lastGlobalSeqRef = useRef(0);
   useEffect(() => {
     if (!sessionId) return;
+    let stopped = false;
     let source: EventSource | null = null;
 
     const connect = (afterSeq: number) => {
+      if (stopped) return;
       source = new EventSource(
         `/api/events/stream?sessionId=${encodeURIComponent(sessionId)}&afterGlobalSeq=${afterSeq}&limit=100`,
       );
@@ -94,7 +96,6 @@ export default function App() {
         }
         refresh();
       });
-      // Track last seen globalSeq from SSE event IDs
       source.addEventListener("message_created", (e: MessageEvent) => {
         try { lastGlobalSeqRef.current = JSON.parse(e.data).globalSeq ?? lastGlobalSeqRef.current; } catch {}
       });
@@ -103,12 +104,14 @@ export default function App() {
       });
       source.onerror = () => {
         source?.close();
-        // Reconnect with last seen cursor to avoid replaying old events
-        setTimeout(() => connect(lastGlobalSeqRef.current), 3_000);
+        if (!stopped) setTimeout(() => connect(lastGlobalSeqRef.current), 3_000);
       };
     };
     connect(lastGlobalSeqRef.current);
-    return () => { source?.close(); };
+    return () => {
+      stopped = true;
+      source?.close();
+    };
   }, [sessionId, queryClient]);
 
   // Auto-scroll on new messages or streaming text
