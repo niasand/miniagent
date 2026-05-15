@@ -4,7 +4,7 @@ import { cn } from "../../lib/utils.js";
 type BadgeTone = "default" | "green" | "amber" | "blue" | "red";
 
 const toneClass: Record<BadgeTone, string> = {
-  default: "border-border bg-white text-foreground",
+  default: "border-border bg-surface text-foreground",
   green: "border-emerald-600/25 bg-emerald-600/10 text-emerald-700",
   amber: "border-amber-700/30 bg-amber-700/10 text-amber-700",
   blue: "border-blue-700/25 bg-blue-700/10 text-blue-700",

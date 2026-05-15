@@ -1,12 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Activity,
+  Archive,
+  ArrowRightLeft,
   Bot,
   Boxes,
   CircleDot,
   Folder,
+  History,
+  RefreshCw,
+  SendHorizontal,
   ShieldCheck,
   ShieldX,
   Plus,
+  Square,
   X,
 } from "lucide-react";
 import { motion } from "motion/react";
@@ -362,13 +369,16 @@ function Topbar({
   ];
 
   return (
-    <header className="mb-[14px] flex flex-wrap items-center justify-between gap-4">
+    <header className="topbar">
       <div className="flex min-w-0 items-center gap-[11px]">
-        <div className="grid h-[34px] w-[34px] place-items-center rounded-[8px] bg-ink text-white shadow-elevated">
+        <div className="brand-mark">
           <Boxes className="h-[18px] w-[18px]" />
         </div>
         <div className="min-w-0">
-          <h1 className="text-lg font-semibold leading-tight">MiniAgent</h1>
+          <div className="flex min-w-0 items-center gap-2">
+            <h1 className="text-lg font-semibold leading-tight">MiniAgent</h1>
+            <Badge tone="blue">ACP default</Badge>
+          </div>
           <p className="truncate text-xs text-muted-foreground">Local multi-agent control plane</p>
         </div>
       </div>
@@ -614,16 +624,17 @@ function Conversation({
           </motion.article>
         ))}
       </div>
-      <div className="grid grid-cols-[1fr_auto] gap-3 border-t border-border bg-surface/95 p-3">
+      <div className="composer">
         <div className="grid gap-1">
           <textarea
-            className="h-14 resize-none rounded-[8px] border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+            className="composer-input"
             value={draft}
             onChange={(event) => onDraftChange(event.currentTarget.value)}
           />
           {sendError ? <p className="text-xs text-red-600">{sendError}</p> : null}
         </div>
         <Button variant="primary" className="h-14" disabled={sending || draft.trim().length === 0} onClick={onSend}>
+          <SendHorizontal className="h-4 w-4" />
           {sending ? "Sending..." : "Send"}
         </Button>
       </div>
@@ -692,6 +703,7 @@ function RightRail({
         <Metric label="protocol" value={runtime.runtimeKind ?? "idle"} progress={runtime.runtimeKind === "acp" ? 100 : 40} />
         {runtime.activeRunId ? (
           <Button size="sm" disabled={stopping} onClick={() => onStopRun(runtime.activeRunId as string)}>
+            <Square className="h-4 w-4" />
             {stopping ? "Stopping..." : "Stop run"}
           </Button>
         ) : null}
@@ -761,12 +773,15 @@ function RightRail({
           - compact at {contextBudget.criticalPercent}% - {formatLastPack(contextBudget.lastCompactedAt)}
         </p>
         <Button size="sm" disabled={compacting} onClick={onCompact}>
+          <Archive className="h-4 w-4" />
           {compacting ? "Compacting..." : "Compact now"}
         </Button>
         <Button size="sm" disabled={restarting} onClick={onRestart}>
+          <RefreshCw className="h-4 w-4" />
           {restarting ? "Queueing..." : "Restart from ContextPack"}
         </Button>
         <Button size="sm" onClick={onViewHistory}>
+          <History className="h-4 w-4" />
           View raw history
         </Button>
         {compactError ? <p className="text-xs text-red-600">{compactError}</p> : null}
@@ -802,6 +817,7 @@ function RightRail({
             disabled={handoffPendingTarget !== null}
             onClick={() => onHandoff(target.agentType)}
           >
+            <ArrowRightLeft className="h-4 w-4" />
             {handoffPendingTarget === target.agentType ? "Creating..." : `Handoff to ${target.label}`}
           </Button>
         ))}
@@ -901,7 +917,7 @@ function SectionHeader({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-[54px] items-center justify-between gap-3 border-b border-border px-4 py-3">
+    <div className="section-header">
       <div className="flex min-w-0 items-center gap-2">
         {icon}
         <div className="min-w-0">
@@ -936,9 +952,12 @@ function RightSection({
 
 function Metric({ label, value, progress }: { label: string; value: string; progress: number }) {
   return (
-    <div className="grid gap-2 rounded-[8px] border border-border bg-muted/70 p-3">
+    <div className="metric-card">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs text-muted-foreground">{label}</span>
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Activity className="h-3.5 w-3.5" />
+          {label}
+        </span>
         <strong className="text-2xl leading-none">{value}</strong>
       </div>
       <Progress value={progress} />

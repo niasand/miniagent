@@ -4,18 +4,18 @@ import type { ButtonHTMLAttributes } from "react";
 import { cn } from "../../lib/utils.js";
 
 const buttonVariants = cva(
-  "inline-flex h-[34px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-[7px] border px-[11px] text-sm font-medium shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex h-9 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-[8px] border px-3 text-sm font-semibold shadow-[inset_0_1px_0_rgba(255,255,255,0.72),0_1px_2px_rgba(15,23,42,0.06)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
-        default: "border-border bg-white/75 text-foreground hover:bg-white",
-        primary: "border-ink bg-ink text-white hover:bg-ink/90",
-        ghost: "border-transparent bg-transparent hover:bg-muted",
+        default: "border-border bg-surface text-foreground hover:border-primary/35 hover:bg-muted",
+        primary: "border-primary bg-primary text-primary-foreground hover:bg-primary/90",
+        ghost: "border-transparent bg-transparent shadow-none hover:bg-muted",
       },
       size: {
-        default: "h-[34px] px-[11px]",
-        icon: "h-[34px] w-[34px] px-0",
-        sm: "h-[34px] px-[11px] text-sm",
+        default: "h-9 px-3",
+        icon: "h-9 w-9 px-0",
+        sm: "h-9 px-3 text-sm",
       },
     },
     defaultVariants: {
