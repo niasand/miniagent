@@ -595,15 +595,16 @@ function Conversation({
           <Badge tone={contextTone[contextBudget.status]}>Context {contextBudget.usagePercent}%</Badge>
         </div>
       </SectionHeader>
-      <div className="messages">
+      <div className="messages" key={selected.id}>
         {messages.map((message, index) => {
           const badge = formatMessageBadge(message.badge);
+          const isNew = index >= messages.length - 1;
           return (
             <motion.article
               key={message.id}
-              initial={{ opacity: 0, y: 8 }}
+              initial={isNew ? { opacity: 0, y: 8 } : false}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.18, delay: index * 0.04 }}
+              transition={{ duration: 0.18 }}
               className={cn("message", message.role === "user" ? "user" : "agent")}
             >
               <div className="mb-2 flex items-center justify-between gap-3">
