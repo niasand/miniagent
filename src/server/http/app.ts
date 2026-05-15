@@ -1,3 +1,6 @@
+import { readdir, readFile, stat } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { Hono, type Context } from "hono";
 import type { SqliteDatabase } from "../db/migrate.js";
 import { ContextBudgetService } from "../context/context-budget-service.js";
@@ -126,6 +129,38 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
       service: "miniagent",
     }),
   );
+
+  app.get("/api/skills", async () => {
+    const skillsDir = join(homedir(), ".claude", "skills");
+    const results: Array<{ name: string; description: string }> = [];
+    let entries: string[];
+    try {
+      entries = await readdir(skillsDir);
+    } catch {
+      return new Response(JSON.stringify({ skills: [] }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    for (const entry of entries) {
+      const entryPath = join(skillsDir, entry);
+      const s = await stat(entryPath).catch(() => null);
+      if (!s?.isDirectory()) continue;
+      // Try SKILL.md, skill.md, README.md
+      let mdContent = "";
+      for (const file of ["SKILL.md", "skill.md", "README.md"]) {
+        mdContent = await readFile(join(entryPath, file), "utf-8").catch(() => "");
+        if (mdContent) break;
+      }
+      const desc = parseFrontmatterDescription(mdContent);
+      results.push({
+        name: entry,
+        description: desc ?? "",
+      });
+    }
+    return new Response(JSON.stringify({ skills: results }), {
+      headers: { "Content-Type": "application/json" },
+    });
+  });
 
   app.post("/api/security/confirmations", async (context) => {
     const body = await readJsonBody(context.req);
@@ -1362,4 +1397,18 @@ function mapMemoryArchive(record: MemoryArchiveRecord): MemoryArchive {
     summary: record.summary,
     updatedAt: record.updatedAt,
   };
+}
+
+function parseFrontmatterDescription(content: string): string | null {
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return null;
+  const frontmatter = match[1];
+  // Handle description: >- multiline and simple description: value
+  const descMatch = frontmatter.match(/^description:\s*>-?\s*\n([\s\S]*?)(?=\n\w|\n---|$)/m);
+  if (descMatch) {
+    return descMatch[1].replace(/^\s+/, "").trim();
+  }
+  const simpleMatch = frontmatter.match(/^description:\s*(.+)/m);
+  if (simpleMatch) return simpleMatch[1].trim();
+  return null;
 }
