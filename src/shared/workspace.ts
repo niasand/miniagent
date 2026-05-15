@@ -2,7 +2,7 @@ export type WorkspaceAgentType = "codex" | "claude" | "trae";
 export type WorkspaceAgentLabel = "Codex" | "Claude" | "Trae";
 export type WorkspaceRuntimeKind = "cli" | "acp";
 export type WorkspaceAgentHealthStatus = "unknown" | "healthy" | "missing" | "auth_required" | "failed";
-export type WorkspaceActorType = "web_user" | "feishu_user" | "system" | "agent";
+export type WorkspaceActorType = "web_user" | "feishu_user" | "qq_user" | "system" | "agent";
 
 export type WorkspaceSessionStatus = "running" | "compact" | "queued" | "idle" | "archived" | "failed";
 

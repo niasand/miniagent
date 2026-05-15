@@ -242,10 +242,12 @@ export class QQWebSocketClient {
   }
 
   private sendIdentify(): void {
-    const token = this.tokenManager.getToken().catch(() => "");
-    // token is cached, so this is sync-ish, but we handle it in the next tick
     this.tokenManager.getToken().then((t) => {
       this.send({ op: OP_IDENTIFY, d: { token: `QQBot ${t}`, intents: INTENTS_PUBLIC_MESSAGES, shard: [0, 1] } });
+    }).catch((err) => {
+      this.log(`IDENTIFY token fetch failed: ${err instanceof Error ? err.message : err}`);
+      this.cleanup();
+      this.scheduleReconnect();
     });
   }
 
