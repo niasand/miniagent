@@ -73,7 +73,7 @@ export class HandoffService {
 
       const targetSession = this.sessions.createSession({
         id: createId("ses"),
-        title: request.targetTitle ?? `${sourceSession.title} handoff`,
+        title: request.targetTitle ?? sourceSession.title,
         agentType: request.targetAgentType,
         workspacePath: sourceSession.workspacePath,
         channelType: sourceSession.channelType === "web" || sourceSession.channelType === "feishu" ? sourceSession.channelType : null,

@@ -58,23 +58,7 @@ button {
 }
 
 .bg-app {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(244, 246, 248, 0.96)),
-    repeating-linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--color-border) 40%, transparent) 0,
-      color-mix(in srgb, var(--color-border) 40%, transparent) 1px,
-      transparent 1px,
-      transparent 96px
-    ),
-    repeating-linear-gradient(
-      0deg,
-      color-mix(in srgb, var(--color-border) 28%, transparent) 0,
-      color-mix(in srgb, var(--color-border) 28%, transparent) 1px,
-      transparent 1px,
-      transparent 96px
-    ),
-    var(--color-app);
+  background: linear-gradient(180deg, #fbfcfd, var(--color-app));
 }
 
 .app-shell {
@@ -104,15 +88,14 @@ button {
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--color-primary) 26%, transparent);
   border-radius: 8px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--color-primary) 14%, var(--color-surface)), var(--color-ink));
+  background: var(--color-ink);
   color: white;
-  box-shadow: 0 10px 24px rgba(15, 118, 110, 0.2);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
 }
 
 .deck {
   display: grid;
-  grid-template-columns: 292px minmax(520px, 1fr) 360px;
+  grid-template-columns: 280px minmax(560px, 1fr) 300px;
   gap: 12px;
   height: calc(100vh - 96px);
   min-height: 640px;
@@ -131,7 +114,7 @@ button {
 
 .sidebar,
 .rightbar {
-  background: linear-gradient(180deg, var(--color-surface), color-mix(in srgb, var(--color-muted) 42%, var(--color-surface)));
+  background: var(--color-surface);
 }
 
 .section-header {
@@ -141,7 +124,7 @@ button {
   justify-content: space-between;
   gap: 12px;
   border-bottom: 1px solid var(--color-border);
-  background: color-mix(in srgb, var(--color-surface) 86%, var(--color-muted));
+  background: var(--color-surface);
   padding: 11px 14px;
 }
 
@@ -278,36 +261,39 @@ button {
   border-bottom: 0;
 }
 
-.metric-card {
+.daily-summary {
   display: grid;
-  gap: 10px;
-  border: 1px solid color-mix(in srgb, var(--color-border) 86%, transparent);
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.daily-summary div {
+  display: grid;
+  gap: 4px;
+  border: 1px solid color-mix(in srgb, var(--color-border) 84%, transparent);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--color-muted) 58%, var(--color-surface));
-  padding: 12px;
+  background: color-mix(in srgb, var(--color-muted) 54%, var(--color-surface));
+  padding: 10px;
 }
 
-.metric-card strong {
-  max-width: 170px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 24px;
-}
-
-.log-line {
-  display: grid;
-  grid-template-columns: 70px 82px minmax(0, 1fr);
-  gap: 10px;
-  align-items: start;
-  min-height: 34px;
-  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
-  padding: 8px 4px;
+.daily-summary span,
+.context-line span {
+  color: var(--color-muted-foreground);
   font-size: 12px;
 }
 
-.log-line:last-child {
-  border-bottom: 0;
+.daily-summary strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+}
+
+.context-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .prose-mini {
@@ -508,7 +494,7 @@ button {
 
 @media (max-width: 1280px) {
   .deck {
-    grid-template-columns: 260px minmax(440px, 1fr) 320px;
+    grid-template-columns: 250px minmax(440px, 1fr) 280px;
   }
 }
 

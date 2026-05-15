@@ -1,11 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Activity,
   Archive,
   ArrowRightLeft,
   Bot,
   Boxes,
-  CircleDot,
   Folder,
   History,
   RefreshCw,
@@ -252,7 +250,7 @@ export default function App() {
                   text,
                   hasRealSession: hasRealSelectedSession,
                   agentType: selected.agentType,
-                  title: selected.title,
+                  title: displaySessionTitle(selected.title),
                 });
               }
             }}
@@ -261,8 +259,6 @@ export default function App() {
             selected={selected}
             runtime={snapshot.runtime}
             contextBudget={snapshot.contextBudget}
-            outboxRows={snapshot.outboxRows}
-            keyEvents={snapshot.keyEvents}
             permissions={permissions.data?.permissions ?? []}
             permissionsError={permissions.error?.message ?? respondPermission.error?.message}
             respondingPermissionId={
@@ -363,9 +359,9 @@ function Topbar({
   onNewSession: () => void;
 }) {
   const agentButtons: Array<{ agentType: WorkspaceAgentType; label: string }> = [
-    { agentType: "codex", label: "Codex CLI" },
-    { agentType: "claude", label: "Claude Code" },
-    { agentType: "trae", label: "Trae CLI" },
+    { agentType: "codex", label: "Codex" },
+    { agentType: "claude", label: "Claude" },
+    { agentType: "trae", label: "Trae" },
   ];
 
   return (
@@ -377,9 +373,8 @@ function Topbar({
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">
             <h1 className="text-lg font-semibold leading-tight">MiniAgent</h1>
-            <Badge tone="blue">ACP default</Badge>
           </div>
-          <p className="truncate text-xs text-muted-foreground">Local multi-agent control plane</p>
+          <p className="truncate text-xs text-muted-foreground">Local AI workspace</p>
         </div>
       </div>
       <div className="grid justify-items-end gap-2">
@@ -547,10 +542,7 @@ function Sidebar({
   return (
     <aside className="panel-solid sidebar flex h-full min-h-0 flex-col overflow-hidden">
       <SectionHeader title="Sessions">
-        <Badge tone="green">
-          <CircleDot className="h-3 w-3 fill-current" />
-          3 active
-        </Badge>
+        <Badge>{sessions.length} chats</Badge>
       </SectionHeader>
       <div className="session-list">
         {sessions.map((session) => (
@@ -561,12 +553,12 @@ function Sidebar({
           >
             <span className="avatar">{session.initials}</span>
             <span className="tight min-w-0">
-              <strong className="block truncate text-sm">{session.title}</strong>
+              <strong className="block truncate text-sm">{displaySessionTitle(session.title)}</strong>
               <span className="block truncate text-xs text-muted-foreground">
                 {session.agent} - {session.workspace}
               </span>
             </span>
-            <Badge tone={statusTone[session.status]}>{session.status}</Badge>
+            <Badge tone={statusTone[session.status]}>{formatStatusLabel(session.status)}</Badge>
           </button>
         ))}
       </div>
@@ -596,33 +588,35 @@ function Conversation({
   return (
     <section className="panel-solid main conversation grid h-full min-h-0 grid-rows-[auto_1fr_auto] overflow-hidden">
       <SectionHeader
-        title={selected.title}
-        subtitle="session_01J - run_08Q - global_seq 18,442"
+        title={displaySessionTitle(selected.title)}
+        subtitle={`${selected.agent} - ${displayWorkspace(selected.workspace)}`}
       >
         <div className="flex flex-wrap justify-end gap-2">
-          <Badge tone="green">EventStore synced</Badge>
           <Badge tone={contextTone[contextBudget.status]}>Context {contextBudget.usagePercent}%</Badge>
         </div>
       </SectionHeader>
       <div className="messages">
-        {messages.map((message, index) => (
-          <motion.article
-            key={message.id}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.18, delay: index * 0.04 }}
-            className={cn("message", message.role === "user" ? "user" : "agent")}
-          >
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <strong>{message.author}</strong>
-              {message.badge ? <Badge tone={message.badge === "success" ? "green" : "blue"}>{message.badge}</Badge> : null}
-              {message.time ? <span className="text-xs text-muted-foreground">{message.time}</span> : null}
-            </div>
-            <div className="prose-mini">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.markdown}</ReactMarkdown>
-            </div>
-          </motion.article>
-        ))}
+        {messages.map((message, index) => {
+          const badge = formatMessageBadge(message.badge);
+          return (
+            <motion.article
+              key={message.id}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.18, delay: index * 0.04 }}
+              className={cn("message", message.role === "user" ? "user" : "agent")}
+            >
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <strong>{message.author}</strong>
+                {badge ? <Badge tone={messageBadgeTone(badge)}>{badge}</Badge> : null}
+                {message.time ? <span className="text-xs text-muted-foreground">{message.time}</span> : null}
+              </div>
+              <div className="prose-mini">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.markdown}</ReactMarkdown>
+              </div>
+            </motion.article>
+          );
+        })}
       </div>
       <div className="composer">
         <div className="grid gap-1">
@@ -646,8 +640,6 @@ function RightRail({
   selected,
   runtime,
   contextBudget,
-  outboxRows,
-  keyEvents,
   permissions,
   permissionsError,
   respondingPermissionId,
@@ -669,8 +661,6 @@ function RightRail({
   selected: WorkspaceSessionSummary;
   runtime: typeof fallbackWorkspace.runtime;
   contextBudget: typeof fallbackWorkspace.contextBudget;
-  outboxRows: typeof fallbackWorkspace.outboxRows;
-  keyEvents: typeof fallbackWorkspace.keyEvents;
   permissions: RuntimePermissionRequest[];
   permissionsError?: string;
   respondingPermissionId: string | null;
@@ -698,24 +688,36 @@ function RightRail({
 
   return (
     <aside className="panel-solid rightbar h-full min-h-0 overflow-auto">
-      <RightSection title="RuntimeSupervisor" badge={<Badge tone="green">healthy</Badge>}>
-        <Metric label="latest run" value={runtime.status} progress={runtime.activeRunId ? 72 : 0} />
-        <Metric label="protocol" value={runtime.runtimeKind ?? "idle"} progress={runtime.runtimeKind === "acp" ? 100 : 40} />
+      <RightSection title="Session" badge={<Badge tone={statusTone[selected.status]}>{formatStatusLabel(selected.status)}</Badge>}>
+        <div className="daily-summary">
+          <div>
+            <span>Agent</span>
+            <strong>{selected.agent}</strong>
+          </div>
+          <div>
+            <span>Status</span>
+            <strong>{formatStatusLabel(selected.status)}</strong>
+          </div>
+        </div>
+        <div className="context-line">
+          <span>Context</span>
+          <Badge tone={contextTone[contextBudget.status]}>{contextBudget.usagePercent}%</Badge>
+        </div>
+        <Progress
+          tone={contextBudget.status === "healthy" ? "default" : contextBudget.status === "warning" ? "amber" : "red"}
+          value={Math.min(contextBudget.usagePercent, 100)}
+        />
+        <p className="text-xs text-muted-foreground">{formatLastPack(contextBudget.lastCompactedAt)}</p>
         {runtime.activeRunId ? (
           <Button size="sm" disabled={stopping} onClick={() => onStopRun(runtime.activeRunId as string)}>
             <Square className="h-4 w-4" />
-            {stopping ? "Stopping..." : "Stop run"}
+            {stopping ? "Stopping..." : "Stop"}
           </Button>
         ) : null}
         {stopError ? <p className="text-xs text-red-600">{stopError}</p> : null}
       </RightSection>
-      <RightSection
-        title="Permissions"
-        badge={<Badge tone={pendingPermissions(permissions).length > 0 ? "amber" : "green"}>{pendingPermissions(permissions).length}</Badge>}
-      >
-        {pendingPermissions(permissions).length === 0 ? (
-          <p className="text-xs text-muted-foreground">No pending runtime approvals.</p>
-        ) : (
+      {pendingPermissions(permissions).length > 0 ? (
+        <RightSection title="Approval needed" badge={<Badge tone="amber">{pendingPermissions(permissions).length}</Badge>}>
           <div className="grid gap-2">
             {pendingPermissions(permissions).map((permission) => {
               const requestId = permission.requestId ?? permission.id;
@@ -723,7 +725,6 @@ function RightRail({
               const pendingKey = `${permission.runId}:${requestId}`;
               return (
                 <div key={permission.id} className="grid gap-2 rounded-[8px] border border-border bg-muted/70 p-3">
-                  <p className="text-xs text-muted-foreground">{permission.protocol.toUpperCase()} approval</p>
                   <p className="text-sm">{permission.prompt}</p>
                   <div className="grid grid-cols-2 gap-2">
                     <Button
@@ -760,56 +761,26 @@ function RightRail({
               );
             })}
           </div>
-        )}
-        {permissionsError ? <p className="text-xs text-red-600">{permissionsError}</p> : null}
-      </RightSection>
-      <RightSection title="ContextPack" badge={<Badge tone={contextTone[contextBudget.status]}>{contextBudget.status}</Badge>}>
-        <Progress
-          tone={contextBudget.status === "healthy" ? "default" : contextBudget.status === "warning" ? "amber" : "red"}
-          value={Math.min(contextBudget.usagePercent, 100)}
-        />
-        <p className="text-xs text-muted-foreground">
-          {contextBudget.tokenEstimate.toLocaleString("en-US")} / {contextBudget.budgetTokens.toLocaleString("en-US")} tokens
-          - compact at {contextBudget.criticalPercent}% - {formatLastPack(contextBudget.lastCompactedAt)}
-        </p>
+          {permissionsError ? <p className="text-xs text-red-600">{permissionsError}</p> : null}
+        </RightSection>
+      ) : null}
+      <RightSection title="Actions">
         <Button size="sm" disabled={compacting} onClick={onCompact}>
           <Archive className="h-4 w-4" />
-          {compacting ? "Compacting..." : "Compact now"}
+          {compacting ? "Summarizing..." : "Summarize context"}
         </Button>
         <Button size="sm" disabled={restarting} onClick={onRestart}>
           <RefreshCw className="h-4 w-4" />
-          {restarting ? "Queueing..." : "Restart from ContextPack"}
+          {restarting ? "Starting..." : "Restart with summary"}
         </Button>
         <Button size="sm" onClick={onViewHistory}>
           <History className="h-4 w-4" />
-          View raw history
+          View history
         </Button>
         {compactError ? <p className="text-xs text-red-600">{compactError}</p> : null}
         {restartError ? <p className="text-xs text-red-600">{restartError}</p> : null}
       </RightSection>
-      <RightSection title="Outbox" badge={<Badge tone="blue">8 pending</Badge>}>
-        <div className="space-y-2">
-          {outboxRows.map(([seq, target, status]) => (
-            <div key={seq} className="log-line">
-              <span className="font-mono text-muted-foreground">{seq}</span>
-              <span>{target}</span>
-              <span className="truncate text-muted-foreground">{status}</span>
-            </div>
-          ))}
-        </div>
-      </RightSection>
-      <RightSection title="Key Events" badge={<Badge>replay</Badge>}>
-        <div className="space-y-2">
-          {keyEvents.map(([seq, type, detail]) => (
-            <div key={`${seq}-${type}`} className="log-line">
-              <span className="font-mono text-muted-foreground">{seq}</span>
-              <span>{type}</span>
-              <span className="truncate text-muted-foreground">{detail}</span>
-            </div>
-          ))}
-        </div>
-      </RightSection>
-      <RightSection title="Handoff" badge={<Badge>available</Badge>}>
+      <RightSection title="Switch agent">
         {handoffTargets.map((target) => (
           <Button
             key={target.agentType}
@@ -818,7 +789,7 @@ function RightRail({
             onClick={() => onHandoff(target.agentType)}
           >
             <ArrowRightLeft className="h-4 w-4" />
-            {handoffPendingTarget === target.agentType ? "Creating..." : `Handoff to ${target.label}`}
+            {handoffPendingTarget === target.agentType ? "Creating..." : `Continue with ${target.label}`}
           </Button>
         ))}
         {handoffError ? <p className="text-xs text-red-600">{handoffError}</p> : null}
@@ -891,6 +862,53 @@ function formatLastPack(value: string | null): string {
   })}`;
 }
 
+function displaySessionTitle(title: string): string {
+  return title.replace(/(?:\s+handoff)+$/i, "");
+}
+
+function displayWorkspace(workspace: string): string {
+  return workspace.startsWith("handoff from ") ? "continued session" : workspace;
+}
+
+function formatStatusLabel(status: WorkspaceSessionSummary["status"]): string {
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function formatMessageBadge(badge?: string): string | undefined {
+  if (!badge || badge === "task_created") {
+    return undefined;
+  }
+  if (badge === "run_started" || badge === "streaming") {
+    return "running";
+  }
+  if (badge === "run_finished" || badge === "success") {
+    return "done";
+  }
+  if (badge === "run_failed" || badge === "delivery_failed") {
+    return "failed";
+  }
+  if (badge === "permission_prompt") {
+    return "approval";
+  }
+  if (badge === "tool_call" || badge === "tool_call_update") {
+    return "tool";
+  }
+  return undefined;
+}
+
+function messageBadgeTone(badge?: string): "green" | "amber" | "blue" | "red" | "default" {
+  if (badge === "done") {
+    return "green";
+  }
+  if (badge === "approval") {
+    return "amber";
+  }
+  if (badge === "failed") {
+    return "red";
+  }
+  return "blue";
+}
+
 function pendingPermissions(permissions: RuntimePermissionRequest[]): RuntimePermissionRequest[] {
   return permissions.filter((permission) => permission.status === "pending");
 }
@@ -936,7 +954,7 @@ function RightSection({
   children,
 }: {
   title: string;
-  badge: React.ReactNode;
+  badge?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -947,21 +965,6 @@ function RightSection({
       </div>
       {children}
     </section>
-  );
-}
-
-function Metric({ label, value, progress }: { label: string; value: string; progress: number }) {
-  return (
-    <div className="metric-card">
-      <div className="flex items-center justify-between gap-3">
-        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Activity className="h-3.5 w-3.5" />
-          {label}
-        </span>
-        <strong className="text-2xl leading-none">{value}</strong>
-      </div>
-      <Progress value={progress} />
-    </div>
   );
 }
 

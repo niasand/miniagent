@@ -101,11 +101,11 @@ function readSessions(db: SqliteDatabase): WorkspaceSnapshot["sessions"] {
     const agent = mapAgent(agentType);
     return {
       id: row.id,
-      title: row.title,
+      title: normalizeSessionTitle(row.title),
       agentType,
       agent,
       initials: mapInitials(agentType),
-      workspace: row.source_session_id ? `handoff from ${row.source_session_id}` : row.workspace_path,
+      workspace: row.source_session_id ? "continued session" : row.workspace_path,
       status: mapStatus(row.status),
       handoff: row.source_session_id ?? undefined,
     };
@@ -312,6 +312,10 @@ function mapStatus(status: string): WorkspaceSessionStatus {
     return status;
   }
   return "idle";
+}
+
+function normalizeSessionTitle(title: string): string {
+  return title.replace(/(?:\s+handoff)+$/i, "");
 }
 
 function mapMessageRole(role: MessageRole): WorkspaceMessage["role"] {
