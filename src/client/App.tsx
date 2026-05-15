@@ -159,7 +159,7 @@ export default function App() {
             <button key={skill.name} className="skills-item" onClick={() => handleSkillSelect(skill)}>
               <strong>{skill.name}</strong>
               {skill.description && (
-                <span className="dropdown-desc">{skill.description.slice(0, 10)}...</span>
+                <span className="dropdown-desc">{skill.description.slice(0, 30)}...</span>
               )}
             </button>
           ))}
