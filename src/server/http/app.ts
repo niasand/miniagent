@@ -596,6 +596,15 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
       new ContextBudgetService(db).evaluate({ sessionId: context.req.param("sessionId") });
       projectReadModelsUntilIdle(db);
 
+      // Auto-start run for queued task
+      try {
+        runtimeService.startNextQueuedTask(context.req.param("sessionId"));
+        new ContextBudgetService(db).evaluate({ sessionId: context.req.param("sessionId") });
+        projectReadModelsUntilIdle(db);
+      } catch {
+        // Run may already be active or no queued task — safe to ignore
+      }
+
       const response: SendMessageResponse = {
         taskId: result.task.id,
         eventId: result.event.id,
