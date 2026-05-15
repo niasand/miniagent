@@ -291,26 +291,31 @@ export default function App() {
   );
 }
 
-const FEISHU_FIELDS = [
-  { key: "app_id", label: "App ID" },
-  { key: "app_secret", label: "App Secret" },
-];
+const CHANNEL_FIELDS: Record<string, Array<{ key: string; label: string }>> = {
+  feishu: [
+    { key: "app_id", label: "App ID" },
+    { key: "app_secret", label: "App Secret" },
+  ],
+  qq: [
+    { key: "app_id", label: "App ID" },
+    { key: "app_secret", label: "App Secret" },
+  ],
+};
 
 function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSaved: () => void }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isFeishu = channel.id === "feishu";
+  const configurable = channel.id === "feishu" || channel.id === "qq";
+  const fields = CHANNEL_FIELDS[channel.id] ?? [];
   const initialConfig = channel.config ?? {};
   const [form, setForm] = useState<Record<string, string>>({});
 
   const startEdit = () => {
     const startValues: Record<string, string> = {};
-    if (isFeishu) {
-      for (const f of FEISHU_FIELDS) {
-        startValues[f.key] = initialConfig[f.key] ?? "";
-      }
+    for (const f of fields) {
+      startValues[f.key] = initialConfig[f.key] ?? "";
     }
     setForm(startValues);
     setEditing(true);
@@ -318,11 +323,10 @@ function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSaved: () =
   };
 
   const handleSave = async () => {
-    if (!isFeishu) return;
     setSaving(true);
     setError(null);
     try {
-      await saveChannelConfig("feishu", form);
+      await saveChannelConfig(channel.id, form);
       setEditing(false);
       onSaved();
     } catch (e) {
@@ -348,15 +352,15 @@ function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSaved: () =
       </div>
       <p className="channel-card-desc">{channel.description}</p>
 
-      {isFeishu && !editing && (
+      {configurable && !editing && (
         <button className="channel-config-btn" onClick={startEdit}>
           Configure
         </button>
       )}
 
-      {isFeishu && editing && (
+      {configurable && editing && (
         <div className="channel-form">
-          {FEISHU_FIELDS.map((f) => (
+          {fields.map((f) => (
             <label key={f.key} className="channel-field">
               <span>{f.label}</span>
               <input

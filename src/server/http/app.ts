@@ -174,6 +174,11 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
       .get();
     const feishuConfig = readChannelConfig(db, "feishu");
     const feishuConfigured = Boolean(feishuConfig["app_id"] && feishuConfig["app_secret"]);
+    const qqConfig = readChannelConfig(db, "qq");
+    const qqConfigured = Boolean(qqConfig["app_id"] && qqConfig["app_secret"]);
+    const hasQQSessions = db
+      .prepare("SELECT 1 FROM sessions WHERE channel_type = 'qq' LIMIT 1")
+      .get();
     const channels: Array<{
       id: string;
       label: string;
@@ -187,6 +192,11 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
       channels.push({ id: "feishu", label: "Feishu", status: "connected", description: "Feishu bot integration", config: feishuConfig });
     } else {
       channels.push({ id: "feishu", label: "Feishu", status: "available", description: "Feishu bot integration", config: feishuConfig });
+    }
+    if (hasQQSessions || qqConfigured) {
+      channels.push({ id: "qq", label: "QQ Bot", status: "connected", description: "QQ bot integration", config: qqConfig });
+    } else {
+      channels.push({ id: "qq", label: "QQ Bot", status: "available", description: "QQ bot integration", config: qqConfig });
     }
     return context.json({ channels });
   });
