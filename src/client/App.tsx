@@ -127,13 +127,10 @@ export default function App() {
 
   // Clear streaming text when agent message arrives in workspace
   useEffect(() => {
-    if (messages.length > 0 && isStreamingRef.current) {
-      const lastMsg = messages[messages.length - 1];
-      if (lastMsg.role === "agent") {
-        streamingTextRef.current = "";
-        setStreamingText("");
-        isStreamingRef.current = false;
-      }
+    if (isStreamingRef.current && messages.some(m => m.role === "agent")) {
+      streamingTextRef.current = "";
+      setStreamingText("");
+      isStreamingRef.current = false;
     }
   }, [messages]);
 
@@ -291,7 +288,7 @@ export default function App() {
               </div>
             );
           })}
-          {(sendMessage.isPending || streamingText) && (
+          {(sendMessage.isPending || streamingText) && !messages.some(m => m.role === "agent") && (
             <div className="chat-bubble agent">
               <div className="chat-bubble-header"><strong>Agent</strong></div>
               {streamingText ? (
