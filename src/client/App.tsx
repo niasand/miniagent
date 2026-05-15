@@ -69,13 +69,14 @@ export default function App() {
   const runStats: RunStats = snapshot?.runStats ?? { durationSeconds: null, tokensUsed: null, tokensTotal: null };
 
   // SSE: capture text_delta for streaming + trigger workspace refresh
+  const lastGlobalSeqRef = useRef(0);
   useEffect(() => {
     if (!sessionId) return;
-    let stopped = false;
     let source: EventSource | null = null;
-    const connect = () => {
+
+    const connect = (afterSeq: number) => {
       source = new EventSource(
-        `/api/events/stream?sessionId=${encodeURIComponent(sessionId)}&afterGlobalSeq=0&limit=100`,
+        `/api/events/stream?sessionId=${encodeURIComponent(sessionId)}&afterGlobalSeq=${afterSeq}&limit=100`,
       );
       const refresh = () => queryClient.invalidateQueries({ queryKey: ["workspace", sessionId] });
       for (const type of ["message_created", "run_started", "run_completed", "run_output_appended"]) {
@@ -93,16 +94,21 @@ export default function App() {
         }
         refresh();
       });
+      // Track last seen globalSeq from SSE event IDs
+      source.addEventListener("message_created", (e: MessageEvent) => {
+        try { lastGlobalSeqRef.current = JSON.parse(e.data).globalSeq ?? lastGlobalSeqRef.current; } catch {}
+      });
+      source.addEventListener("text_delta", (e: MessageEvent) => {
+        try { lastGlobalSeqRef.current = JSON.parse(e.data).globalSeq ?? lastGlobalSeqRef.current; } catch {}
+      });
       source.onerror = () => {
         source?.close();
-        if (!stopped) setTimeout(connect, 2_000);
+        // Reconnect with last seen cursor to avoid replaying old events
+        setTimeout(() => connect(lastGlobalSeqRef.current), 3_000);
       };
     };
-    connect();
-    return () => {
-      stopped = true;
-      source?.close();
-    };
+    connect(lastGlobalSeqRef.current);
+    return () => { source?.close(); };
   }, [sessionId, queryClient]);
 
   // Auto-scroll on new messages or streaming text

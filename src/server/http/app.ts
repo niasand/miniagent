@@ -803,20 +803,52 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
       return context.json({ error: "limit must be an integer between 1 and 500" }, 400);
     }
 
-    const events = new EventStore(context.get("db")).listAfterGlobalSeq({
-      sessionId,
-      afterGlobalSeq,
-      limit,
-    });
-    const body =
-      events
-        .map(
-          (event) =>
-            `id: ${event.globalSeq}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`,
-        )
-        .join("") + ": cursor-ready\n\n";
+    const db = context.get("db");
+    const encoder = new TextEncoder();
+    let cursor = afterGlobalSeq;
+    let stopped = false;
 
-    return new Response(body, {
+    const stream = new ReadableStream({
+      async start(controller) {
+        const send = (text: string) => {
+          if (!stopped) controller.enqueue(encoder.encode(text));
+        };
+
+        // Send initial historical events
+        const initial = new EventStore(db).listAfterGlobalSeq({ sessionId, afterGlobalSeq, limit });
+        for (const event of initial) {
+          send(`id: ${event.globalSeq}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+          cursor = event.globalSeq;
+        }
+        send(": cursor-ready\n\n");
+
+        // Poll for new events every 500ms
+        const pollInterval = setInterval(() => {
+          if (stopped) return;
+          const newEvents = new EventStore(db).listAfterGlobalSeq({ sessionId, afterGlobalSeq: cursor, limit: 50 });
+          for (const event of newEvents) {
+            send(`id: ${event.globalSeq}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+            cursor = event.globalSeq;
+          }
+        }, 500);
+
+        // Keepalive every 25s
+        const keepalive = setInterval(() => send(": keepalive\n\n"), 25_000);
+
+        // Clean up on abort
+        context.req.raw.signal.addEventListener("abort", () => {
+          stopped = true;
+          clearInterval(pollInterval);
+          clearInterval(keepalive);
+          try { controller.close(); } catch { /* already closed */ }
+        });
+      },
+      cancel() {
+        stopped = true;
+      },
+    });
+
+    return new Response(stream, {
       headers: {
         "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
