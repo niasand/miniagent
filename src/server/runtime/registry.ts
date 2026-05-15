@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import type { RuntimeKind, RuntimeSessionDriver } from "./driver.js";
 import { isRuntimeSessionDriver } from "./driver.js";
 import type { AgentRuntimeAdapter, AgentType } from "./types.js";
@@ -52,20 +54,20 @@ export function defaultRuntimeAdapters(): Array<AgentRuntimeAdapter | RuntimeSes
     new AcpRuntimeDriver({
       agentType: "codex",
       displayName: "Codex ACP",
-      command: process.env.MINIAGENT_CODEX_ACP_COMMAND ?? "codex",
+      command: process.env.MINIAGENT_CODEX_ACP_COMMAND ?? resolveCodexAcpBinary(),
       defaultArgs: readEnvArgs("MINIAGENT_CODEX_ACP_ARGS"),
     }),
     new AcpRuntimeDriver({
       agentType: "claude",
       displayName: "Claude ACP",
-      command: process.env.MINIAGENT_CLAUDE_ACP_COMMAND ?? "claude",
+      command: process.env.MINIAGENT_CLAUDE_ACP_COMMAND ?? resolveLocalBin("claude-agent-acp"),
       defaultArgs: readEnvArgs("MINIAGENT_CLAUDE_ACP_ARGS"),
     }),
     new AcpRuntimeDriver({
       agentType: "trae",
       displayName: "Trae ACP",
-      command: process.env.MINIAGENT_TRAE_ACP_COMMAND ?? "trae",
-      defaultArgs: readEnvArgs("MINIAGENT_TRAE_ACP_ARGS"),
+      command: process.env.MINIAGENT_TRAE_ACP_COMMAND ?? "traecli",
+      defaultArgs: [...readEnvArgs("MINIAGENT_TRAE_ACP_BASE_ARGS", ["acp", "serve"]), ...readEnvArgs("MINIAGENT_TRAE_ACP_ARGS")],
     }),
   ];
 
@@ -87,10 +89,46 @@ function readRuntimeMode(): "cli" | "acp" | "hybrid" {
   return value === "acp" || value === "hybrid" ? value : "cli";
 }
 
-function readEnvArgs(name: string): string[] {
+function readEnvArgs(name: string, fallback: string[] = []): string[] {
   const value = process.env[name];
   if (!value) {
-    return [];
+    return fallback;
   }
   return value.split(" ").map((item) => item.trim()).filter(Boolean);
+}
+
+function resolveLocalBin(name: string): string {
+  const extension = process.platform === "win32" ? ".cmd" : "";
+  const local = join(process.cwd(), "node_modules", ".bin", `${name}${extension}`);
+  return existsSync(local) ? local : name;
+}
+
+function resolveCodexAcpBinary(): string {
+  const platformPackage = codexAcpPlatformPackage();
+  if (!platformPackage) {
+    return resolveLocalBin("codex-acp");
+  }
+
+  const binaryName = process.platform === "win32" ? "codex-acp.exe" : "codex-acp";
+  const binaryPath = join(process.cwd(), "node_modules", "@zed-industries", platformPackage, "bin", binaryName);
+  return existsSync(binaryPath) ? binaryPath : resolveLocalBin("codex-acp");
+}
+
+function codexAcpPlatformPackage(): string | null {
+  const packages: Record<string, Record<string, string>> = {
+    darwin: {
+      arm64: "codex-acp-darwin-arm64",
+      x64: "codex-acp-darwin-x64",
+    },
+    linux: {
+      arm64: "codex-acp-linux-arm64",
+      x64: "codex-acp-linux-x64",
+    },
+    win32: {
+      arm64: "codex-acp-win32-arm64",
+      x64: "codex-acp-win32-x64",
+    },
+  };
+
+  return packages[process.platform]?.[process.arch] ?? null;
 }

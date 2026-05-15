@@ -236,7 +236,7 @@ Start with tests around interfaces, not real CLIs.
 - Security tests for workspace allowlist and secret redaction.
 - Integration test: fake Feishu input -> fake Agent output -> EventStore -> Outbox -> delivery success.
 
-Real Codex CLI, Claude Code, and Trae CLI tests should be adapter smoke tests behind an opt-in environment flag.
+Real Codex CLI, Claude Code, and Trae CLI tests should be adapter smoke tests behind an opt-in environment flag. ACP runtime setup and local prerequisites are documented in [docs/acp-runtimes.md](docs/acp-runtimes.md).
 
 ## 8. Implementation Order
 

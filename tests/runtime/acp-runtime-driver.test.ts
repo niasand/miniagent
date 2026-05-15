@@ -212,6 +212,26 @@ describe("AcpRuntimeDriver", () => {
     });
   });
 
+  it("keeps recent ACP stderr on crashed runs", async () => {
+    const fixture = createAcpSupervisorFixture({
+      crashOnSessionNew: true,
+      stderrBeforeCrash: "panic: runtime error\nlistAllModels\n",
+    });
+    const started = fixture.supervisor.startTask({ sessionId: "session-1", taskId: "task-1" });
+
+    fixture.supervisor.sendInput(started.run.id, { taskType: "message", input: { text: "hello" } });
+
+    await eventually(() => {
+      const run = fixture.sessionStore.getRun(started.run.id);
+      expect(run).toMatchObject({ status: "failed", errorClass: "process_crash" });
+      expect(run?.stopReason).toContain("recent stderr");
+      expect(run?.stopReason).toContain("listAllModels");
+    });
+    expect(fixture.eventStore.listAfterGlobalSeq({ afterGlobalSeq: 0 }).map((event) => event.type)).toContain(
+      "runtime_stderr",
+    );
+  });
+
   it("serves ACP file reads from the session workspace with redaction", async () => {
     const tempDir = mkdtempSync(join(tmpdir(), "miniagent-acp-fs-"));
     const filePath = join(tempDir, "notes.txt");
@@ -294,6 +314,8 @@ type FakeAcpProcessOptions = {
   holdPromptUntilCancel?: boolean;
   ignoreInitialize?: boolean;
   ignoreCancel?: boolean;
+  crashOnSessionNew?: boolean;
+  stderrBeforeCrash?: string;
   requestPermission?: boolean;
   readFilePath?: string;
   workspacePath?: string;
@@ -391,6 +413,11 @@ class FakeAcpProcess implements RuntimeProcess {
         this.send({ jsonrpc: "2.0", id: responseId(message), result: { protocolVersion: 1, agentCapabilities: {} } });
         break;
       case "session/new":
+        if (this.options.crashOnSessionNew) {
+          this.sendStderr(this.options.stderrBeforeCrash ?? "panic: ACP process crashed\n");
+          this.exit({ exitCode: 2, signal: null, message: null, exitedAt: "2026-05-14T00:00:00.000Z" });
+          break;
+        }
         this.send({ jsonrpc: "2.0", id: responseId(message), result: { sessionId: "acp-session-1" } });
         break;
       case "session/resume":
@@ -469,6 +496,18 @@ class FakeAcpProcess implements RuntimeProcess {
     const text = `${JSON.stringify(message)}\n`;
     for (const handler of this.outputHandlers) {
       handler({ stream: "stdout", text, receivedAt: "2026-05-14T00:00:00.000Z" });
+    }
+  }
+
+  private sendStderr(text: string): void {
+    for (const handler of this.outputHandlers) {
+      handler({ stream: "stderr", text, receivedAt: "2026-05-14T00:00:00.000Z" });
+    }
+  }
+
+  private exit(exit: RuntimeProcessExit): void {
+    for (const handler of this.exitHandlers) {
+      handler(exit);
     }
   }
 }

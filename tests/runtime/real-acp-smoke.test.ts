@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { EventStore } from "../../src/server/events/event-store.js";
 import { AcpRuntimeDriver } from "../../src/server/runtime/drivers/acp-runtime-driver.js";
 import { PermissionRequestStore } from "../../src/server/runtime/permission-request-store.js";
@@ -10,6 +12,7 @@ import { createTestDatabase, type TestDatabase } from "../support/db.js";
 
 const runRealAcpSmoke = process.env.MINIAGENT_REAL_ACP_SMOKE === "1";
 const describeRealAcp = runRealAcpSmoke ? describe : describe.skip;
+const realAcpAgents: AgentType[] = ["codex", "claude", "trae"];
 
 describeRealAcp("real ACP runtime smoke", () => {
   let testDb: TestDatabase | null = null;
@@ -19,20 +22,28 @@ describeRealAcp("real ACP runtime smoke", () => {
     testDb = null;
   });
 
-  it("starts Codex, Claude, and Trae through ACP", async () => {
+  it.each(realAcpAgents)("starts %s through ACP", async (agentType) => {
     testDb = createTestDatabase();
     const eventStore = new EventStore(testDb.db);
     const sessionStore = new SessionStore(testDb.db, eventStore);
     const supervisor = new RuntimeSupervisor({
       adapterRegistry: new RuntimeAdapterRegistry([
-        makeDriver("codex", "Codex ACP", process.env.MINIAGENT_CODEX_ACP_COMMAND ?? "codex", "MINIAGENT_CODEX_ACP_ARGS"),
+        makeDriver(
+          "codex",
+          "Codex ACP",
+          process.env.MINIAGENT_CODEX_ACP_COMMAND ?? resolveCodexAcpBinary(),
+          "MINIAGENT_CODEX_ACP_ARGS",
+        ),
         makeDriver(
           "claude",
           "Claude ACP",
-          process.env.MINIAGENT_CLAUDE_ACP_COMMAND ?? "claude",
+          process.env.MINIAGENT_CLAUDE_ACP_COMMAND ?? join(process.cwd(), "node_modules/.bin/claude-agent-acp"),
           "MINIAGENT_CLAUDE_ACP_ARGS",
         ),
-        makeDriver("trae", "Trae ACP", process.env.MINIAGENT_TRAE_ACP_COMMAND ?? "trae", "MINIAGENT_TRAE_ACP_ARGS"),
+        makeDriver("trae", "Trae ACP", process.env.MINIAGENT_TRAE_ACP_COMMAND ?? "traecli", "MINIAGENT_TRAE_ACP_ARGS", [
+          "acp",
+          "serve",
+        ]),
       ]),
       eventStore,
       permissionRequestStore: new PermissionRequestStore(testDb.db),
@@ -41,42 +52,46 @@ describeRealAcp("real ACP runtime smoke", () => {
       cancelKillTimeoutMs: 1_000,
     });
 
-    for (const agentType of ["codex", "claude", "trae"] as AgentType[]) {
-      const sessionId = `session-${agentType}`;
-      const taskId = `task-${agentType}`;
-      sessionStore.createSession({
-        id: sessionId,
-        title: `${agentType} ACP smoke`,
-        agentType,
-        workspacePath: "/tmp",
-        defaultParams: { runtimeKind: "acp" },
-      });
-      sessionStore.createTask({
-        id: taskId,
-        sessionId,
-        sourceType: "system",
-        type: "message",
-        input: { text: "Reply with the word pong." },
-      });
+    const sessionId = `session-${agentType}`;
+    const taskId = `task-${agentType}`;
+    sessionStore.createSession({
+      id: sessionId,
+      title: `${agentType} ACP smoke`,
+      agentType,
+      workspacePath: process.cwd(),
+      defaultParams: { runtimeKind: "acp" },
+    });
+    sessionStore.createTask({
+      id: taskId,
+      sessionId,
+      sourceType: "system",
+      type: "message",
+      input: { text: "Reply with exactly: pong" },
+    });
 
-      const started = supervisor.startTask({ sessionId, taskId });
-      supervisor.sendInput(started.run.id, { taskType: "message", input: { text: "Reply with the word pong." } });
-      const run = await waitForTerminalRun(sessionStore, supervisor, started.run.id);
+    const started = supervisor.startTask({ sessionId, taskId });
+    supervisor.sendInput(started.run.id, { taskType: "message", input: { text: "Reply with exactly: pong" } });
+    const run = await waitForTerminalRun(sessionStore, supervisor, started.run.id);
 
-      expect(run.status).toBe("succeeded");
-      expect(run.runtimeKind).toBe("acp");
-      expect(run.externalSessionId).toBeTruthy();
-    }
-  }, 60_000);
+    expect(run.status, JSON.stringify(run, null, 2)).toBe("succeeded");
+    expect(run.runtimeKind).toBe("acp");
+    expect(run.externalSessionId).toBeTruthy();
+  }, 90_000);
 });
 
-function makeDriver(agentType: AgentType, displayName: string, command: string, argsEnvName: string): AcpRuntimeDriver {
+function makeDriver(
+  agentType: AgentType,
+  displayName: string,
+  command: string,
+  argsEnvName: string,
+  fallbackArgs: string[] = [],
+): AcpRuntimeDriver {
   return new AcpRuntimeDriver({
     agentType,
     displayName,
     command,
-    defaultArgs: readEnvArgs(argsEnvName),
-    requestTimeoutMs: 5_000,
+    defaultArgs: readEnvArgs(argsEnvName, fallbackArgs),
+    requestTimeoutMs: 60_000,
   });
 }
 
@@ -86,7 +101,7 @@ async function waitForTerminalRun(
   runId: string,
 ): Promise<AgentRunRecord> {
   const startedAt = Date.now();
-  while (Date.now() - startedAt < 20_000) {
+  while (Date.now() - startedAt < 90_000) {
     const run = sessionStore.getRun(runId);
     if (run && ["succeeded", "failed", "cancelled", "overflowed"].includes(run.status)) {
       return run;
@@ -102,7 +117,38 @@ async function waitForTerminalRun(
   throw new Error(`Timed out waiting for ACP smoke run: ${runId}`);
 }
 
-function readEnvArgs(name: string): string[] {
+function readEnvArgs(name: string, fallback: string[] = []): string[] {
   const value = process.env[name];
-  return value ? value.split(" ").map((item) => item.trim()).filter(Boolean) : [];
+  return value ? value.split(" ").map((item) => item.trim()).filter(Boolean) : fallback;
+}
+
+function resolveCodexAcpBinary(): string {
+  const packageName = codexAcpPlatformPackage();
+  const binaryName = process.platform === "win32" ? "codex-acp.exe" : "codex-acp";
+  const localBin = join(process.cwd(), "node_modules/.bin", process.platform === "win32" ? "codex-acp.cmd" : "codex-acp");
+  if (!packageName) {
+    return localBin;
+  }
+
+  const binaryPath = join(process.cwd(), "node_modules", "@zed-industries", packageName, "bin", binaryName);
+  return existsSync(binaryPath) ? binaryPath : localBin;
+}
+
+function codexAcpPlatformPackage(): string | null {
+  const packages: Record<string, Record<string, string>> = {
+    darwin: {
+      arm64: "codex-acp-darwin-arm64",
+      x64: "codex-acp-darwin-x64",
+    },
+    linux: {
+      arm64: "codex-acp-linux-arm64",
+      x64: "codex-acp-linux-x64",
+    },
+    win32: {
+      arm64: "codex-acp-win32-arm64",
+      x64: "codex-acp-win32-x64",
+    },
+  };
+
+  return packages[process.platform]?.[process.arch] ?? null;
 }

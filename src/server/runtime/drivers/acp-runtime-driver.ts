@@ -1,3 +1,4 @@
+import { accessSync, constants } from "node:fs";
 import { basename } from "node:path";
 import type { JsonObject, JsonValue } from "../../../shared/json.js";
 import { nowIso } from "../../../shared/time.js";
@@ -67,15 +68,15 @@ export class AcpRuntimeDriver implements RuntimeSessionDriver {
   }
 
   async probe(): Promise<AgentProbeResult> {
-    const result = this.commandRunner.run(this.command, ["--version"], { timeoutMs: 2_000 });
-    const output = `${result.stdout}\n${result.stderr}`.trim();
-    if (result.errorCode === "ENOENT") {
+    if (!canExecute(this.command)) {
+      const result = this.commandRunner.run("sh", ["-lc", `command -v ${quoteShell(this.command)}`], { timeoutMs: 2_000 });
+      if (result.exitCode === 0 && result.stdout.trim()) {
+        return this.probeResult("healthy", null, null);
+      }
       return this.probeResult("missing", null, `${this.command} was not found on PATH`);
     }
-    if (result.exitCode !== 0) {
-      return this.probeResult("failed", null, output || result.errorMessage || "Probe command failed");
-    }
-    return this.probeResult("healthy", output || null, null);
+
+    return this.probeResult("healthy", null, null);
   }
 
   createLaunchSpec(context: RuntimeLaunchContext): RuntimeLaunchSpec {
@@ -94,7 +95,13 @@ export class AcpRuntimeDriver implements RuntimeSessionDriver {
   classifyError(error: unknown): RuntimeErrorClassification {
     const message = readErrorMessage(error);
     const lower = message.toLowerCase();
-    if (lower.includes("auth")) {
+    if (
+      lower.includes("auth") ||
+      lower.includes("keyring") ||
+      lower.includes("secret not found") ||
+      lower.includes("token") ||
+      lower.includes("unauthorized")
+    ) {
       return { class: "authentication_failed", message, retryable: false };
     }
     if (lower.includes("permission")) {
@@ -141,6 +148,7 @@ class AcpRunHandle implements RuntimeRunHandle {
   private promptInFlight: Promise<void> = Promise.resolve();
   private externalSessionId: string | null = null;
   private finished = false;
+  private stderrTail = "";
 
   constructor(
     private readonly driver: AcpRuntimeDriver,
@@ -152,10 +160,13 @@ class AcpRunHandle implements RuntimeRunHandle {
     this.connection = new AcpJsonRpcConnection(process, {
       onNotification: (method, params) => this.handleNotification(method, params),
       onRequest: (method, params, id) => this.handleRequest(method, params, id),
-      onProtocolEvent: (draft) => callbacks.emit(draft),
+      onProtocolEvent: (draft) => {
+        this.rememberStderr(draft);
+        callbacks.emit(draft);
+      },
       requestTimeoutMs: driver.requestTimeoutMs,
     });
-    process.onExit((exit) => this.finish(exit));
+    process.onExit((exit) => this.finish(this.withRecentStderr(exit)));
     this.ready = this.bootstrap();
   }
 
@@ -358,6 +369,42 @@ class AcpRunHandle implements RuntimeRunHandle {
       exitedAt: nowIso(),
     });
   }
+
+  private rememberStderr(draft: RuntimeEventDraft): void {
+    if (draft.type !== "runtime_stderr") {
+      return;
+    }
+
+    const text = readString(draft.payload, "text");
+    if (!text) {
+      return;
+    }
+
+    this.stderrTail = `${this.stderrTail}${text}`.slice(-8_000);
+  }
+
+  private withRecentStderr(exit: RuntimeProcessExit): RuntimeProcessExit {
+    if (exit.message || (exit.exitCode === 0 && !exit.signal)) {
+      return exit;
+    }
+
+    const stderr = this.stderrTail.trim();
+    if (!stderr) {
+      return exit;
+    }
+
+    const reason = exit.signal ?? `ACP process exited with code ${exit.exitCode}`;
+    return { ...exit, message: `${reason}; recent stderr: ${summarizeText(stderr, 1_500)}` };
+  }
+}
+
+function summarizeText(text: string, maxLength: number): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+
+  const half = Math.floor((maxLength - 5) / 2);
+  return `${text.slice(0, half)}\n...\n${text.slice(-half)}`;
 }
 
 function mapSessionUpdate(params: JsonValue): RuntimeEventDraft[] {
@@ -469,4 +516,17 @@ function readErrorMessage(error: unknown): string {
     return error;
   }
   return "Unknown ACP runtime error";
+}
+
+function canExecute(command: string): boolean {
+  try {
+    accessSync(command, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function quoteShell(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
 }
