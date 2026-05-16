@@ -30,6 +30,7 @@ export default function App() {
   const prevMsgCountRef = useRef(0);
   const streamingTextRef = useRef("");
   const isStreamingRef = useRef(false);
+  const activeRunIdRef = useRef<string | null>(null);
   const [streamingText, setStreamingText] = useState("");
 
   const { data: skillsData } = useQuery({
@@ -84,8 +85,24 @@ export default function App() {
       for (const type of ["message_created", "run_started", "run_completed", "run_output_appended"]) {
         source.addEventListener(type, refresh);
       }
+      source.addEventListener("run_started", (e: MessageEvent) => {
+        try {
+          const evt = JSON.parse(e.data);
+          if (evt.runId) activeRunIdRef.current = evt.runId;
+        } catch {}
+      });
+      source.addEventListener("run_completed", (e: MessageEvent) => {
+        try {
+          const evt = JSON.parse(e.data);
+          if (evt.runId && evt.runId === activeRunIdRef.current) {
+            activeRunIdRef.current = null;
+            // Keep isStreamingRef true — the messages effect will clear it
+            // once the persisted agent message appears in the workspace
+          }
+        } catch {}
+      });
       source.addEventListener("text_delta", (e: MessageEvent) => {
-        if (isStreamingRef.current) {
+        if (activeRunIdRef.current) {
           try {
             const evt = JSON.parse(e.data);
             if (evt.payload?.text) {
@@ -128,13 +145,16 @@ export default function App() {
     }
   }, [streamingText]);
 
-  // Clear streaming text when agent response appears as the latest message
+  // Clear streaming text when a NEW agent message appears (count increased since streaming started)
+  const streamStartCountRef = useRef(0);
   useEffect(() => {
-    const last = messages[messages.length - 1];
-    if (isStreamingRef.current && last?.role === "agent") {
-      streamingTextRef.current = "";
-      setStreamingText("");
-      isStreamingRef.current = false;
+    if (isStreamingRef.current && messages.length > streamStartCountRef.current) {
+      const last = messages[messages.length - 1];
+      if (last?.role === "agent") {
+        streamingTextRef.current = "";
+        setStreamingText("");
+        isStreamingRef.current = false;
+      }
     }
   }, [messages]);
 
@@ -160,6 +180,8 @@ export default function App() {
       streamingTextRef.current = "";
       setStreamingText("");
       isStreamingRef.current = true;
+      activeRunIdRef.current = null;
+      streamStartCountRef.current = messages.length;
       let sid = sessionId;
       if (!sid) {
         const res = await createSession({ agentType });
