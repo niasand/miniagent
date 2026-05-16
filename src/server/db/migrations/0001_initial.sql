@@ -1,263 +1,370 @@
-CREATE TABLE agent_profiles (
-  id TEXT PRIMARY KEY,
-  display_name TEXT NOT NULL,
-  command TEXT NOT NULL,
-  capabilities_json TEXT NOT NULL DEFAULT '{}',
-  default_args_json TEXT NOT NULL DEFAULT '[]',
-  health_status TEXT NOT NULL DEFAULT 'unknown'
-    CHECK (health_status IN ('unknown', 'healthy', 'missing', 'auth_required', 'failed')),
-  last_probe_at TEXT,
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK (json_valid(capabilities_json)),
-  CHECK (json_valid(default_args_json))
+-- 0001_initial.sql
+-- MiniAgent backend schema: all tables for the event-sourced control plane.
+-- No FK constraints (SQLite ALTER TABLE limitation).
+
+-- Drop legacy tables from old schema
+DROP TABLE IF EXISTS projector_offsets;
+DROP TABLE IF EXISTS agent_profiles;
+
+-- ============================================================
+-- Sessions
+-- ============================================================
+CREATE TABLE IF NOT EXISTS sessions (
+    id                  TEXT PRIMARY KEY,
+    title               TEXT NOT NULL DEFAULT '',
+    agent_type          TEXT NOT NULL,
+    workspace_path      TEXT NOT NULL DEFAULT '',
+    status              TEXT NOT NULL DEFAULT 'idle'
+                        CHECK (status IN ('idle','running','compacting','failed','archived')),
+    channel_type        TEXT
+                        CHECK (channel_type IS NULL OR channel_type IN ('web','feishu','qq','telegram','discord')),
+    channel_ref         TEXT,
+    default_params_json TEXT NOT NULL DEFAULT '{}'
+                        CHECK (json_valid(default_params_json)),
+    active_run_id       TEXT,
+    current_context_pack_id TEXT,
+    source_session_id   TEXT,
+    source_context_pack_id  TEXT,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    archived_at         TEXT
 );
 
-CREATE TABLE agent_defaults (
-  id TEXT PRIMARY KEY,
-  scope_type TEXT NOT NULL CHECK (scope_type IN ('user', 'channel', 'workspace', 'system')),
-  scope_ref TEXT NOT NULL,
-  agent_type TEXT NOT NULL REFERENCES agent_profiles(id),
-  params_json TEXT NOT NULL DEFAULT '{}',
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  UNIQUE (scope_type, scope_ref),
-  CHECK (json_valid(params_json))
+CREATE INDEX IF NOT EXISTS idx_sessions_status         ON sessions (status);
+CREATE INDEX IF NOT EXISTS idx_sessions_channel        ON sessions (channel_type, channel_ref);
+CREATE INDEX IF NOT EXISTS idx_sessions_agent_type     ON sessions (agent_type);
+
+-- ============================================================
+-- Tasks
+-- ============================================================
+CREATE TABLE IF NOT EXISTS tasks (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL,
+    source_type     TEXT NOT NULL
+                    CHECK (source_type IN ('web','feishu','qq','telegram','discord','cron','handoff','mcp','system')),
+    source_ref      TEXT,
+    type            TEXT NOT NULL
+                    CHECK (type IN ('message','compact','handoff','schedule_run','stop','resume')),
+    status          TEXT NOT NULL DEFAULT 'scheduled'
+                    CHECK (status IN ('scheduled','queued','running','succeeded','failed','cancelled','paused')),
+    target_agent_type TEXT,
+    input_json      TEXT NOT NULL DEFAULT '{}'
+                    CHECK (json_valid(input_json)),
+    dedupe_key      TEXT,
+    run_id          TEXT,
+    queued_at       TEXT,
+    started_at      TEXT,
+    finished_at     TEXT,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
 );
 
-CREATE TABLE sessions (
-  id TEXT PRIMARY KEY,
-  title TEXT NOT NULL,
-  agent_type TEXT NOT NULL REFERENCES agent_profiles(id),
-  workspace_path TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'idle'
-    CHECK (status IN ('idle', 'running', 'compacting', 'failed', 'archived')),
-  channel_type TEXT CHECK (channel_type IS NULL OR channel_type IN ('web', 'feishu')),
-  channel_ref TEXT,
-  default_params_json TEXT NOT NULL DEFAULT '{}',
-  active_run_id TEXT REFERENCES agent_runs(id) DEFERRABLE INITIALLY DEFERRED,
-  current_context_pack_id TEXT REFERENCES context_packs(id) DEFERRABLE INITIALLY DEFERRED,
-  source_session_id TEXT REFERENCES sessions(id),
-  source_context_pack_id TEXT REFERENCES context_packs(id) DEFERRABLE INITIALLY DEFERRED,
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  archived_at TEXT,
-  CHECK (json_valid(default_params_json))
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_dedupe
+    ON tasks (dedupe_key) WHERE dedupe_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_tasks_session_status
+    ON tasks (session_id, status);
+CREATE INDEX IF NOT EXISTS idx_tasks_source
+    ON tasks (source_type, source_ref);
+
+-- ============================================================
+-- Agent Runs
+-- ============================================================
+CREATE TABLE IF NOT EXISTS agent_runs (
+    id                  TEXT PRIMARY KEY,
+    session_id          TEXT NOT NULL,
+    task_id             TEXT,
+    agent_type          TEXT NOT NULL,
+    status              TEXT NOT NULL DEFAULT 'queued'
+                        CHECK (status IN ('queued','starting','running','waiting_permission','compacting','stopping','succeeded','failed','cancelled','overflowed')),
+    launch_spec_json    TEXT NOT NULL DEFAULT '{}'
+                        CHECK (json_valid(launch_spec_json)),
+    pid                 INTEGER,
+    context_pack_id     TEXT,
+    first_global_seq    INTEGER,
+    last_global_seq     INTEGER,
+    heartbeat_at        TEXT,
+    started_at          TEXT,
+    stopped_at          TEXT,
+    exit_code           INTEGER,
+    stop_reason         TEXT,
+    error_class         TEXT,
+    runtime_kind        TEXT NOT NULL DEFAULT 'acp'
+                        CHECK (runtime_kind IN ('cli','acp')),
+    external_session_id TEXT,
+    checkpoint_id       TEXT,
+    protocol_state_json TEXT NOT NULL DEFAULT '{}'
+                        CHECK (json_valid(protocol_state_json)),
+    cancel_state        TEXT
+                        CHECK (cancel_state IS NULL OR cancel_state IN ('requested','acknowledged','killed')),
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
 );
 
-CREATE INDEX idx_sessions_status ON sessions(status);
-CREATE INDEX idx_sessions_channel ON sessions(channel_type, channel_ref);
-CREATE INDEX idx_sessions_agent_type ON sessions(agent_type);
-
-CREATE TABLE tasks (
-  id TEXT PRIMARY KEY,
-  session_id TEXT REFERENCES sessions(id),
-  source_type TEXT NOT NULL CHECK (source_type IN ('web', 'feishu', 'cron', 'handoff', 'mcp', 'system')),
-  source_ref TEXT,
-  type TEXT NOT NULL CHECK (type IN ('message', 'compact', 'handoff', 'schedule_run', 'stop', 'resume')),
-  status TEXT NOT NULL DEFAULT 'queued'
-    CHECK (status IN ('scheduled', 'queued', 'running', 'succeeded', 'failed', 'cancelled', 'paused')),
-  target_agent_type TEXT REFERENCES agent_profiles(id),
-  input_json TEXT NOT NULL DEFAULT '{}',
-  dedupe_key TEXT,
-  run_id TEXT REFERENCES agent_runs(id) DEFERRABLE INITIALLY DEFERRED,
-  queued_at TEXT,
-  started_at TEXT,
-  finished_at TEXT,
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK (json_valid(input_json))
+-- ============================================================
+-- Events (append-only log)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS events (
+    global_seq      INTEGER PRIMARY KEY AUTOINCREMENT,
+    id              TEXT NOT NULL UNIQUE,
+    session_id      TEXT NOT NULL,
+    run_id          TEXT,
+    task_id         TEXT,
+    run_seq         INTEGER,
+    type            TEXT NOT NULL,
+    payload_json    TEXT NOT NULL DEFAULT '{}'
+                    CHECK (json_valid(payload_json)),
+    schema_version  INTEGER NOT NULL DEFAULT 1,
+    causation_id    TEXT,
+    correlation_id  TEXT,
+    created_at      TEXT NOT NULL
 );
 
-CREATE UNIQUE INDEX idx_tasks_dedupe_key
-ON tasks(dedupe_key)
-WHERE dedupe_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_events_session_seq
+    ON events (session_id, global_seq);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_events_run_seq
+    ON events (run_id, run_seq) WHERE run_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_events_type_seq
+    ON events (type, global_seq);
 
-CREATE INDEX idx_tasks_session_status ON tasks(session_id, status);
-CREATE INDEX idx_tasks_source ON tasks(source_type, source_ref);
-
-CREATE TABLE agent_runs (
-  id TEXT PRIMARY KEY,
-  session_id TEXT NOT NULL REFERENCES sessions(id),
-  task_id TEXT REFERENCES tasks(id),
-  agent_type TEXT NOT NULL REFERENCES agent_profiles(id),
-  status TEXT NOT NULL DEFAULT 'queued'
-    CHECK (status IN (
-      'queued', 'starting', 'running', 'waiting_permission', 'compacting', 'stopping',
-      'succeeded', 'failed', 'cancelled', 'overflowed'
-    )),
-  launch_spec_json TEXT NOT NULL DEFAULT '{}',
-  pid INTEGER,
-  context_pack_id TEXT REFERENCES context_packs(id) DEFERRABLE INITIALLY DEFERRED,
-  first_global_seq INTEGER,
-  last_global_seq INTEGER,
-  heartbeat_at TEXT,
-  started_at TEXT,
-  stopped_at TEXT,
-  exit_code INTEGER,
-  stop_reason TEXT,
-  error_class TEXT,
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK (json_valid(launch_spec_json)),
-  CHECK (first_global_seq IS NULL OR last_global_seq IS NULL OR last_global_seq >= first_global_seq)
+-- ============================================================
+-- Messages (denormalized read model)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS messages (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL,
+    run_id          TEXT,
+    role            TEXT NOT NULL
+                    CHECK (role IN ('user','assistant','system','tool')),
+    content         TEXT NOT NULL DEFAULT '',
+    metadata_json   TEXT NOT NULL DEFAULT '{}'
+                    CHECK (json_valid(metadata_json)),
+    source_event_id TEXT NOT NULL,
+    created_at      TEXT NOT NULL
 );
 
-CREATE UNIQUE INDEX idx_one_active_run_per_session
-ON agent_runs(session_id)
-WHERE status IN ('queued', 'starting', 'running', 'waiting_permission', 'compacting', 'stopping');
-
-CREATE INDEX idx_agent_runs_session_status ON agent_runs(session_id, status);
-CREATE INDEX idx_agent_runs_task ON agent_runs(task_id);
-
-CREATE TABLE events (
-  global_seq INTEGER PRIMARY KEY AUTOINCREMENT,
-  id TEXT NOT NULL UNIQUE,
-  session_id TEXT NOT NULL REFERENCES sessions(id),
-  run_id TEXT REFERENCES agent_runs(id),
-  task_id TEXT REFERENCES tasks(id),
-  run_seq INTEGER,
-  type TEXT NOT NULL,
-  payload_json TEXT NOT NULL DEFAULT '{}',
-  schema_version INTEGER NOT NULL DEFAULT 1,
-  causation_id TEXT,
-  correlation_id TEXT,
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK (json_valid(payload_json)),
-  CHECK (schema_version > 0),
-  CHECK (run_seq IS NULL OR run_seq > 0),
-  CHECK ((run_id IS NULL AND run_seq IS NULL) OR (run_id IS NOT NULL AND run_seq IS NOT NULL))
+-- ============================================================
+-- Outbox (transactional delivery queue)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS outbox (
+    id                  TEXT PRIMARY KEY,
+    session_id          TEXT NOT NULL,
+    event_id            TEXT,
+    event_global_seq    INTEGER,
+    channel_type        TEXT NOT NULL
+                        CHECK (channel_type IN ('web','feishu','qq','telegram','discord')),
+    target_ref          TEXT NOT NULL,
+    kind                TEXT NOT NULL
+                        CHECK (kind IN ('web_event','feishu_markdown','qq_markdown','telegram_markdown','discord_markdown')),
+    view_model_json     TEXT NOT NULL DEFAULT '{}'
+                        CHECK (json_valid(view_model_json)),
+    idempotency_key     TEXT NOT NULL UNIQUE,
+    status              TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending','sending','sent','failed','dead')),
+    attempts            INTEGER NOT NULL DEFAULT 0,
+    max_attempts        INTEGER NOT NULL DEFAULT 5,
+    next_attempt_at     TEXT,
+    locked_by           TEXT,
+    locked_at           TEXT,
+    lease_expires_at    TEXT,
+    provider_message_id TEXT,
+    last_error          TEXT,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    sent_at             TEXT
 );
 
-CREATE INDEX idx_events_session_global_seq ON events(session_id, global_seq);
-CREATE UNIQUE INDEX idx_events_run_seq ON events(run_id, run_seq) WHERE run_id IS NOT NULL;
-CREATE INDEX idx_events_type_global_seq ON events(type, global_seq);
-CREATE INDEX idx_events_correlation ON events(correlation_id);
+CREATE INDEX IF NOT EXISTS idx_outbox_status_next
+    ON outbox (status, next_attempt_at);
+CREATE INDEX IF NOT EXISTS idx_outbox_session_created
+    ON outbox (session_id, created_at);
 
-CREATE TABLE outbox (
-  id TEXT PRIMARY KEY,
-  session_id TEXT NOT NULL REFERENCES sessions(id),
-  event_id TEXT REFERENCES events(id),
-  event_global_seq INTEGER REFERENCES events(global_seq),
-  channel_type TEXT NOT NULL CHECK (channel_type IN ('web', 'feishu')),
-  target_ref TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('web_event', 'feishu_card_create', 'feishu_card_update', 'feishu_text')),
-  view_model_json TEXT NOT NULL DEFAULT '{}',
-  idempotency_key TEXT NOT NULL UNIQUE,
-  status TEXT NOT NULL DEFAULT 'pending'
-    CHECK (status IN ('pending', 'sending', 'sent', 'failed', 'dead')),
-  attempts INTEGER NOT NULL DEFAULT 0,
-  max_attempts INTEGER NOT NULL DEFAULT 5,
-  next_attempt_at TEXT,
-  locked_by TEXT,
-  locked_at TEXT,
-  lease_expires_at TEXT,
-  provider_message_id TEXT,
-  last_error TEXT,
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  sent_at TEXT,
-  CHECK (json_valid(view_model_json)),
-  CHECK (attempts >= 0),
-  CHECK (max_attempts > 0)
+-- ============================================================
+-- Channel Configs (key-value per channel_id)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS channel_configs (
+    id          TEXT PRIMARY KEY,
+    channel_id  TEXT NOT NULL,
+    key         TEXT NOT NULL,
+    value       TEXT NOT NULL DEFAULT '',
+    updated_at  TEXT NOT NULL,
+    UNIQUE (channel_id, key)
 );
 
-CREATE INDEX idx_outbox_status_next_attempt ON outbox(status, next_attempt_at);
-CREATE INDEX idx_outbox_session_created ON outbox(session_id, created_at);
-CREATE INDEX idx_outbox_locked_at ON outbox(locked_at);
-CREATE INDEX idx_outbox_lease ON outbox(status, lease_expires_at);
-
-CREATE TABLE projector_offsets (
-  projector_name TEXT PRIMARY KEY,
-  last_global_seq INTEGER NOT NULL DEFAULT 0 CHECK (last_global_seq >= 0),
-  last_event_id TEXT REFERENCES events(id),
-  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+-- ============================================================
+-- Agent Defaults (scoped config)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS agent_defaults (
+    id          TEXT PRIMARY KEY,
+    scope_type  TEXT NOT NULL
+                CHECK (scope_type IN ('user','channel','workspace','system')),
+    scope_ref   TEXT NOT NULL,
+    agent_type  TEXT NOT NULL,
+    params_json TEXT NOT NULL DEFAULT '{}'
+                CHECK (json_valid(params_json)),
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    UNIQUE (scope_type, scope_ref)
 );
 
-CREATE TABLE messages (
-  id TEXT PRIMARY KEY,
-  session_id TEXT NOT NULL REFERENCES sessions(id),
-  run_id TEXT REFERENCES agent_runs(id),
-  role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system', 'tool')),
-  content TEXT NOT NULL DEFAULT '',
-  metadata_json TEXT NOT NULL DEFAULT '{}',
-  source_event_id TEXT NOT NULL REFERENCES events(id),
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK (json_valid(metadata_json))
+-- ============================================================
+-- Audit Logs
+-- ============================================================
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id              TEXT PRIMARY KEY,
+    actor_type      TEXT NOT NULL
+                    CHECK (actor_type IN ('web_user','feishu_user','qq_user','telegram_user','discord_user','system','agent')),
+    actor_ref       TEXT,
+    action          TEXT NOT NULL,
+    resource_type   TEXT NOT NULL,
+    resource_id     TEXT,
+    payload_json    TEXT NOT NULL DEFAULT '{}'
+                    CHECK (json_valid(payload_json)),
+    created_at      TEXT NOT NULL
 );
 
-CREATE INDEX idx_messages_session_created ON messages(session_id, created_at);
-CREATE INDEX idx_messages_source_event ON messages(source_event_id);
-
-CREATE TABLE context_packs (
-  id TEXT PRIMARY KEY,
-  session_id TEXT NOT NULL REFERENCES sessions(id),
-  source_run_id TEXT REFERENCES agent_runs(id),
-  schema_version INTEGER NOT NULL DEFAULT 1,
-  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'ready', 'failed', 'superseded')),
-  source_event_start_id TEXT NOT NULL REFERENCES events(id),
-  source_event_end_id TEXT NOT NULL REFERENCES events(id),
-  token_estimate INTEGER CHECK (token_estimate IS NULL OR token_estimate >= 0),
-  summary_json TEXT NOT NULL DEFAULT '{}',
-  recent_messages_json TEXT NOT NULL DEFAULT '[]',
-  key_files_json TEXT NOT NULL DEFAULT '[]',
-  open_tasks_json TEXT NOT NULL DEFAULT '[]',
-  created_by TEXT NOT NULL CHECK (created_by IN ('system', 'user', 'agent')),
-  strategy TEXT NOT NULL CHECK (strategy IN ('native_compact', 'miniagent_summary', 'manual')),
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK (schema_version > 0),
-  CHECK (json_valid(summary_json)),
-  CHECK (json_valid(recent_messages_json)),
-  CHECK (json_valid(key_files_json)),
-  CHECK (json_valid(open_tasks_json))
+-- ============================================================
+-- Permission Requests (ACP protocol)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS permission_requests (
+    id                  TEXT PRIMARY KEY,
+    session_id          TEXT NOT NULL,
+    run_id              TEXT NOT NULL,
+    task_id             TEXT,
+    event_id            TEXT,
+    acp_request_id      TEXT,
+    protocol            TEXT NOT NULL DEFAULT 'acp'
+                        CHECK (protocol IN ('acp','legacy_cli')),
+    status              TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending','approved','denied','cancelled','expired')),
+    prompt              TEXT NOT NULL DEFAULT '',
+    options_json        TEXT NOT NULL DEFAULT '[]'
+                        CHECK (json_valid(options_json)),
+    tool_call_json      TEXT NOT NULL DEFAULT '{}'
+                        CHECK (json_valid(tool_call_json)),
+    selected_option_id  TEXT,
+    expires_at          TEXT,
+    resolved_at         TEXT,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    UNIQUE (run_id, acp_request_id)
 );
 
-CREATE INDEX idx_context_packs_session_created ON context_packs(session_id, created_at);
-CREATE INDEX idx_context_packs_status ON context_packs(status);
-
-CREATE TABLE schedules (
-  id TEXT PRIMARY KEY,
-  session_id TEXT NOT NULL REFERENCES sessions(id),
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'cancelled')),
-  kind TEXT NOT NULL CHECK (kind IN ('once', 'cron')),
-  cron_expr TEXT,
-  run_at TEXT,
-  timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
-  payload_json TEXT NOT NULL DEFAULT '{}',
-  next_run_at TEXT,
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK (json_valid(payload_json)),
-  CHECK ((kind = 'cron' AND cron_expr IS NOT NULL) OR (kind = 'once' AND run_at IS NOT NULL))
+-- ============================================================
+-- Schedules (cron + one-shot)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS schedules (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'active'
+                    CHECK (status IN ('active','paused','cancelled')),
+    kind            TEXT NOT NULL
+                    CHECK (kind IN ('once','cron')),
+    cron_expr       TEXT,
+    run_at          TEXT,
+    timezone        TEXT NOT NULL DEFAULT 'Asia/Shanghai',
+    payload_json    TEXT NOT NULL DEFAULT '{}'
+                    CHECK (json_valid(payload_json)),
+    next_run_at     TEXT,
+    locked_by       TEXT,
+    locked_at       TEXT,
+    lease_expires_at TEXT,
+    last_run_at     TEXT,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
 );
 
-CREATE INDEX idx_schedules_status_next_run ON schedules(status, next_run_at);
-CREATE INDEX idx_schedules_session ON schedules(session_id);
+CREATE INDEX IF NOT EXISTS idx_schedules_status_next
+    ON schedules (status, next_run_at);
+CREATE INDEX IF NOT EXISTS idx_schedules_session
+    ON schedules (session_id);
 
-CREATE TABLE audit_logs (
-  id TEXT PRIMARY KEY,
-  actor_type TEXT NOT NULL CHECK (actor_type IN ('web_user', 'feishu_user', 'system', 'agent')),
-  actor_ref TEXT,
-  action TEXT NOT NULL,
-  resource_type TEXT NOT NULL,
-  resource_id TEXT,
-  payload_json TEXT NOT NULL DEFAULT '{}',
-  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  CHECK (json_valid(payload_json))
+-- ============================================================
+-- Context Budgets
+-- ============================================================
+CREATE TABLE IF NOT EXISTS context_budgets (
+    session_id                 TEXT PRIMARY KEY,
+    status                     TEXT NOT NULL DEFAULT 'healthy',
+    token_estimate             INTEGER NOT NULL DEFAULT 0,
+    budget_tokens              INTEGER NOT NULL,
+    usage_ratio                REAL NOT NULL DEFAULT 0,
+    warning_threshold          REAL NOT NULL DEFAULT 0.70,
+    critical_threshold         REAL NOT NULL DEFAULT 0.85,
+    overflow_threshold         REAL NOT NULL DEFAULT 0.95,
+    source_event_start_id      TEXT,
+    source_event_end_id        TEXT,
+    source_global_seq          INTEGER NOT NULL DEFAULT 0,
+    current_context_pack_id    TEXT,
+    last_compacted_at          TEXT,
+    overflow_reason            TEXT,
+    updated_at                 TEXT NOT NULL
 );
 
-CREATE INDEX idx_audit_logs_resource ON audit_logs(resource_type, resource_id);
-CREATE INDEX idx_audit_logs_actor_created ON audit_logs(actor_type, actor_ref, created_at);
+-- ============================================================
+-- Context Packs
+-- ============================================================
+CREATE TABLE IF NOT EXISTS context_packs (
+    id                      TEXT PRIMARY KEY,
+    session_id              TEXT NOT NULL,
+    source_run_id           TEXT,
+    schema_version          INTEGER NOT NULL DEFAULT 1,
+    status                  TEXT NOT NULL DEFAULT 'draft',
+    source_event_start_id   TEXT NOT NULL,
+    source_event_end_id     TEXT NOT NULL,
+    token_estimate          INTEGER,
+    summary_json            TEXT NOT NULL DEFAULT '{}'
+                            CHECK (json_valid(summary_json)),
+    recent_messages_json    TEXT NOT NULL DEFAULT '[]'
+                            CHECK (json_valid(recent_messages_json)),
+    key_files_json          TEXT NOT NULL DEFAULT '[]'
+                            CHECK (json_valid(key_files_json)),
+    open_tasks_json         TEXT NOT NULL DEFAULT '[]'
+                            CHECK (json_valid(open_tasks_json)),
+    created_by              TEXT NOT NULL,
+    strategy                TEXT NOT NULL
+                            CHECK (strategy IN ('native_compact','miniagent_summary','manual')),
+    created_at              TEXT NOT NULL
+);
 
-INSERT OR IGNORE INTO agent_profiles (
-  id, display_name, command, capabilities_json, default_args_json
-) VALUES
-  ('codex', 'Codex CLI', 'codex', '{"runtime":"codex-cli"}', '[]'),
-  ('claude', 'Claude Code', 'claude', '{"runtime":"claude-code"}', '[]'),
-  ('trae', 'Trae CLI', 'trae', '{"runtime":"trae-cli"}', '[]');
+-- ============================================================
+-- Memory Archives
+-- ============================================================
+CREATE TABLE IF NOT EXISTS memory_archives (
+    id                        TEXT PRIMARY KEY,
+    session_id                TEXT NOT NULL,
+    archive_date              TEXT NOT NULL,
+    source_event_start_id     TEXT NOT NULL,
+    source_event_end_id       TEXT NOT NULL,
+    source_global_seq_start   INTEGER NOT NULL,
+    source_global_seq_end     INTEGER NOT NULL,
+    raw_events_json           TEXT NOT NULL DEFAULT '[]'
+                              CHECK (json_valid(raw_events_json)),
+    summary_json              TEXT NOT NULL DEFAULT '{}'
+                              CHECK (json_valid(summary_json)),
+    created_at                TEXT NOT NULL,
+    updated_at                TEXT NOT NULL,
+    UNIQUE (session_id, archive_date)
+);
 
-INSERT OR IGNORE INTO agent_defaults (
-  id, scope_type, scope_ref, agent_type, params_json
-) VALUES (
-  'default-system-global', 'system', 'global', 'codex', '{}'
+-- ============================================================
+-- Operation Confirmations (two-step dangerous ops)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS operation_confirmations (
+    id              TEXT PRIMARY KEY,
+    action          TEXT NOT NULL,
+    resource_type   TEXT NOT NULL,
+    resource_id     TEXT,
+    risk_level      TEXT NOT NULL
+                    CHECK (risk_level IN ('medium','high','critical')),
+    prompt          TEXT NOT NULL,
+    payload_json    TEXT NOT NULL DEFAULT '{}'
+                    CHECK (json_valid(payload_json)),
+    token_hash      TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    actor_type      TEXT NOT NULL
+                    CHECK (actor_type IN ('web_user','feishu_user','qq_user','telegram_user','discord_user','system','agent')),
+    actor_ref       TEXT,
+    requested_at    TEXT NOT NULL,
+    expires_at      TEXT NOT NULL,
+    confirmed_at    TEXT,
+    consumed_at     TEXT
 );

@@ -73,6 +73,12 @@ type AcpRuntimeDriverOptions = {
   requestTimeoutMs?: number;
 };
 
+const agentDefaults: Record<string, AcpRuntimeDriverOptions> = {
+  claude: { agentType: "claude", displayName: "Claude", command: "claude" },
+  codex: { agentType: "codex", displayName: "Codex", command: "codex" },
+  trae: { agentType: "trae", displayName: "Trae", command: "traecli" },
+};
+
 const acpCapabilities: RuntimeCapabilities = {
   textStreaming: true,
   structuredEvents: true,
@@ -93,13 +99,16 @@ export class AcpRuntimeDriver implements RuntimeSessionDriver {
   private readonly commandRunner: CommandRunner;
   readonly requestTimeoutMs: number;
 
-  constructor(options: AcpRuntimeDriverOptions) {
-    this.agentType = options.agentType;
-    this.displayName = options.displayName;
-    this.command = options.command;
-    this.defaultArgs = options.defaultArgs ?? [];
-    this.commandRunner = options.commandRunner ?? new DefaultCommandRunner();
-    this.requestTimeoutMs = options.requestTimeoutMs ?? 30_000;
+  constructor(optionsOrAgentType: AcpRuntimeDriverOptions | AgentType) {
+    const opts = typeof optionsOrAgentType === "string"
+      ? agentDefaults[optionsOrAgentType] ?? { agentType: optionsOrAgentType, displayName: optionsOrAgentType, command: optionsOrAgentType }
+      : optionsOrAgentType;
+    this.agentType = opts.agentType;
+    this.displayName = opts.displayName;
+    this.command = opts.command;
+    this.defaultArgs = opts.defaultArgs ?? [];
+    this.commandRunner = (opts as AcpRuntimeDriverOptions).commandRunner ?? new DefaultCommandRunner();
+    this.requestTimeoutMs = (opts as AcpRuntimeDriverOptions).requestTimeoutMs ?? 30_000;
   }
 
   capabilities(): RuntimeCapabilities {

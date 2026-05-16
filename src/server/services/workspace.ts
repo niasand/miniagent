@@ -1,0 +1,128 @@
+import type { SqliteDatabase } from "../db/migrate.js";
+import { SessionStore } from "../stores/session-store.js";
+import { MessageStore } from "../stores/message-store.js";
+import { EventStore } from "../stores/event-store.js";
+import { ContextBudgetStore } from "../stores/context-budget-store.js";
+import type { RuntimeSupervisor } from "../runtime/supervisor.js";
+import type { WorkspaceSnapshot, WorkspaceSessionSummary, WorkspaceMessage, WorkspaceRunStats, WorkspaceContextBudget, WorkspaceRuntimeSummary } from "../../shared/workspace.js";
+
+export class WorkspaceService {
+  private sessions: SessionStore;
+  private messages: MessageStore;
+  private events: EventStore;
+  private contextBudgets: ContextBudgetStore;
+
+  constructor(
+    private readonly db: SqliteDatabase,
+    private readonly supervisor?: RuntimeSupervisor,
+  ) {
+    this.events = new EventStore(db);
+    this.sessions = new SessionStore(db, this.events);
+    this.messages = new MessageStore(db);
+    this.contextBudgets = new ContextBudgetStore(db);
+  }
+
+  getSnapshot(selectedSessionId?: string | null): WorkspaceSnapshot {
+    const sessions = this.sessions.listSessions();
+    const sessionId = selectedSessionId ?? sessions[0]?.id ?? null;
+
+    const sessionSummaries: WorkspaceSessionSummary[] = sessions.map((s) => ({
+      id: s.id,
+      title: s.title,
+      agentType: s.agentType as any,
+      agent: (s.agentType.charAt(0).toUpperCase() + s.agentType.slice(1)) as any,
+      initials: s.agentType.slice(0, 2).toUpperCase(),
+      workspace: s.workspacePath,
+      status: this.mapSessionStatus(s.status),
+      handoff: undefined,
+    }));
+
+    let messages: WorkspaceMessage[] = [];
+    let runStats: WorkspaceRunStats = { durationSeconds: null, tokensUsed: null, tokensTotal: null };
+    let outboxRows: Array<[string, string, string]> = [];
+    let keyEvents: Array<[string, string, string]> = [];
+
+    if (sessionId) {
+      const msgs = this.messages.getLatestBySession(sessionId, 200);
+      messages = msgs.map((m) => ({
+        id: m.id,
+        role: this.mapRole(m.role),
+        author: m.role === "user" ? "You" : m.role === "assistant" ? "Agent" : m.role,
+        time: m.createdAt,
+        createdAt: m.createdAt,
+        badge: undefined,
+        markdown: m.content,
+      }));
+
+      // Get run stats from latest run
+      const latestRun = this.getLatestRun(sessionId);
+      if (latestRun) {
+        const events = this.events.listAfterGlobalSeq({ sessionId, afterGlobalSeq: (latestRun.firstGlobalSeq ?? 0) - 1, limit: 500 });
+        const textDeltas = events.filter((e) => e.type === "text_delta");
+        let tokensUsed = 0;
+        for (const e of textDeltas) {
+          const p = e.payload as { tokenEstimate?: number };
+          tokensUsed += p.tokenEstimate ?? 0;
+        }
+        const duration = latestRun.startedAt && latestRun.stoppedAt
+          ? Math.round((new Date(latestRun.stoppedAt).getTime() - new Date(latestRun.startedAt).getTime()) / 1000)
+          : null;
+        runStats = { durationSeconds: duration, tokensUsed: tokensUsed || null, tokensTotal: null };
+      }
+    }
+
+    const budget = sessionId ? this.contextBudgets.get(sessionId) : null;
+    const contextBudget: WorkspaceContextBudget = {
+      status: budget?.status ?? "healthy",
+      tokenEstimate: budget?.tokenEstimate ?? 0,
+      budgetTokens: budget?.budgetTokens ?? 200_000,
+      usagePercent: budget ? Math.round(budget.usageRatio * 100) : 0,
+      warningPercent: Math.round((budget?.warningThreshold ?? 0.70) * 100),
+      criticalPercent: Math.round((budget?.criticalThreshold ?? 0.85) * 100),
+      overflowPercent: Math.round((budget?.overflowThreshold ?? 0.95) * 100),
+      currentContextPackId: budget?.currentContextPackId ?? null,
+      lastCompactedAt: budget?.lastCompactedAt ?? null,
+    };
+
+    const activeRun = this.supervisor?.getActiveRunBySession(sessionId ?? "");
+    const runtime: WorkspaceRuntimeSummary = {
+      activeRunId: activeRun?.runId ?? null,
+      status: activeRun ? "running" : "idle",
+      pid: activeRun?.pid ?? null,
+      agentType: null,
+      runtimeKind: null,
+      startedAt: null,
+    };
+
+    return {
+      selectedSessionId: sessionId,
+      sessions: sessionSummaries,
+      messages,
+      runStats,
+      outboxRows,
+      keyEvents,
+      contextBudget,
+      runtime,
+    };
+  }
+
+  private getLatestRun(sessionId: string) {
+    const rows = this.db.prepare(
+      "SELECT * FROM agent_runs WHERE session_id = ? ORDER BY created_at DESC LIMIT 1"
+    ).all(sessionId) as any[];
+    return rows[0] ?? null;
+  }
+
+  private mapSessionStatus(status: string): any {
+    if (status === "idle") return "idle";
+    if (status === "running") return "running";
+    if (status === "compacting") return "compact";
+    return status as any;
+  }
+
+  private mapRole(role: string): "user" | "agent" | "tool" | "system" {
+    if (role === "assistant") return "agent";
+    if (role === "user" || role === "system" || role === "tool") return role;
+    return "system";
+  }
+}

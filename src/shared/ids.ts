@@ -7,6 +7,7 @@ export type EntityPrefix =
   | "ctx"
   | "evt"
   | "mem"
+  | "msg"
   | "out"
   | "prm"
   | "run"
