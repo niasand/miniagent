@@ -257,7 +257,7 @@ describe("WorkspaceService", () => {
     const session = sessions.createSession({ title: "T", agentType: "claude", workspacePath: "/tmp" });
 
     const budgets = new ContextBudgetStore(db);
-    const result = budgets.upsert(session.id, { budgetTokens: 100_000, tokenEstimate: 30_000 });
+    const result = budgets.upsert({ sessionId: session.id, budgetTokens: 100_000, tokenEstimate: 30_000 });
     expect(result).not.toBeNull();
     expect(result.budgetTokens).toBe(100_000);
 

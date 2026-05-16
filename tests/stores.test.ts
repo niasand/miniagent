@@ -318,7 +318,7 @@ describe("ContextBudgetStore", () => {
     const before = budgets.get("ses_test1");
     expect(before).toBeNull();
 
-    const result = budgets.upsert("ses_test1", { budgetTokens: 100_000, tokenEstimate: 30_000 });
+    const result = budgets.upsert({ sessionId: "ses_test1", budgetTokens: 100_000, tokenEstimate: 30_000 });
     expect(result).not.toBeNull();
 
     const fetched = budgets.get("ses_test1");
