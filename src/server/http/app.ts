@@ -660,6 +660,37 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
     return c.json({ config: result });
   });
 
+  // ── DingTalk Webhook ──
+  app.post("/api/webhooks/dingtalk", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return c.json({ error: "Invalid body" }, 400);
+    }
+
+    const callback = body as import("../channels/dingtalk.js").DingTalkCallback;
+    const { DingTalkChannel } = await import("../channels/dingtalk.js");
+    const msg = DingTalkChannel.parseCallback(callback);
+    if (!msg) return c.json({ success: true }); // Skip non-text messages
+
+    // Cache staffId for C2C replies
+    const adapter = channelRegistry.get("dingtalk");
+    if (adapter && "handleCallback" in adapter) {
+      (adapter as import("../channels/dingtalk.js").DingTalkChannel).handleCallback(callback);
+    }
+
+    try {
+      const inbound = new InboundService(db, "dingtalk", { workspacePolicy });
+      const result = inbound.receiveMessage(msg);
+      if (result.action === "message" && result.taskId) {
+        try { runtimeService.startNextQueuedTask(result.session.id); } catch { /* already active */ }
+      }
+    } catch (err) {
+      console.error("[DingTalk] Webhook message handling failed:", err);
+    }
+
+    return c.json({ success: true });
+  });
+
   // ── Schedules ──
 
   app.get("/api/schedules", (c) => {

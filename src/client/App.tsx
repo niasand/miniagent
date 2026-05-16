@@ -394,6 +394,23 @@ const CHANNEL_FIELDS: Record<string, Array<{ key: string; label: string }>> = {
     { key: "app_id", label: "App ID" },
     { key: "app_secret", label: "App Secret" },
   ],
+  telegram: [
+    { key: "bot_token", label: "Bot Token" },
+  ],
+  discord: [
+    { key: "bot_token", label: "Bot Token" },
+  ],
+  wechat: [
+    { key: "bot_token", label: "Bot Token" },
+  ],
+  wecom: [
+    { key: "bot_id", label: "Bot ID" },
+    { key: "secret", label: "Secret" },
+  ],
+  dingtalk: [
+    { key: "client_id", label: "Client ID (App Key)" },
+    { key: "client_secret", label: "Client Secret" },
+  ],
 };
 
 function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSaved: () => void }) {
@@ -401,7 +418,7 @@ function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSaved: () =
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const configurable = channel.id === "feishu" || channel.id === "qq";
+  const configurable = channel.id in CHANNEL_FIELDS;
   const fields = CHANNEL_FIELDS[channel.id] ?? [];
   const initialConfig = channel.config ?? {};
   const [form, setForm] = useState<Record<string, string>>({});

@@ -5,6 +5,9 @@ import { FeishuChannel } from "./feishu.js";
 import { TelegramChannel } from "./telegram.js";
 import { DiscordChannel } from "./discord.js";
 import { QQChannel } from "./qq.js";
+import { WeChatChannel } from "./wechat.js";
+import { WeComChannel } from "./wecom.js";
+import { DingTalkChannel } from "./dingtalk.js";
 
 const DEDUP_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const DEDUP_MAX_SIZE = 1000;
@@ -85,6 +88,9 @@ export class ChannelRegistry {
       case "telegram": return new TelegramChannel(config);
       case "discord": return new DiscordChannel(config);
       case "qq": return new QQChannel(config);
+      case "wechat": return new WeChatChannel(config);
+      case "wecom": return new WeComChannel(config);
+      case "dingtalk": return new DingTalkChannel(config);
       default: return null;
     }
   }

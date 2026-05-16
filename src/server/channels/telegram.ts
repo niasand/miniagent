@@ -45,12 +45,25 @@ export class TelegramChannel implements ChannelAdapter {
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: chatId, text: content }),
+        body: JSON.stringify({ chat_id: chatId, text: markdownToTelegramHtml(content), parse_mode: "HTML" }),
       });
 
       if (res.ok) {
         const data = await res.json() as { result?: { message_id?: number } };
         return { providerMessageId: String(data.result?.message_id ?? "") };
+      }
+
+      // If HTML parse fails, retry as plain text
+      if (res.status === 400 && attempt === 0) {
+        const plainRes = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: chatId, text: content }),
+        });
+        if (plainRes.ok) {
+          const data = await plainRes.json() as { result?: { message_id?: number } };
+          return { providerMessageId: String(data.result?.message_id ?? "") };
+        }
       }
 
       if (res.status === 429) {
@@ -118,4 +131,37 @@ type TelegramUpdate = {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Convert agent markdown output to Telegram HTML.
+ * Telegram HTML supports: <b>, <i>, <u>, <s>, <code>, <pre>, <a>
+ */
+function markdownToTelegramHtml(md: string): string {
+  let html = md;
+
+  // Escape HTML special chars in the raw text first
+  html = html.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  // Code blocks: ```lang\n...\n``` → <pre><code>...</code></pre>
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, _lang, code) => `<pre><code>${code.trim()}</code></pre>`);
+
+  // Inline code: `...` → <code>...</code>
+  html = html.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+
+  // Bold: **...** or __...__ → <b>...</b>
+  html = html.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+  html = html.replace(/__(.+?)__/g, "<b>$1</b>");
+
+  // Italic: *...* or _..._ → <i>...</i>
+  html = html.replace(/(?<!\w)\*([^\s*](?:[^*]*[^\s*])?)\*(?!\w)/g, "<i>$1</i>");
+  html = html.replace(/(?<!\w)_([^\s_](?:[^_]*[^\s_])?)_(?!\w)/g, "<i>$1</i>");
+
+  // Strikethrough: ~~...~~ → <s>...</s>
+  html = html.replace(/~~(.+?)~~/g, "<s>$1</s>");
+
+  // Links: [text](url) → <a href="url">text</a>
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+
+  return html;
 }

@@ -16,6 +16,9 @@ const KNOWN_CHANNELS: Array<{ id: string; label: string; configKeys: string[] }>
   { id: "qq", label: "QQ", configKeys: ["app_id", "app_secret"] },
   { id: "telegram", label: "Telegram", configKeys: ["bot_token"] },
   { id: "discord", label: "Discord", configKeys: ["bot_token", "application_id"] },
+  { id: "wechat", label: "WeChat", configKeys: ["bot_token"] },
+  { id: "wecom", label: "WeCom", configKeys: ["bot_id", "secret"] },
+  { id: "dingtalk", label: "DingTalk", configKeys: ["client_id", "client_secret"] },
 ];
 
 export class ChannelConfigStore {

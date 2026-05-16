@@ -1,6 +1,14 @@
 import * as lark from "@larksuiteoapi/node-sdk";
 import type { ChannelAdapter, ChannelMessage, SendResult } from "./types.js";
 
+type MessageListResult = {
+  items?: Array<{
+    message_id?: string;
+    body?: { content?: string };
+    sender?: { id?: string; id_type?: string; sender_type?: string };
+  }>;
+};
+
 export class FeishuChannel implements ChannelAdapter {
   readonly channelType = "feishu";
   private wsClient: lark.WSClient | null = null;
@@ -114,7 +122,8 @@ export class FeishuChannel implements ChannelAdapter {
           },
         });
 
-        const items = res.data?.items ?? [];
+        const result = res.data as MessageListResult | undefined;
+        const items = result?.items ?? [];
         for (const item of items) {
           if (!item.message_id || !item.body?.content) continue;
           // Skip bot's own messages
@@ -137,7 +146,7 @@ export class FeishuChannel implements ChannelAdapter {
           this.onMessageRef({
             messageId: item.message_id,
             chatId: chatRef,
-            userId: (item.sender as any)?.sender_id?.open_id ?? (item.sender as any)?.id ?? "",
+            userId: item.sender?.id ?? "",
             text,
             chatType,
             isMentioned,

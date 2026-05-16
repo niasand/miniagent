@@ -397,6 +397,9 @@ const CHANNEL_MAX_CONTENT: Record<string, number> = {
   feishu: 4096,
   telegram: 4096,
   discord: 2000,
+  wechat: 2000,
+  wecom: 4096,
+  dingtalk: 4096,
   web: 1_000_000,
 };
 

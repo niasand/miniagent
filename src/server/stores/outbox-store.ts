@@ -3,8 +3,8 @@ import { createId } from "../../shared/ids.js";
 import { parseJson, stringifyJson, type JsonValue } from "../../shared/json.js";
 import { nowIso, addMillisecondsIso } from "../../shared/time.js";
 
-export type OutboxChannel = "web" | "feishu" | "qq" | "telegram" | "discord";
-export type OutboxKind = "web_event" | "feishu_markdown" | "qq_markdown" | "telegram_markdown" | "discord_markdown";
+export type OutboxChannel = "web" | "feishu" | "qq" | "telegram" | "discord" | "wechat" | "wecom" | "dingtalk";
+export type OutboxKind = "web_event" | "feishu_markdown" | "qq_markdown" | "telegram_markdown" | "discord_markdown" | "wechat_markdown" | "wecom_markdown" | "dingtalk_markdown";
 export type OutboxStatus = "pending" | "sending" | "sent" | "failed" | "dead";
 
 export type OutboxItem = {
