@@ -8,6 +8,7 @@ import { ChannelRegistry } from "../channels/registry.js";
 import { RuntimeService } from "../runtime/service.js";
 import { DeliveryWorker } from "../services/delivery.js";
 import { InboundService } from "../services/inbound.js";
+import { OutboxStore } from "../stores/outbox-store.js";
 
 const port = Number(process.env.MINIAGENT_API_PORT ?? 7273);
 const db = openDatabase();
@@ -15,9 +16,12 @@ migrate(db);
 
 const workspacePolicy = new WorkspacePolicy([process.cwd()]);
 const runtimeRegistry = new RuntimeAdapterRegistry();
+const outboxStore = new OutboxStore(db);
+
 const runtimeSupervisor = new RuntimeSupervisor({
   db,
   adapterRegistry: runtimeRegistry,
+  outboxStore,
 });
 
 const runtimeService = new RuntimeService(db, runtimeSupervisor, workspacePolicy);

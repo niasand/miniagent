@@ -128,6 +128,7 @@ export class OutboxStore {
     }
 
     const now2 = nowIso();
+    const claimed: OutboxRow[] = [];
     for (const row of rows) {
       this.db.prepare(
         `UPDATE outbox SET status = 'sending', locked_by = @workerId, locked_at = @lockedAt, lease_expires_at = @leaseExpiresAt, updated_at = @updatedAt WHERE id = @id`
@@ -138,9 +139,10 @@ export class OutboxStore {
         leaseExpiresAt: leaseExpiry,
         updatedAt: now2,
       });
+      claimed.push(this.db.prepare("SELECT * FROM outbox WHERE id = ?").get(row.id) as OutboxRow);
     }
 
-    return rows.map(mapOutboxRow);
+    return claimed.map(mapOutboxRow);
   }
 
   markSent(id: string, providerMessageId?: string): void {

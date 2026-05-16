@@ -1,7 +1,8 @@
 import type { SqliteDatabase } from "../db/migrate.js";
 import { SessionStore, type AgentRunRecord } from "../stores/session-store.js";
-import { EventStore, type StoredEvent } from "../stores/event-store.js";
+import { EventStore } from "../stores/event-store.js";
 import { PermissionRequestStore } from "../stores/permission-request-store.js";
+import { OutboxStore, type OutboxChannel, type OutboxKind } from "../stores/outbox-store.js";
 import { RuntimeAdapterRegistry } from "./registry.js";
 import { TextDeltaBatcher } from "./text-delta-batcher.js";
 import { ChildProcessFactory, type RuntimeProcess, type RuntimeProcessExit } from "./process.js";
@@ -20,6 +21,7 @@ export type RuntimeSupervisorOptions = {
   processFactory?: typeof ChildProcessFactory;
   maxTextDeltaBytes?: number;
   cancelKillTimeoutMs?: number;
+  outboxStore?: OutboxStore;
 };
 
 export type StartRuntimeTaskInput = {
@@ -53,6 +55,7 @@ export class RuntimeSupervisor {
   private readonly processFactory: InstanceType<typeof ChildProcessFactory>;
   private readonly maxTextDeltaBytes: number;
   private readonly cancelKillTimeoutMs: number;
+  private readonly outbox: OutboxStore | null;
   private readonly activeRuns = new Map<string, ActiveRun>();
 
   constructor(options: RuntimeSupervisorOptions) {
@@ -64,6 +67,7 @@ export class RuntimeSupervisor {
     this.processFactory = new (options.processFactory ?? ChildProcessFactory)();
     this.maxTextDeltaBytes = options.maxTextDeltaBytes ?? 4_096;
     this.cancelKillTimeoutMs = options.cancelKillTimeoutMs ?? 5_000;
+    this.outbox = options.outboxStore ?? null;
   }
 
   startTask(input: StartRuntimeTaskInput): StartedRuntimeRun {
@@ -255,6 +259,8 @@ export class RuntimeSupervisor {
       stoppedAt: exit.exitedAt,
     });
 
+    this.enqueueRunReply(activeRun);
+
     this.activeRuns.delete(runId);
   }
 
@@ -294,6 +300,46 @@ export class RuntimeSupervisor {
     if (!activeRun) throw new Error(`Runtime run is not active: ${runId}`);
     return activeRun;
   }
+
+  private enqueueRunReply(activeRun: ActiveRun): void {
+    if (!this.outbox) return;
+
+    const session = this.sessions.getSession(activeRun.sessionId);
+    if (!session?.channelType || !session.channelRef) return;
+
+    const run = this.sessions.getRun(activeRun.runId);
+    if (!run) return;
+
+    const deltas = this.events.listByRun(activeRun.runId, "text_delta");
+    const text = deltas
+      .map((e) => typeof (e.payload as Record<string, unknown>)?.text === "string" ? (e.payload as Record<string, unknown>).text as string : "")
+      .join("");
+
+    if (!text) return;
+
+    const durationSec = run.startedAt && run.stoppedAt
+      ? ((new Date(run.stoppedAt).getTime() - new Date(run.startedAt).getTime()) / 1000).toFixed(1)
+      : null;
+
+    const stats = durationSec ? `\n\n⏱ ${durationSec}s` : "";
+    const fullText = text + stats;
+
+    const channelType = session.channelType as OutboxChannel;
+    const kind = `${channelType}_markdown` as OutboxKind;
+    const maxLen = CHANNEL_MAX_CONTENT[channelType] ?? 4096;
+    const chunks = splitChunks(fullText, maxLen);
+
+    for (let i = 0; i < chunks.length; i++) {
+      this.outbox.enqueue({
+        sessionId: session.id,
+        channelType,
+        targetRef: session.channelRef,
+        kind,
+        viewModel: { text: chunks[i], chunkIndex: i, totalChunks: chunks.length },
+        idempotencyKey: `${activeRun.runId}:reply:${i}`,
+      });
+    }
+  }
 }
 
 // ── Helpers ──
@@ -323,4 +369,26 @@ function resolveResumeInput(input: JsonValue, taskType: string, externalSessionI
   const object = asJsonObject(input);
   if (typeof object.externalSessionId === "string") return input;
   return { ...object, externalSessionId };
+}
+
+const CHANNEL_MAX_CONTENT: Record<string, number> = {
+  qq: 2048,
+  feishu: 4096,
+  telegram: 4096,
+  discord: 2000,
+  web: 1_000_000,
+};
+
+function splitChunks(text: string, maxLen: number): string[] {
+  if (text.length <= maxLen) return [text];
+  const chunks: string[] = [];
+  let rest = text;
+  while (rest.length > 0) {
+    if (rest.length <= maxLen) { chunks.push(rest); break; }
+    let cut = rest.lastIndexOf("\n", maxLen);
+    if (cut < maxLen * 0.5) cut = maxLen;
+    chunks.push(rest.slice(0, cut));
+    rest = rest.slice(cut);
+  }
+  return chunks;
 }

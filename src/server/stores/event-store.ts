@@ -78,6 +78,13 @@ export class EventStore {
     return rows.map((row) => mapEventRow(row as EventRow));
   }
 
+  listByRun(runId: string, type?: string): StoredEvent[] {
+    const rows = type
+      ? this.db.prepare("SELECT * FROM events WHERE run_id = ? AND type = ? ORDER BY run_seq ASC").all(runId, type)
+      : this.db.prepare("SELECT * FROM events WHERE run_id = ? ORDER BY run_seq ASC").all(runId);
+    return rows.map((row) => mapEventRow(row as EventRow));
+  }
+
   private insertEvent(input: AppendEventInput): StoredEvent {
     if (!input.runId && input.runSeq != null) throw new Error("runSeq requires runId");
 

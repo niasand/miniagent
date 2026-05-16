@@ -64,10 +64,12 @@ export class MessageStore {
   }
 
   getLatestBySession(sessionId: string, limit = 50): MessageRecord[] {
+    const total = (this.db.prepare("SELECT COUNT(*) as c FROM messages WHERE session_id = ?").get(sessionId) as { c: number }).c;
+    const offset = Math.max(0, total - limit);
     const rows = this.db.prepare(
-      "SELECT * FROM messages WHERE session_id = ? ORDER BY created_at DESC LIMIT ?"
-    ).all(sessionId, limit) as MessageRow[];
-    return rows.reverse().map(mapMessageRow);
+      "SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC, id ASC LIMIT ? OFFSET ?"
+    ).all(sessionId, limit, offset) as MessageRow[];
+    return rows.map(mapMessageRow);
   }
 }
 
