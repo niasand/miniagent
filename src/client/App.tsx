@@ -55,17 +55,25 @@ export default function App() {
       )
     : skills;
 
-  // Single source of truth: workspace polling
+  // Single source of truth: workspace polling (always fetch — server falls back to most recent session)
   const { data: snapshot } = useQuery({
     queryKey: ["workspace", sessionId],
     queryFn: async () => {
-      const res = await fetch(`/api/workspace?sessionId=${sessionId}`);
+      const qs = sessionId ? `?sessionId=${sessionId}` : "";
+      const res = await fetch(`/api/workspace${qs}`);
       if (!res.ok) throw new Error("Failed");
-      return res.json() as Promise<{ messages: ChatMessage[]; runStats: RunStats }>;
+      return res.json() as Promise<{ selectedSessionId: string | null; messages: ChatMessage[]; runStats: RunStats }>;
     },
-    enabled: !!sessionId,
     refetchInterval: 3_000,
   });
+
+  // Sync sessionId from server when we had none (server picks most recent session)
+  useEffect(() => {
+    if (!sessionId && snapshot?.selectedSessionId) {
+      setSessionId(snapshot.selectedSessionId);
+      localStorage.setItem("sessionId", snapshot.selectedSessionId);
+    }
+  }, [snapshot?.selectedSessionId, sessionId]);
 
   const messages: ChatMessage[] = snapshot?.messages ?? [];
   const runStats: RunStats = snapshot?.runStats ?? { durationSeconds: null, tokensUsed: null, tokensTotal: null };
