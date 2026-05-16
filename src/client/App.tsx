@@ -77,22 +77,24 @@ export default function App() {
 
     const connect = (afterSeq: number) => {
       if (stopped) return;
-      source = new EventSource(
-        `/api/events/stream?sessionId=${encodeURIComponent(sessionId)}&afterGlobalSeq=${afterSeq}&limit=100`,
-      );
+      const url = `/api/events/stream?sessionId=${encodeURIComponent(sessionId)}&afterGlobalSeq=${afterSeq}&limit=100`;
+      console.log("[SSE] connecting", url);
+      source = new EventSource(url);
       const refresh = () => queryClient.invalidateQueries({ queryKey: ["workspace", sessionId] });
       for (const type of ["message_created", "run_started", "run_completed", "run_output_appended"]) {
         source.addEventListener(type, refresh);
       }
       source.addEventListener("text_delta", (e: MessageEvent) => {
+        console.log("[SSE] text_delta received, isStreaming:", isStreamingRef.current);
         if (isStreamingRef.current) {
           try {
             const evt = JSON.parse(e.data);
+            console.log("[SSE] text_delta payload:", evt.payload?.text);
             if (evt.payload?.text) {
               streamingTextRef.current += evt.payload.text;
               setStreamingText(streamingTextRef.current);
             }
-          } catch { /* ignore parse errors */ }
+          } catch (err) { console.error("[SSE] parse error", err); }
         }
         refresh();
       });
@@ -102,7 +104,8 @@ export default function App() {
       source.addEventListener("text_delta", (e: MessageEvent) => {
         try { lastGlobalSeqRef.current = JSON.parse(e.data).globalSeq ?? lastGlobalSeqRef.current; } catch {}
       });
-      source.onerror = () => {
+      source.onerror = (err) => {
+        console.log("[SSE] error, readyState:", source?.readyState, err);
         source?.close();
         if (!stopped) setTimeout(() => connect(lastGlobalSeqRef.current), 3_000);
       };
@@ -156,22 +159,31 @@ export default function App() {
 
   const sendMessage = useMutation({
     mutationFn: async (text: string) => {
+      console.log("[sendMessage] start", { text, sessionId, isStreaming: isStreamingRef.current });
       streamingTextRef.current = "";
       setStreamingText("");
       isStreamingRef.current = true;
       let sid = sessionId;
       if (!sid) {
+        console.log("[sendMessage] creating session...");
         const res = await createSession({ agentType });
         sid = res.sessionId;
+        console.log("[sendMessage] session created", sid);
         setSessionId(sid);
       }
+      console.log("[sendMessage] sending message to", sid);
       const result = await sendSessionMessage(sid, { text });
+      console.log("[sendMessage] message sent", result);
       return { ...result, sessionId: sid };
     },
     onSuccess: (data) => {
+      console.log("[sendMessage] onSuccess", data);
       setDraft("");
       setSessionId(data.sessionId);
       queryClient.invalidateQueries({ queryKey: ["workspace", data.sessionId] });
+    },
+    onError: (error) => {
+      console.error("[sendMessage] onError", error);
     },
   });
 
