@@ -36,6 +36,7 @@ export class DingTalkChannel implements ChannelAdapter {
   async send(targetRef: string, content: string): Promise<SendResult> {
     const token = await this.getAccessToken();
     const robotCode = this.config.client_id;
+    const dingtalkMd = markdownToDingTalk(content);
 
     if (targetRef.startsWith("dingtalk:c2c:")) {
       const senderId = targetRef.replace("dingtalk:c2c:", "");
@@ -52,7 +53,7 @@ export class DingTalkChannel implements ChannelAdapter {
           robotCode,
           userIds: [staffId],
           msgKey: "sampleMarkdown",
-          msgParam: JSON.stringify({ title: "Agent", text: content }),
+          msgParam: JSON.stringify({ title: "Agent", text: dingtalkMd }),
         }),
       });
       if (!res.ok) throw new Error(`DingTalk C2C send failed: ${res.status}`);
@@ -72,7 +73,7 @@ export class DingTalkChannel implements ChannelAdapter {
           openConversationId,
           robotCode,
           msgKey: "sampleMarkdown",
-          msgParam: JSON.stringify({ title: "Agent", text: content }),
+          msgParam: JSON.stringify({ title: "Agent", text: dingtalkMd }),
         }),
       });
       if (!res.ok) throw new Error(`DingTalk group send failed: ${res.status}`);
@@ -136,6 +137,30 @@ export class DingTalkChannel implements ChannelAdapter {
     };
     return this.token.accessToken;
   }
+}
+
+/**
+ * Convert standard markdown to DingTalk-compatible markdown.
+ * DingTalk differences:
+ * - No strikethrough (~~text~~)
+ * - Tables need a blank line before the separator row (|---|)
+ * - Code blocks: no language hint support
+ * - Bold, italic, links, lists: standard markdown works
+ */
+function markdownToDingTalk(md: string): string {
+  let out = md;
+
+  // Remove strikethrough (not supported) — keep inner text
+  out = out.replace(/~~(.+?)~~/g, "$1");
+
+  // Remove language hints from code blocks (not supported)
+  out = out.replace(/```(\w+)\n/g, "```\n");
+
+  // Add blank line before table separator row if missing
+  // DingTalk requires: header row, blank line, separator row, data rows
+  out = out.replace(/((?:^\|.+\|[ \t]*\n)+)(\|[ \t]*[-:]+[-| :]*\n)/gm, "$1\n$2");
+
+  return out;
 }
 
 export type DingTalkCallback = {
