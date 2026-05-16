@@ -33,3 +33,11 @@ export async function saveChannelConfig(
   }
   return (await response.json()) as { config: Record<string, string> };
 }
+
+export async function testChannel(channelId: string): Promise<{ ok: boolean; message: string }> {
+  const response = await fetch(`/api/channels/${encodeURIComponent(channelId)}/test`, {
+    method: "POST",
+    headers: { Accept: "application/json" },
+  });
+  return (await response.json()) as { ok: boolean; message: string };
+}

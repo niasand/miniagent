@@ -1,4 +1,4 @@
-import type { ChannelAdapter, ChannelMessage, SendResult } from "./types.js";
+import type { ChannelAdapter, ChannelMessage, SendResult, TestResult } from "./types.js";
 
 const GATEWAY_URL = "wss://openws.work.weixin.qq.com";
 const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -17,6 +17,26 @@ export class WeComChannel implements ChannelAdapter {
   private pendingRequests = new Map<string, string>(); // req_id → from userid
 
   constructor(private readonly config: Record<string, string>) {}
+
+  async test(): Promise<TestResult> {
+    const { bot_id, secret } = this.config;
+    if (!bot_id || !secret) return { ok: false, message: "bot_id or secret is empty" };
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const ws = new WebSocket(GATEWAY_URL);
+        const timer = setTimeout(() => { ws.close(); reject(new Error("Timeout")); }, 5000);
+        ws.addEventListener("open", () => {
+          clearTimeout(timer);
+          ws.close();
+          resolve();
+        });
+        ws.addEventListener("error", (e) => { clearTimeout(timer); reject(e); });
+      });
+      return { ok: true, message: "Gateway reachable" };
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : "Connection failed" };
+    }
+  }
 
   async start(onMessage: (msg: ChannelMessage) => void): Promise<void> {
     this.stopped = false;

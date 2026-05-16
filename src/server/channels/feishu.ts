@@ -1,5 +1,5 @@
 import * as lark from "@larksuiteoapi/node-sdk";
-import type { ChannelAdapter, ChannelMessage, SendResult } from "./types.js";
+import type { ChannelAdapter, ChannelMessage, SendResult, TestResult } from "./types.js";
 
 type MessageListResult = {
   items?: Array<{
@@ -20,6 +20,19 @@ export class FeishuChannel implements ChannelAdapter {
   private knownChats = new Set<string>(); // track chats we've seen
 
   constructor(private readonly config: Record<string, string>) {}
+
+  async test(): Promise<TestResult> {
+    const { app_id, app_secret } = this.config;
+    if (!app_id || !app_secret) return { ok: false, message: "app_id or app_secret is empty" };
+    try {
+      const client = new lark.Client({ appId: app_id, appSecret: app_secret, appType: lark.AppType.SelfBuild });
+      const res = await client.auth.tenantAccessToken.internal({ data: { app_id, app_secret } });
+      if (res.code !== 0) return { ok: false, message: `Feishu error: ${res.msg}` };
+      return { ok: true, message: "Connected" };
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : "Connection failed" };
+    }
+  }
 
   async start(onMessage: (msg: ChannelMessage) => void): Promise<void> {
     const { app_id, app_secret } = this.config;

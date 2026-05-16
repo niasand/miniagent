@@ -1,4 +1,4 @@
-import type { ChannelAdapter, ChannelMessage, SendResult } from "./types.js";
+import type { ChannelAdapter, ChannelMessage, SendResult, TestResult } from "./types.js";
 
 const TOKEN_URL = "https://oapi.dingtalk.com/gettoken";
 const C2C_SEND_URL = "https://api.dingtalk.com/v1.0/robot/oToMessages/batchSend";
@@ -15,6 +15,21 @@ export class DingTalkChannel implements ChannelAdapter {
   private senderStaffIds = new Map<string, string>();
 
   constructor(private readonly config: Record<string, string>) {}
+
+  async test(): Promise<TestResult> {
+    const { client_id, client_secret } = this.config;
+    if (!client_id || !client_secret) return { ok: false, message: "client_id or client_secret is empty" };
+    try {
+      const url = `${TOKEN_URL}?appkey=${client_id}&appsecret=${client_secret}`;
+      const res = await fetch(url);
+      if (!res.ok) return { ok: false, message: `HTTP ${res.status}` };
+      const data = await res.json() as { access_token?: string; errcode?: number };
+      if (!data.access_token) return { ok: false, message: `Error code: ${data.errcode}` };
+      return { ok: true, message: "Connected" };
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : "Connection failed" };
+    }
+  }
 
   async start(onMessage: (msg: ChannelMessage) => void): Promise<void> {
     this.stopped = false;

@@ -248,6 +248,40 @@ button { cursor: pointer; }
   background: color-mix(in srgb, var(--color-primary) 10%, var(--color-muted));
 }
 
+.channel-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.channel-test-btn {
+  height: 30px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-muted);
+  padding: 0 14px;
+  color: var(--color-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 120ms;
+}
+
+.channel-test-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-muted));
+}
+
+.channel-test-btn:disabled { opacity: 0.4; }
+
+.channel-test-result {
+  margin: 6px 0 0;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.channel-test-ok { color: #22c55e; background: color-mix(in srgb, #22c55e 10%, transparent); }
+.channel-test-fail { color: #ef4444; background: color-mix(in srgb, #ef4444 10%, transparent); }
+
 .channel-form {
   display: grid;
   gap: 10px;

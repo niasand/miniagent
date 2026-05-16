@@ -1,4 +1,4 @@
-import type { ChannelAdapter, ChannelMessage, SendResult } from "./types.js";
+import type { ChannelAdapter, ChannelMessage, SendResult, TestResult } from "./types.js";
 
 const TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken";
 const API_BASE = "https://api.sgroup.qq.com";
@@ -30,6 +30,24 @@ export class QQChannel implements ChannelAdapter {
   private msgSeqCounters = new Map<string, number>();
 
   constructor(private readonly config: Record<string, string>) {}
+
+  async test(): Promise<TestResult> {
+    const { app_id, app_secret } = this.config;
+    if (!app_id || !app_secret) return { ok: false, message: "app_id or app_secret is empty" };
+    try {
+      const res = await fetch(TOKEN_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appId: app_id, clientSecret: app_secret }),
+      });
+      if (!res.ok) return { ok: false, message: `HTTP ${res.status}` };
+      const data = await res.json() as { access_token?: string };
+      if (!data.access_token) return { ok: false, message: "No access_token in response" };
+      return { ok: true, message: "Connected" };
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : "Connection failed" };
+    }
+  }
 
   async start(onMessage: (msg: ChannelMessage) => void): Promise<void> {
     this.stopped = false;

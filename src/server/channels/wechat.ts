@@ -1,4 +1,4 @@
-import type { ChannelAdapter, ChannelMessage, SendResult } from "./types.js";
+import type { ChannelAdapter, ChannelMessage, SendResult, TestResult } from "./types.js";
 
 const DEFAULT_BASE_URL = "https://ilinkai.weixin.qq.com";
 const CHANNEL_VERSION = "0.1.0";
@@ -14,6 +14,18 @@ export class WeChatChannel implements ChannelAdapter {
 
   constructor(private readonly config: Record<string, string>) {
     this.uin = btoa(String(Math.floor(Math.random() * 0xFFFFFFFF)));
+  }
+
+  async test(): Promise<TestResult> {
+    if (!this.config.bot_token) return { ok: false, message: "bot_token is empty" };
+    try {
+      const url = `${this.baseUrl()}/ilink/bot/getupdates?timeout=1`;
+      const res = await fetch(url, { headers: this.headers(), signal: AbortSignal.timeout(5000) });
+      if (!res.ok) return { ok: false, message: `HTTP ${res.status}` };
+      return { ok: true, message: "Connected" };
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : "Connection failed" };
+    }
   }
 
   async start(onMessage: (msg: ChannelMessage) => void): Promise<void> {

@@ -1,4 +1,4 @@
-import type { ChannelAdapter, ChannelMessage, SendResult } from "./types.js";
+import type { ChannelAdapter, ChannelMessage, SendResult, TestResult } from "./types.js";
 
 const API_BASE = "https://discord.com/api/v10";
 const MAX_BACKOFF_MS = 30_000;
@@ -15,6 +15,21 @@ export class DiscordChannel implements ChannelAdapter {
   private botUserId: string | null = null;
 
   constructor(private readonly config: Record<string, string>) {}
+
+  async test(): Promise<TestResult> {
+    const token = this.config.bot_token;
+    if (!token) return { ok: false, message: "bot_token is empty" };
+    try {
+      const res = await fetch(`${API_BASE}/users/@me`, {
+        headers: { Authorization: `Bot ${token}` },
+      });
+      if (!res.ok) return { ok: false, message: `HTTP ${res.status}` };
+      const data = await res.json() as { username?: string };
+      return { ok: true, message: `Connected: ${data.username}` };
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : "Connection failed" };
+    }
+  }
 
   async start(onMessage: (msg: ChannelMessage) => void): Promise<void> {
     this.stopped = false;

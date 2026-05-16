@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import "highlight.js/styles/atom-one-dark.css";
-import { fetchChannels, saveChannelConfig, type ChannelInfo } from "./api/channels.js";
+import { fetchChannels, saveChannelConfig, testChannel, type ChannelInfo } from "./api/channels.js";
 import { createSession } from "./api/sessions.js";
 import { fetchSkills } from "./api/skills.js";
 import { sendSessionMessage } from "./api/messages.js";
@@ -427,6 +427,8 @@ function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSaved: () =
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   const configurable = channel.id in CHANNEL_FIELDS;
   const fields = CHANNEL_FIELDS[channel.id] ?? [];
@@ -457,6 +459,19 @@ function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSaved: () =
     }
   };
 
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const result = await testChannel(channel.id);
+      setTestResult(result);
+    } catch (e) {
+      setTestResult({ ok: false, message: e instanceof Error ? e.message : "Test failed" });
+    } finally {
+      setTesting(false);
+    }
+  };
+
   const handleCancel = () => {
     setEditing(false);
     setError(null);
@@ -474,9 +489,19 @@ function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSaved: () =
       <p className="channel-card-desc">{channel.description}</p>
 
       {configurable && !editing && (
-        <button className="channel-config-btn" onClick={startEdit}>
-          Configure
-        </button>
+        <div className="channel-actions">
+          <button className="channel-config-btn" onClick={startEdit}>
+            Configure
+          </button>
+          <button className="channel-test-btn" onClick={handleTest} disabled={testing}>
+            {testing ? "Testing..." : "Test Connection"}
+          </button>
+        </div>
+      )}
+      {testResult && (
+        <p className={`channel-test-result ${testResult.ok ? "channel-test-ok" : "channel-test-fail"}`}>
+          {testResult.ok ? "✓" : "✗"} {testResult.message}
+        </p>
       )}
 
       {configurable && editing && (

@@ -1,4 +1,4 @@
-import type { ChannelAdapter, ChannelMessage, SendResult } from "./types.js";
+import type { ChannelAdapter, ChannelMessage, SendResult, TestResult } from "./types.js";
 
 const API_BASE = "https://api.telegram.org";
 const POLL_TIMEOUT_S = 30;
@@ -30,6 +30,20 @@ export class TelegramChannel implements ChannelAdapter {
         console.log(`[Telegram] Bot username: @${this.botUsername}`);
       }
     } catch { /* ignore */ }
+  }
+
+  async test(): Promise<TestResult> {
+    const token = this.config.bot_token;
+    if (!token) return { ok: false, message: "Bot token is empty" };
+    try {
+      const res = await fetch(`${API_BASE}/bot${token}/getMe`);
+      if (!res.ok) return { ok: false, message: `HTTP ${res.status}` };
+      const data = await res.json() as { result?: { username?: string; first_name?: string } };
+      const name = data.result?.first_name ?? data.result?.username ?? "Bot";
+      return { ok: true, message: `Connected: ${name} (@${data.result?.username})` };
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : "Network error" };
+    }
   }
 
   stop(): void {

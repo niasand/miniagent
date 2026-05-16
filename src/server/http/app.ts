@@ -660,6 +660,11 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
     return c.json({ config: result });
   });
 
+  app.post("/api/channels/:channelId/test", async (c) => {
+    const result = await channelRegistry.testChannel(c.req.param("channelId"));
+    return c.json(result, result.ok ? 200 : 400);
+  });
+
   // ── DingTalk Webhook ──
   app.post("/api/webhooks/dingtalk", async (c) => {
     const body = await c.req.json().catch(() => null);

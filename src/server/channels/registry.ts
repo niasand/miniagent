@@ -1,6 +1,6 @@
 import type { SqliteDatabase } from "../db/migrate.js";
 import { ChannelConfigStore } from "../stores/channel-config-store.js";
-import type { ChannelAdapter, ChannelMessage } from "./types.js";
+import type { ChannelAdapter, ChannelMessage, TestResult } from "./types.js";
 import { FeishuChannel } from "./feishu.js";
 import { TelegramChannel } from "./telegram.js";
 import { DiscordChannel } from "./discord.js";
@@ -80,6 +80,15 @@ export class ChannelRegistry {
 
   get(channelType: string): ChannelAdapter | null {
     return this.adapters.get(channelType) ?? null;
+  }
+
+  async testChannel(channelId: string): Promise<TestResult> {
+    const configStore = new ChannelConfigStore(this.db);
+    const config = configStore.get(channelId);
+    const adapter = this.createAdapter(channelId, config);
+    if (!adapter) return { ok: false, message: `Unknown channel: ${channelId}` };
+    if (!adapter.test) return { ok: false, message: "Test not supported for this channel" };
+    return adapter.test();
   }
 
   private createAdapter(channelId: string, config: Record<string, string>): ChannelAdapter | null {
