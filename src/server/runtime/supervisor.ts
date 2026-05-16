@@ -206,6 +206,15 @@ export class RuntimeSupervisor {
     }, this.cancelKillTimeoutMs);
   }
 
+  getActiveRunBySession(sessionId: string): { runId: string; sessionId: string; taskId: string; pid: number | null } | null {
+    for (const activeRun of this.activeRuns.values()) {
+      if (activeRun.sessionId === sessionId) {
+        return { runId: activeRun.runId, sessionId: activeRun.sessionId, taskId: activeRun.taskId, pid: activeRun.process.pid };
+      }
+    }
+    return null;
+  }
+
   flush(runId: string): void {
     const activeRun = this.requireActiveRun(runId);
     this.appendDrafts(activeRun, activeRun.handle.flush());

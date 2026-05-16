@@ -1,142 +1,592 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { Hono, type Context } from "hono";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { streamSSE } from "hono/streaming";
 import type { SqliteDatabase } from "../db/migrate.js";
-import { ContextBudgetService } from "../context/context-budget-service.js";
-import { ContextRestartService } from "../context/context-restart-service.js";
-import { FeishuInboundService } from "../channels/feishu-inbound-service.js";
-import { QQInboundService } from "../channels/qq-inbound-service.js";
-import { TelegramInboundService } from "../channels/telegram-inbound-service.js";
-import { DiscordInboundService } from "../channels/discord-inbound-service.js";
-import { EventStore } from "../events/event-store.js";
-import { projectReadModelsUntilIdle } from "../events/projector-runner.js";
-import { HandoffService } from "../handoff/handoff-service.js";
-import { AuditLogStore, type AuditActorType } from "../audit/audit-log-store.js";
-import { DefaultAgentService } from "../agents/default-agent-service.js";
-import type { AgentDefaultRecord, AgentDefaultScopeType } from "../agents/agent-default-store.js";
-import { ControlToolService } from "../mcp/control-tool-service.js";
-import { MemoryArchiveService } from "../memory/memory-archive-service.js";
-import type { MemoryArchiveRecord } from "../memory/memory-archive-store.js";
-import { UserMessageService } from "../messages/user-message-service.js";
-import type { AgentType } from "../runtime/types.js";
+import { WorkspaceService } from "../services/workspace.js";
+import { InboundService } from "../services/inbound.js";
+import { DeliveryWorker } from "../services/delivery.js";
+import { SchedulerService } from "../services/scheduler.js";
+import { ContextService } from "../services/context.js";
+import { HandoffService } from "../services/handoff.js";
+import { ChannelConfigStore } from "../stores/channel-config-store.js";
+import { AgentDefaultStore } from "../stores/agent-default-store.js";
+import { AuditLogStore, type AuditActorType } from "../stores/audit-log-store.js";
+import { EventStore } from "../stores/event-store.js";
+import { SessionStore } from "../stores/session-store.js";
+import { ScheduleStore } from "../stores/schedule-store.js";
+import { PermissionRequestStore } from "../stores/permission-request-store.js";
+import { OutboxStore } from "../stores/outbox-store.js";
 import { RuntimeAdapterRegistry } from "../runtime/registry.js";
-import type { RuntimeProcessFactory } from "../runtime/process.js";
-import { PermissionRequestStore, type PermissionRequestRecord } from "../runtime/permission-request-store.js";
-import { RuntimeService } from "../runtime/runtime-service.js";
-import { RuntimeSupervisor } from "../runtime/runtime-supervisor.js";
-import { SchedulerService } from "../scheduler/scheduler-service.js";
-import { OperationConfirmationService } from "../security/operation-confirmation-service.js";
-import type { OperationConfirmationRecord } from "../security/operation-confirmation-store.js";
+import { RuntimeSupervisor } from "../runtime/supervisor.js";
+import { RuntimeService } from "../runtime/service.js";
 import { WorkspacePolicy, WorkspacePolicyError } from "../security/workspace-policy.js";
-import type { ScheduleRecord } from "../scheduler/schedule-store.js";
-import { SessionStore } from "../sessions/session-store.js";
-import { createWorkspaceSnapshot } from "../workspace/workspace-service.js";
-import type { JsonObject } from "../../shared/json.js";
-import type {
-  AgentsResponse,
-  AgentDefault,
-  CompactContextResponse,
-  CallControlToolResponse,
-  ConfirmOperationResponse,
-  CreateHandoffResponse,
-  CreateMemoryArchiveResponse,
-  CreateOperationConfirmationResponse,
-  CreateScheduleResponse,
-  CreateSessionResponse,
-  ListSchedulesResponse,
-  ListControlToolsResponse,
-  ListMemoryArchivesResponse,
-  RunDueSchedulesResponse,
-  SendMessageResponse,
-  ResolveAgentDefaultResponse,
-  RestartContextResponse,
-  SetAgentDefaultResponse,
-  StartRunResponse,
-  StopRunResponse,
-  UpdateScheduleResponse,
-  WorkspaceSchedule,
-  MemoryArchive,
-  OperationConfirmation,
-} from "../../shared/workspace.js";
-
-export type AppBindings = {
-  Variables: {
-    db: SqliteDatabase;
-  };
-};
+import { ChannelRegistry } from "../channels/registry.js";
+import type { WorkspaceSchedule } from "../../shared/workspace.js";
+import type { ScheduleRecord } from "../stores/schedule-store.js";
+import type { AgentDefaultRecord } from "../stores/agent-default-store.js";
+import type { PermissionRequestRecord } from "../stores/permission-request-store.js";
+import type { JsonValue } from "../../shared/json.js";
 
 export type AppOptions = {
-  runtimeRegistry?: RuntimeAdapterRegistry;
-  processFactory?: RuntimeProcessFactory;
-  defaultWorkspacePath?: string;
-  workspaceAllowlist?: string[];
-  workspacePolicy?: WorkspacePolicy;
-  runtimeSupervisor?: RuntimeSupervisor;
+  workspacePolicy: WorkspacePolicy;
+  runtimeRegistry: RuntimeAdapterRegistry;
+  runtimeSupervisor: RuntimeSupervisor;
+  channelRegistry: ChannelRegistry;
 };
 
-export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
-  const app = new Hono<AppBindings>();
-  const runtimeRegistry = options.runtimeRegistry ?? new RuntimeAdapterRegistry();
-  const defaultWorkspacePath = options.defaultWorkspacePath ?? process.cwd();
-  const workspacePolicy =
-    options.workspacePolicy ?? new WorkspacePolicy(options.workspaceAllowlist ?? [defaultWorkspacePath, process.cwd()]);
+export function createApp(db: SqliteDatabase, options: AppOptions) {
+  const app = new Hono();
+
+  const {
+    workspacePolicy,
+    runtimeRegistry,
+    runtimeSupervisor,
+    channelRegistry,
+  } = options;
+
   const eventStore = new EventStore(db);
   const sessionStore = new SessionStore(db, eventStore);
   const permissionRequests = new PermissionRequestStore(db);
-  const runtimeSupervisor = options.runtimeSupervisor ?? new RuntimeSupervisor({
-    adapterRegistry: runtimeRegistry,
-    eventStore,
-    sessionStore,
-    permissionRequestStore: permissionRequests,
-    processFactory: options.processFactory,
-  });
   const runtimeService = new RuntimeService(db, runtimeSupervisor, workspacePolicy);
 
-  app.use("*", async (context, next) => {
-    context.set("db", db);
-    await next();
+  // ── Middleware ──
+
+  app.use("*", cors());
+  app.use("*", async (c, next) => { await next(); });
+
+  // ── Health / Root ──
+
+  app.get("/", (c) =>
+    c.json({ ok: true, service: "miniagent" }),
+  );
+
+  app.get("/api/health", (c) =>
+    c.json({ ok: true }),
+  );
+
+  // ── Workspace ──
+
+  app.get("/api/workspace", (c) => {
+    const workspaceService = new WorkspaceService(db, runtimeSupervisor);
+    return c.json(
+      workspaceService.getSnapshot(c.req.query("sessionId") || null),
+    );
   });
 
-  app.get("/", (context) =>
-    context.json({
-      ok: true,
-      service: "miniagent",
-      ui: "http://127.0.0.1:7272/",
-      endpoints: [
-        "/api/health",
-        "/api/workspace",
-        "/api/agents",
-        "/api/agent-defaults",
-        "/api/sessions",
-        "/api/events",
-        "/api/events/stream",
-        "/api/sessions/:sessionId/context/compact",
-        "/api/sessions/:sessionId/context/restart",
-        "/api/runs/:runId/permissions",
-        "/api/runs/:runId/permissions/:requestId/respond",
-        "/api/runs/:runId/stop",
-        "/api/schedules",
-        "/api/schedules/due/run",
-        "/api/feishu/messages",
-        "/api/mcp/tools",
-        "/api/mcp/tools/call",
-        "/api/security/confirmations",
-        "/api/sessions/:sessionId/memory/archives",
-      ],
-    }),
-  );
+  // ── Events ──
 
-  app.get("/api/health", (context) =>
-    context.json({
-      ok: true,
-      service: "miniagent",
-    }),
-  );
+  app.get("/api/events", (c) => {
+    const sessionId = c.req.query("sessionId") || undefined;
+    const afterGlobalSeq = Number(c.req.query("afterGlobalSeq") ?? 0);
+    const limit = Number(c.req.query("limit") ?? 100);
+
+    if (!Number.isInteger(afterGlobalSeq) || afterGlobalSeq < 0) {
+      return c.json({ error: "afterGlobalSeq must be a non-negative integer" }, 400);
+    }
+    if (!Number.isInteger(limit) || limit <= 0 || limit > 500) {
+      return c.json({ error: "limit must be an integer between 1 and 500" }, 400);
+    }
+
+    const events = eventStore.listAfterGlobalSeq({ sessionId, afterGlobalSeq, limit });
+    return c.json({ events });
+  });
+
+  app.get("/api/events/stream", (c) => {
+    const sessionId = c.req.query("sessionId") || undefined;
+    const afterGlobalSeq = Number(c.req.query("afterGlobalSeq") ?? 0);
+    const limit = Number(c.req.query("limit") ?? 100);
+
+    if (!Number.isInteger(afterGlobalSeq) || afterGlobalSeq < 0) {
+      return c.json({ error: "afterGlobalSeq must be a non-negative integer" }, 400);
+    }
+    if (!Number.isInteger(limit) || limit <= 0 || limit > 500) {
+      return c.json({ error: "limit must be an integer between 1 and 500" }, 400);
+    }
+
+    let cursor = afterGlobalSeq;
+
+    return streamSSE(c, async (stream) => {
+      // Send initial historical events
+      const initial = eventStore.listAfterGlobalSeq({ sessionId, afterGlobalSeq, limit });
+      for (const event of initial) {
+        await stream.writeSSE({
+          id: String(event.globalSeq),
+          event: event.type,
+          data: JSON.stringify(event),
+        });
+        cursor = event.globalSeq;
+      }
+
+      // Poll for new events every 500ms
+      while (!stream.aborted) {
+        await stream.sleep(500);
+        try {
+          const newEvents = new EventStore(db).listAfterGlobalSeq({
+            sessionId,
+            afterGlobalSeq: cursor,
+            limit: 50,
+          });
+          for (const event of newEvents) {
+            await stream.writeSSE({
+              id: String(event.globalSeq),
+              event: event.type,
+              data: JSON.stringify(event),
+            });
+            cursor = event.globalSeq;
+          }
+        } catch {
+          // DB error — skip this tick
+        }
+      }
+    });
+  });
+
+  // ── Sessions ──
+
+  app.post("/api/sessions", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return c.json({ error: "Request body must be valid JSON" }, 400);
+    }
+    const value = body as Record<string, unknown>;
+
+    const requestedAgentType = value.agentType;
+    if (requestedAgentType !== undefined && !isAgentType(requestedAgentType)) {
+      return c.json({ error: "agentType must be one of: codex, claude, trae" }, 400);
+    }
+
+    const title = value.title;
+    if (title !== undefined && typeof title !== "string") {
+      return c.json({ error: "title must be a string" }, 400);
+    }
+
+    const workspacePath = value.workspacePath;
+    if (workspacePath !== undefined && typeof workspacePath !== "string") {
+      return c.json({ error: "workspacePath must be a string" }, 400);
+    }
+
+    let effectiveWorkspacePath: string;
+    try {
+      effectiveWorkspacePath = workspacePolicy.assertAllowed(
+        (typeof workspacePath === "string" ? workspacePath.trim() : "") || process.cwd(),
+      );
+    } catch (error) {
+      if (error instanceof WorkspacePolicyError) {
+        new AuditLogStore(db).insert({
+          actorType: "web_user",
+          action: "workspace_denied",
+          resourceType: "workspace",
+          resourceId: error.workspacePath,
+          payload: { workspacePath: error.workspacePath, reason: error.reason },
+        });
+        return c.json({ error: error.message }, 403);
+      }
+      throw error;
+    }
+
+    const defaultAgent = new AgentDefaultStore(db).resolve({ workspacePath: effectiveWorkspacePath });
+    const agentType = (requestedAgentType as string) ?? defaultAgent?.agentType ?? "claude";
+
+    const session = sessionStore.createSession({
+      title: (typeof title === "string" ? title.trim() : "") || `${displayAgent(agentType)} session`,
+      agentType,
+      workspacePath: effectiveWorkspacePath,
+      channelType: "web",
+    });
+
+    const workspaceService = new WorkspaceService(db, runtimeSupervisor);
+    return c.json(
+      {
+        sessionId: session.id,
+        workspace: workspaceService.getSnapshot(session.id),
+      },
+      201,
+    );
+  });
+
+  // ── Messages ──
+
+  app.post("/api/sessions/:sessionId/messages", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return c.json({ error: "Request body must be valid JSON" }, 400);
+    }
+    const value = body as Record<string, unknown>;
+
+    const text = value.text;
+    if (typeof text !== "string" || text.trim().length === 0) {
+      return c.json({ error: "text is required" }, 400);
+    }
+
+    const actorRef = value.actorRef;
+    if (actorRef !== undefined && actorRef !== null && typeof actorRef !== "string") {
+      return c.json({ error: "actorRef must be a string or null" }, 400);
+    }
+
+    try {
+      const inbound = new InboundService(db, "web", { workspacePolicy });
+      const result = inbound.receiveMessage({
+        messageId: `web:${Date.now()}`,
+        chatId: c.req.param("sessionId"),
+        userId: (typeof actorRef === "string" ? actorRef : "web_user"),
+        text,
+        chatType: "private",
+      });
+
+      // Auto-start run for queued task
+      if (result.taskId) {
+        try {
+          runtimeService.startNextQueuedTask(result.session.id);
+        } catch {
+          // Already active or no queued task — safe to ignore
+        }
+      }
+
+      const workspaceService = new WorkspaceService(db, runtimeSupervisor);
+      return c.json(
+        {
+          taskId: result.taskId ?? "",
+          eventId: "",
+          workspace: workspaceService.getSnapshot(result.session.id),
+        },
+        201,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Message send failed";
+      if (message.startsWith("Session not found")) {
+        return c.json({ error: message }, 404);
+      }
+      return c.json({ error: message }, 500);
+    }
+  });
+
+  // ── Handoffs ──
+
+  app.post("/api/sessions/:sessionId/handoffs", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return c.json({ error: "Request body must be valid JSON" }, 400);
+    }
+    const value = body as Record<string, unknown>;
+
+    const targetAgentType = value.targetAgentType;
+    if (!isAgentType(targetAgentType)) {
+      return c.json({ error: "targetAgentType must be one of: codex, claude, trae" }, 400);
+    }
+
+    const actorType = value.actorType ?? "web_user";
+    const actorRef = value.actorRef;
+    const targetTitle = value.targetTitle;
+
+    try {
+      const handoffService = new HandoffService(db);
+      const result = handoffService.handoff({
+        sourceSessionId: c.req.param("sessionId"),
+        targetAgentType: targetAgentType as "codex" | "claude" | "trae",
+        targetTitle: typeof targetTitle === "string" ? targetTitle : undefined,
+        actorType: typeof actorType === "string" ? actorType : "web_user",
+        actorRef: typeof actorRef === "string" ? actorRef : undefined,
+      });
+
+      const workspaceService = new WorkspaceService(db, runtimeSupervisor);
+      return c.json(
+        {
+          targetSessionId: result.targetSessionId,
+          targetTaskId: result.targetTaskId,
+          sourceContextPackId: result.sourceContextPackId,
+          requestedEventId: "",
+          createdEventId: result.eventId,
+          workspace: workspaceService.getSnapshot(result.targetSessionId),
+        },
+        201,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Handoff failed";
+      if (message.startsWith("Session not found")) {
+        return c.json({ error: message }, 404);
+      }
+      return c.json({ error: message }, 500);
+    }
+  });
+
+  // ── Runs ──
+
+  app.post("/api/sessions/:sessionId/runs/start", (c) => {
+    try {
+      const result = runtimeService.startNextQueuedTask(c.req.param("sessionId"));
+      if (!result) {
+        return c.json({ error: "No queued task" }, 409);
+      }
+
+      const workspaceService = new WorkspaceService(db, runtimeSupervisor);
+      return c.json(
+        {
+          taskId: result.task.id,
+          runId: result.run.id,
+          status: result.run.status,
+          workspace: workspaceService.getSnapshot(c.req.param("sessionId")),
+        },
+        201,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Runtime start failed";
+      if (message.startsWith("Session not found")) {
+        return c.json({ error: message }, 404);
+      }
+      if (message.includes("No queued task") || message.includes("active run")) {
+        return c.json({ error: message }, 409);
+      }
+      if (error instanceof WorkspacePolicyError || message.startsWith("Workspace denied")) {
+        return c.json({ error: message }, 403);
+      }
+      return c.json({ error: message }, 500);
+    }
+  });
+
+  app.post("/api/runs/:runId/stop", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const value = (body && typeof body === "object" && !Array.isArray(body) ? body : {}) as Record<string, unknown>;
+
+    const actorType = value.actorType ?? "web_user";
+    if (!isAuditActorType(actorType)) {
+      return c.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, telegram_user, discord_user, system, agent" }, 400);
+    }
+
+    const runId = c.req.param("runId");
+    const run = sessionStore.getRun(runId);
+    if (!run) {
+      return c.json({ error: `Run not found: ${runId}` }, 404);
+    }
+
+    try {
+      runtimeSupervisor.stop(runId);
+      new AuditLogStore(db).insert({
+        actorType: actorType as AuditActorType,
+        action: "run_stop",
+        resourceType: "run",
+        resourceId: runId,
+        payload: { sessionId: run.sessionId },
+      });
+
+      const stopped = sessionStore.getRun(runId) ?? run;
+      const workspaceService = new WorkspaceService(db, runtimeSupervisor);
+      return c.json({
+        runId,
+        status: stopped.status,
+        workspace: workspaceService.getSnapshot(run.sessionId),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Runtime stop failed";
+      if (message.includes("not active")) {
+        return c.json({ error: message }, 409);
+      }
+      return c.json({ error: message }, 500);
+    }
+  });
+
+  // ── Permissions ──
+
+  app.get("/api/runs/:runId/permissions", (c) => {
+    const permissions = permissionRequests.listByRun(c.req.param("runId")).map(mapPermissionRequest);
+    return c.json({ permissions });
+  });
+
+  app.post("/api/runs/:runId/permissions/:requestId/respond", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return c.json({ error: "Request body must be valid JSON" }, 400);
+    }
+    const value = body as Record<string, unknown>;
+
+    const outcome = value.outcome;
+    if (outcome !== "selected" && outcome !== "cancelled") {
+      return c.json({ error: "outcome must be selected or cancelled" }, 400);
+    }
+
+    const optionId = value.optionId;
+    if (optionId !== undefined && optionId !== null && typeof optionId !== "string") {
+      return c.json({ error: "optionId must be a string or null" }, 400);
+    }
+
+    try {
+      runtimeSupervisor.respondPermission(c.req.param("runId"), {
+        requestId: c.req.param("requestId"),
+        outcome,
+        optionId: optionId ?? undefined,
+      });
+      const permissions = permissionRequests.listByRun(c.req.param("runId")).map(mapPermissionRequest);
+      return c.json({ permissions });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Respond permission failed";
+      if (message.includes("not active") || message.includes("not pending")) {
+        return c.json({ error: message }, 409);
+      }
+      return c.json({ error: message }, 500);
+    }
+  });
+
+  // ── Context ──
+
+  app.post("/api/sessions/:sessionId/context/compact", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const value = (body && typeof body === "object" && !Array.isArray(body) ? body : {}) as Record<string, unknown>;
+
+    const budgetTokens = value.budgetTokens;
+    if (
+      budgetTokens !== undefined &&
+      (typeof budgetTokens !== "number" || !Number.isInteger(budgetTokens) || budgetTokens <= 0)
+    ) {
+      return c.json({ error: "budgetTokens must be a positive integer" }, 400);
+    }
+
+    try {
+      const contextService = new ContextService(db);
+      const result = contextService.compact(
+        c.req.param("sessionId"),
+        { budgetTokens: typeof budgetTokens === "number" ? budgetTokens : undefined },
+      );
+
+      const workspaceService = new WorkspaceService(db, runtimeSupervisor);
+      const workspace = workspaceService.getSnapshot(c.req.param("sessionId"));
+      return c.json(
+        {
+          contextPackId: result.contextPackId,
+          eventId: result.eventId,
+          contextBudget: workspace.contextBudget,
+          workspace,
+        },
+        201,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Context compact failed";
+      if (message.startsWith("Session not found")) {
+        return c.json({ error: message }, 404);
+      }
+      return c.json({ error: message }, 500);
+    }
+  });
+
+  app.post("/api/sessions/:sessionId/context/restart", async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const value = (body && typeof body === "object" && !Array.isArray(body) ? body : {}) as Record<string, unknown>;
+
+    const actorType = value.actorType ?? "web_user";
+    const actorRef = value.actorRef;
+
+    try {
+      const contextService = new ContextService(db);
+      const result = contextService.restart(
+        c.req.param("sessionId"),
+        {
+          actorType: typeof actorType === "string" ? actorType : "web_user",
+          actorRef: typeof actorRef === "string" ? actorRef : undefined,
+        },
+      );
+
+      const workspaceService = new WorkspaceService(db, runtimeSupervisor);
+      return c.json(
+        {
+          contextPackId: result.contextPackId,
+          taskId: result.taskId,
+          eventId: result.eventId,
+          workspace: workspaceService.getSnapshot(c.req.param("sessionId")),
+        },
+        201,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Restart from ContextPack failed";
+      if (message.startsWith("Session not found")) {
+        return c.json({ error: message }, 404);
+      }
+      return c.json({ error: message }, 500);
+    }
+  });
+
+  // ── Agents ──
+
+  app.get("/api/agents", async (c) => {
+    const probes = await runtimeRegistry.listAgents();
+    const agents = probes.map((probe) => ({
+      agentType: probe.agentType,
+      runtimeKind: "acp" as const,
+      label: displayAgent(probe.agentType),
+      status: probe.status,
+      command: probe.command,
+      version: probe.version,
+      message: probe.message,
+      checkedAt: probe.checkedAt,
+      capabilities: {
+        textStreaming: true,
+        structuredEvents: true,
+        nativeCompact: false,
+        resume: true,
+        sessionExport: false,
+        permissionPrompt: true,
+        imageInput: false,
+      },
+    }));
+    return c.json({ agents });
+  });
+
+  // ── Agent Defaults ──
+
+  app.get("/api/agent-defaults/resolve", (c) => {
+    try {
+      const resolved = new AgentDefaultStore(db).resolve({
+        userRef: c.req.query("userRef") ?? undefined,
+        channelRef: c.req.query("channelRef") ?? undefined,
+        workspacePath: c.req.query("workspacePath") ?? undefined,
+      });
+      if (!resolved) {
+        return c.json({ error: "No default agent found" }, 404);
+      }
+      return c.json({ default: mapAgentDefault(resolved) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Resolve default agent failed";
+      return c.json({ error: message }, 500);
+    }
+  });
+
+  app.post("/api/agent-defaults", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return c.json({ error: "Request body must be valid JSON" }, 400);
+    }
+    const value = body as Record<string, unknown>;
+
+    const scopeType = value.scopeType;
+    if (!isAgentDefaultScopeType(scopeType)) {
+      return c.json({ error: "scopeType must be one of: user, channel, workspace, system" }, 400);
+    }
+
+    const scopeRef = value.scopeRef;
+    if (typeof scopeRef !== "string" || scopeRef.trim().length === 0) {
+      return c.json({ error: "scopeRef is required" }, 400);
+    }
+
+    const agentType = value.agentType;
+    if (!isAgentType(agentType)) {
+      return c.json({ error: "agentType must be one of: codex, claude, trae" }, 400);
+    }
+
+    const saved = new AgentDefaultStore(db).set({
+      scopeType: scopeType as "user" | "channel" | "workspace" | "system",
+      scopeRef,
+      agentType,
+      params: value.params as JsonValue | undefined,
+    });
+
+    return c.json({ default: mapAgentDefault(saved) }, 201);
+  });
+
+  // ── Skills ──
 
   app.get("/api/skills", async () => {
     const dirs = [
-      join(defaultWorkspacePath, ".claude", "skills"),
+      join(process.cwd(), ".claude", "skills"),
       join(homedir(), ".claude", "skills"),
     ];
     const seen = new Set<string>();
@@ -171,1403 +621,168 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
     });
   });
 
-  app.get("/api/channels", (context) => {
-    const db = context.get("db");
-    const hasFeishuSessions = db
-      .prepare("SELECT 1 FROM sessions WHERE channel_type = 'feishu' LIMIT 1")
-      .get();
-    const feishuConfig = readChannelConfig(db, "feishu");
-    const feishuConfigured = Boolean(feishuConfig["app_id"] && feishuConfig["app_secret"]);
-    const qqConfig = readChannelConfig(db, "qq");
-    const qqConfigured = Boolean(qqConfig["app_id"] && qqConfig["app_secret"]);
-    const hasQQSessions = db
-      .prepare("SELECT 1 FROM sessions WHERE channel_type = 'qq' LIMIT 1")
-      .get();
-    const channels: Array<{
-      id: string;
-      label: string;
-      status: "connected" | "available" | "disconnected";
-      description: string;
-      config?: Record<string, string>;
-    }> = [
-      { id: "web", label: "Web", status: "connected", description: "Built-in web channel" },
-    ];
-    if (hasFeishuSessions || feishuConfigured) {
-      channels.push({ id: "feishu", label: "Feishu", status: "connected", description: "Feishu bot integration", config: feishuConfig });
-    } else {
-      channels.push({ id: "feishu", label: "Feishu", status: "available", description: "Feishu bot integration", config: feishuConfig });
-    }
-    if (hasQQSessions || qqConfigured) {
-      channels.push({ id: "qq", label: "QQ Bot", status: "connected", description: "QQ bot integration", config: qqConfig });
-    } else {
-      channels.push({ id: "qq", label: "QQ Bot", status: "available", description: "QQ bot integration", config: qqConfig });
-    }
-    return context.json({ channels });
+  // ── Channels ──
+
+  app.get("/api/channels", (c) => {
+    const configStore = new ChannelConfigStore(db);
+    const channels = configStore.listChannels().map((ch) => ({
+      id: ch.channelId,
+      label: ch.label,
+      status: (ch.channelId === "web" ? "connected" : ch.configured ? "connected" : "available") as "connected" | "available" | "disconnected",
+      description: `${ch.label} channel`,
+      config: ch.config,
+    }));
+    return c.json({ channels });
   });
 
-  app.put("/api/channels/:channelId/config", async (context) => {
-    const db = context.get("db");
-    const channelId = context.req.param("channelId");
-    const body = await readJsonBody(context.req);
-    if (!body.ok) {
-      return context.json({ error: body.error }, 400);
+  app.put("/api/channels/:channelId/config", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return c.json({ error: "Body must be a JSON object" }, 400);
     }
-    if (!isRecord(body.value)) {
-      return context.json({ error: "Body must be a JSON object" }, 400);
+
+    const configStore = new ChannelConfigStore(db);
+    const config: Record<string, string> = {};
+    for (const [key, value] of Object.entries(body)) {
+      if (typeof value === "string") config[key] = value;
     }
-    const upsert = db.prepare(
-      `INSERT INTO channel_configs (id, channel_id, key, value) VALUES (?, ?, ?, ?)
-       ON CONFLICT(channel_id, key) DO UPDATE SET value = excluded.value, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')`,
-    );
-    const run = db.transaction(() => {
-      for (const [key, value] of Object.entries(body.value)) {
-        if (typeof value !== "string") continue;
-        const id = `${channelId}:${key}`;
-        upsert.run(id, channelId, key, value);
-      }
-    });
-    run();
-    const config = readChannelConfig(db, channelId);
-    return context.json({ config });
+
+    const result = configStore.set(c.req.param("channelId"), config);
+    return c.json({ config: result });
   });
 
-  app.post("/api/security/confirmations", async (context) => {
-    const body = await readJsonBody(context.req);
-    if (!body.ok) {
-      return context.json({ error: body.error }, 400);
-    }
+  // ── Schedules ──
 
-    const action = body.value.action;
-    if (typeof action !== "string" || action.trim().length === 0) {
-      return context.json({ error: "action is required" }, 400);
-    }
-
-    const resourceType = body.value.resourceType;
-    if (typeof resourceType !== "string" || resourceType.trim().length === 0) {
-      return context.json({ error: "resourceType is required" }, 400);
-    }
-
-    const resourceId = body.value.resourceId;
-    if (resourceId !== undefined && resourceId !== null && typeof resourceId !== "string") {
-      return context.json({ error: "resourceId must be a string or null" }, 400);
-    }
-
-    const riskLevel = body.value.riskLevel;
-    if (!isOperationRiskLevel(riskLevel)) {
-      return context.json({ error: "riskLevel must be one of: medium, high, critical" }, 400);
-    }
-
-    const prompt = body.value.prompt;
-    if (prompt !== undefined && typeof prompt !== "string") {
-      return context.json({ error: "prompt must be a string" }, 400);
-    }
-
-    const payload = body.value.payload;
-    if (payload !== undefined && !isJsonRecord(payload)) {
-      return context.json({ error: "payload must be a JSON object" }, 400);
-    }
-
-    const actorType = body.value.actorType ?? "web_user";
-    if (!isAuditActorType(actorType)) {
-      return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, telegram_user, discord_user, system, agent" }, 400);
-    }
-
-    const actorRef = body.value.actorRef;
-    if (actorRef !== undefined && actorRef !== null && typeof actorRef !== "string") {
-      return context.json({ error: "actorRef must be a string or null" }, 400);
-    }
-
-    try {
-      const result = new OperationConfirmationService(context.get("db")).request({
-        action,
-        resourceType,
-        resourceId: typeof resourceId === "string" ? resourceId : null,
-        riskLevel,
-        prompt,
-        payload: payload ? (payload as JsonObject) : {},
-        actorType,
-        actorRef: actorRef ?? null,
-      });
-      const response: CreateOperationConfirmationResponse = {
-        confirmation: mapOperationConfirmation(result.confirmation),
-        token: result.token,
-      };
-      return context.json(response, 201);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Create operation confirmation failed";
-      if (message.includes("required")) {
-        return context.json({ error: message }, 400);
-      }
-      return context.json({ error: message }, 500);
-    }
-  });
-
-  app.post("/api/security/confirmations/:confirmationId/confirm", async (context) => {
-    const body = await readJsonBody(context.req);
-    if (!body.ok) {
-      return context.json({ error: body.error }, 400);
-    }
-
-    const token = body.value.token;
-    if (typeof token !== "string" || token.trim().length === 0) {
-      return context.json({ error: "token is required" }, 400);
-    }
-
-    try {
-      const confirmation = new OperationConfirmationService(context.get("db")).confirm({
-        id: context.req.param("confirmationId"),
-        token,
-      });
-      const response: ConfirmOperationResponse = {
-        confirmation: mapOperationConfirmation(confirmation),
-      };
-      return context.json(response);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Confirm operation failed";
-      if (message.includes("not found")) {
-        return context.json({ error: message }, 404);
-      }
-      if (message.includes("expired") || message.includes("not pending")) {
-        return context.json({ error: message }, 409);
-      }
-      if (message.includes("invalid") || message.includes("required")) {
-        return context.json({ error: message }, 400);
-      }
-      return context.json({ error: message }, 500);
-    }
-  });
-
-  app.get("/api/workspace", (context) =>
-    context.json(
-      createWorkspaceSnapshot(context.get("db"), {
-        selectedSessionId: context.req.query("sessionId") || null,
-      }),
-    ),
-  );
-
-  app.get("/api/mcp/tools", (context) => {
-    const response: ListControlToolsResponse = {
-      tools: new ControlToolService(context.get("db")).listTools(),
-    };
-    return context.json(response);
-  });
-
-  app.post("/api/mcp/tools/call", async (context) => {
-    const body = await readJsonBody(context.req);
-    if (!body.ok) {
-      return context.json({ error: body.error }, 400);
-    }
-
-    const name = body.value.name;
-    if (typeof name !== "string" || name.trim().length === 0) {
-      return context.json({ error: "name is required" }, 400);
-    }
-    const args = body.value.args;
-    if (args !== undefined && !isJsonRecord(args)) {
-      return context.json({ error: "args must be a JSON object" }, 400);
-    }
-
-    try {
-      const result = new ControlToolService(context.get("db")).callTool(name, args ? (args as JsonObject) : {});
-      const response: CallControlToolResponse = result;
-      return context.json(response);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Control tool call failed";
-      if (message.includes("not found") || message.startsWith("Session not found")) {
-        return context.json({ error: message }, 404);
-      }
-      if (message.startsWith("Unknown control tool")) {
-        return context.json({ error: message }, 404);
-      }
-      if (message.includes("required") || message.includes("must be") || message.includes("kind must")) {
-        return context.json({ error: message }, 400);
-      }
-      if (message.startsWith("No events found")) {
-        return context.json({ error: message }, 409);
-      }
-      return context.json({ error: message }, 500);
-    }
-  });
-
-  app.get("/api/agents", async (context) => {
-    const agents = await Promise.all(
-      runtimeRegistry.list().map(async (adapter) => {
-        const probe = await adapter.probe();
-        return {
-          agentType: adapter.agentType,
-          runtimeKind: adapter.runtimeKind,
-          label: adapter.displayName,
-          status: probe.status,
-          command: probe.command,
-          version: probe.version,
-          message: probe.message,
-          checkedAt: probe.checkedAt,
-          capabilities: adapter.capabilities(),
-        };
-      }),
-    );
-    const response: AgentsResponse = { agents };
-
-    return context.json(response);
-  });
-
-  app.get("/api/runs/:runId/permissions", (context) => {
-    const permissions = permissionRequests.listByRun(context.req.param("runId")).map(mapPermissionRequest);
-    return context.json({ permissions });
-  });
-
-  app.post("/api/runs/:runId/permissions/:requestId/respond", async (context) => {
-    const body = await readJsonBody(context.req);
-    if (!body.ok) {
-      return context.json({ error: body.error }, 400);
-    }
-
-    const outcome = body.value.outcome;
-    if (outcome !== "selected" && outcome !== "cancelled") {
-      return context.json({ error: "outcome must be selected or cancelled" }, 400);
-    }
-
-    const optionId = body.value.optionId;
-    if (optionId !== undefined && optionId !== null && typeof optionId !== "string") {
-      return context.json({ error: "optionId must be a string or null" }, 400);
-    }
-
-    try {
-      runtimeSupervisor.respondPermission(context.req.param("runId"), {
-        requestId: context.req.param("requestId"),
-        outcome,
-        optionId: optionId ?? undefined,
-      });
-      const permissions = permissionRequests.listByRun(context.req.param("runId")).map(mapPermissionRequest);
-      return context.json({ permissions });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Respond permission failed";
-      if (message.includes("not active") || message.includes("not pending")) {
-        return context.json({ error: message }, 409);
-      }
-      if (message.includes("not support")) {
-        return context.json({ error: message }, 400);
-      }
-      return context.json({ error: message }, 500);
-    }
-  });
-
-  app.get("/api/agent-defaults/resolve", (context) => {
-    try {
-      const resolved = new DefaultAgentService(context.get("db")).resolve({
-        userRef: context.req.query("userRef") ?? null,
-        channelRef: context.req.query("channelRef") ?? null,
-        workspacePath: context.req.query("workspacePath") ?? null,
-      });
-      const response: ResolveAgentDefaultResponse = { default: mapAgentDefault(resolved) };
-      return context.json(response);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Resolve default agent failed";
-      return context.json({ error: message }, 500);
-    }
-  });
-
-  app.post("/api/agent-defaults", async (context) => {
-    const body = await readJsonBody(context.req);
-    if (!body.ok) {
-      return context.json({ error: body.error }, 400);
-    }
-
-    const scopeType = body.value.scopeType;
-    if (!isAgentDefaultScopeType(scopeType)) {
-      return context.json({ error: "scopeType must be one of: user, channel, workspace, system" }, 400);
-    }
-
-    const scopeRef = body.value.scopeRef;
-    if (typeof scopeRef !== "string" || scopeRef.trim().length === 0) {
-      return context.json({ error: "scopeRef is required" }, 400);
-    }
-
-    const agentType = body.value.agentType;
-    if (!isAgentType(agentType)) {
-      return context.json({ error: "agentType must be one of: codex, claude, trae" }, 400);
-    }
-
-    const params = body.value.params;
-    if (params !== undefined && !isJsonRecord(params)) {
-      return context.json({ error: "params must be a JSON object" }, 400);
-    }
-
-    try {
-      const saved = new DefaultAgentService(context.get("db")).setDefault({
-        scopeType,
-        scopeRef,
-        agentType,
-        params: params ? (params as JsonObject) : {},
-      });
-      const response: SetAgentDefaultResponse = { default: mapAgentDefault(saved) };
-      return context.json(response, 201);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Set default agent failed";
-      if (message.includes("scopeRef")) {
-        return context.json({ error: message }, 400);
-      }
-      return context.json({ error: message }, 500);
-    }
-  });
-
-  app.post("/api/sessions", async (context) => {
-    const db = context.get("db");
-    const body = await readJsonBody(context.req);
-    if (!body.ok) {
-      return context.json({ error: body.error }, 400);
-    }
-
-    const requestedAgentType = body.value.agentType;
-    if (requestedAgentType !== undefined && !isAgentType(requestedAgentType)) {
-      return context.json({ error: "agentType must be one of: codex, claude, trae" }, 400);
-    }
-
-    const title = body.value.title;
-    if (title !== undefined && typeof title !== "string") {
-      return context.json({ error: "title must be a string" }, 400);
-    }
-
-    const workspacePath = body.value.workspacePath;
-    if (workspacePath !== undefined && typeof workspacePath !== "string") {
-      return context.json({ error: "workspacePath must be a string" }, 400);
-    }
-    const requestedRuntimeKind = body.value.runtimeKind;
-    if (requestedRuntimeKind !== undefined && requestedRuntimeKind !== "cli" && requestedRuntimeKind !== "acp") {
-      return context.json({ error: "runtimeKind must be cli or acp" }, 400);
-    }
-
-    let effectiveWorkspacePath: string;
-    try {
-      effectiveWorkspacePath = workspacePolicy.assertAllowed(workspacePath?.trim() || defaultWorkspacePath);
-    } catch (error) {
-      if (error instanceof WorkspacePolicyError) {
-        auditWorkspaceDenied(db, {
-          actorType: "web_user",
-          actorRef: null,
-          resourceType: "workspace",
-          resourceId: error.workspacePath,
-          error,
-        });
-        return context.json({ error: error.message }, 403);
-      }
-      throw error;
-    }
-    const resolvedDefault = new DefaultAgentService(db).resolve({
-      workspacePath: effectiveWorkspacePath,
-    });
-    const agentType = requestedAgentType ?? resolvedDefault.agentType;
-    const defaultParams = readDefaultParams(resolvedDefault.params);
-    const runtimeKind = requestedRuntimeKind ?? readRuntimeKind(defaultParams);
-    const session = new SessionStore(db).createSession({
-      title: title?.trim() || `${displayAgent(agentType)} session`,
-      agentType,
-      workspacePath: effectiveWorkspacePath,
-      channelType: "web",
-      defaultParams: runtimeKind ? { ...defaultParams, runtimeKind } : defaultParams,
-    });
-    const response: CreateSessionResponse = {
-      sessionId: session.id,
-      workspace: createWorkspaceSnapshot(db, { selectedSessionId: session.id }),
-    };
-
-    return context.json(response, 201);
-  });
-
-  app.post("/api/sessions/:sessionId/messages", async (context) => {
-    const db = context.get("db");
-    const body = await readJsonBody(context.req);
-    if (!body.ok) {
-      return context.json({ error: body.error }, 400);
-    }
-
-    const text = body.value.text;
-    if (typeof text !== "string" || text.trim().length === 0) {
-      return context.json({ error: "text is required" }, 400);
-    }
-
-    const actorRef = body.value.actorRef;
-    if (actorRef !== undefined && actorRef !== null && typeof actorRef !== "string") {
-      return context.json({ error: "actorRef must be a string or null" }, 400);
-    }
-
-    try {
-      const result = new UserMessageService(db).send({
-        sessionId: context.req.param("sessionId"),
-        text,
-        actorRef,
-      });
-      new ContextBudgetService(db).evaluate({ sessionId: context.req.param("sessionId") });
-      projectReadModelsUntilIdle(db);
-
-      // Auto-start run for queued task
-      try {
-        runtimeService.startNextQueuedTask(context.req.param("sessionId"));
-        new ContextBudgetService(db).evaluate({ sessionId: context.req.param("sessionId") });
-        projectReadModelsUntilIdle(db);
-      } catch {
-        // Run may already be active or no queued task — safe to ignore
-      }
-
-      const response: SendMessageResponse = {
-        taskId: result.task.id,
-        eventId: result.event.id,
-        workspace: createWorkspaceSnapshot(db, { selectedSessionId: context.req.param("sessionId") }),
-      };
-
-      return context.json(response, 201);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Message send failed";
-      if (message.startsWith("Session not found")) {
-        return context.json({ error: message }, 404);
-      }
-      if (message.includes("archived") || message.includes("required")) {
-        return context.json({ error: message }, 400);
-      }
-      return context.json({ error: message }, 500);
-    }
-  });
-
-  app.post("/api/sessions/:sessionId/handoffs", async (context) => {
-    const db = context.get("db");
-    const body = await readJsonBody(context.req);
-    if (!body.ok) {
-      return context.json({ error: body.error }, 400);
-    }
-
-    const targetAgentType = body.value.targetAgentType;
-    if (!isAgentType(targetAgentType)) {
-      return context.json({ error: "targetAgentType must be one of: codex, claude, trae" }, 400);
-    }
-
-    const actorType = body.value.actorType ?? "web_user";
-    if (!isAuditActorType(actorType)) {
-      return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, telegram_user, discord_user, system, agent" }, 400);
-    }
-
-    const actorRef = body.value.actorRef;
-    if (actorRef !== undefined && actorRef !== null && typeof actorRef !== "string") {
-      return context.json({ error: "actorRef must be a string or null" }, 400);
-    }
-
-    const targetTitle = body.value.targetTitle;
-    if (targetTitle !== undefined && typeof targetTitle !== "string") {
-      return context.json({ error: "targetTitle must be a string" }, 400);
-    }
-
-    try {
-      const result = new HandoffService(db).handoff({
-        sourceSessionId: context.req.param("sessionId"),
-        targetAgentType,
-        actorType,
-        actorRef,
-        targetTitle,
-      });
-      const contextBudget = new ContextBudgetService(db);
-      contextBudget.evaluate({ sessionId: context.req.param("sessionId") });
-      contextBudget.evaluate({ sessionId: result.targetSession.id, autoCompact: false });
-      projectReadModelsUntilIdle(db);
-
-      const response: CreateHandoffResponse = {
-        targetSessionId: result.targetSession.id,
-        targetTaskId: result.task.id,
-        sourceContextPackId: result.contextPack.id,
-        requestedEventId: result.requestedEvent.id,
-        createdEventId: result.createdEvent.id,
-        workspace: createWorkspaceSnapshot(db, { selectedSessionId: result.targetSession.id }),
-      };
-
-      return context.json(response, 201);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Handoff failed";
-      if (message.startsWith("Session not found")) {
-        return context.json({ error: message }, 404);
-      }
-      if (message.includes("target agent")) {
-        return context.json({ error: message }, 400);
-      }
-      return context.json({ error: message }, 500);
-    }
-  });
-
-  app.post("/api/sessions/:sessionId/runs/start", (context) => {
-    const db = context.get("db");
-
-    try {
-      const result = runtimeService.startNextQueuedTask(context.req.param("sessionId"));
-      new ContextBudgetService(db).evaluate({ sessionId: context.req.param("sessionId") });
-      projectReadModelsUntilIdle(db);
-
-      const response: StartRunResponse = {
-        taskId: result.task.id,
-        runId: result.run.id,
-        status: result.run.status,
-        workspace: createWorkspaceSnapshot(db, { selectedSessionId: context.req.param("sessionId") }),
-      };
-
-      return context.json(response, 201);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Runtime start failed";
-      if (message.startsWith("Session not found")) {
-        return context.json({ error: message }, 404);
-      }
-      if (message.includes("No queued task") || message.includes("active run")) {
-        return context.json({ error: message }, 409);
-      }
-      if (error instanceof WorkspacePolicyError || message.startsWith("Workspace denied")) {
-        return context.json({ error: message }, 403);
-      }
-      return context.json({ error: message }, 500);
-    }
-  });
-
-  app.post("/api/runs/:runId/stop", async (context) => {
-    const db = context.get("db");
-    const body = await readOptionalJsonBody(context.req);
-    if (!body.ok) {
-      return context.json({ error: body.error }, 400);
-    }
-
-    const actorType = body.value.actorType ?? "web_user";
-    if (!isAuditActorType(actorType)) {
-      return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, telegram_user, discord_user, system, agent" }, 400);
-    }
-
-    const actorRef = body.value.actorRef;
-    if (actorRef !== undefined && actorRef !== null && typeof actorRef !== "string") {
-      return context.json({ error: "actorRef must be a string or null" }, 400);
-    }
-
-    const runId = context.req.param("runId");
-    const run = new SessionStore(db).getRun(runId);
-    if (!run) {
-      return context.json({ error: `Run not found: ${runId}` }, 404);
-    }
-
-    try {
-      runtimeSupervisor.stop(runId);
-      new AuditLogStore(db).insert({
-        actorType,
-        actorRef: typeof actorRef === "string" ? actorRef : null,
-        action: "run_stop",
-        resourceType: "run",
-        resourceId: runId,
-        payload: {
-          sessionId: run.sessionId,
-        },
-      });
-      projectReadModelsUntilIdle(db);
-
-      const stopped = new SessionStore(db).getRun(runId) ?? run;
-      const response: StopRunResponse = {
-        runId,
-        status: stopped.status,
-        workspace: createWorkspaceSnapshot(db, { selectedSessionId: run.sessionId }),
-      };
-      return context.json(response);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Runtime stop failed";
-      if (message.includes("not active")) {
-        return context.json({ error: message }, 409);
-      }
-      return context.json({ error: message }, 500);
-    }
-  });
-
-  app.get("/api/events", (context) => {
-    const sessionId = context.req.query("sessionId") || undefined;
-    const afterGlobalSeq = Number(context.req.query("afterGlobalSeq") ?? 0);
-    const limit = Number(context.req.query("limit") ?? 100);
-
-    if (!Number.isInteger(afterGlobalSeq) || afterGlobalSeq < 0) {
-      return context.json({ error: "afterGlobalSeq must be a non-negative integer" }, 400);
-    }
-    if (!Number.isInteger(limit) || limit <= 0 || limit > 500) {
-      return context.json({ error: "limit must be an integer between 1 and 500" }, 400);
-    }
-
-    const events = new EventStore(context.get("db")).listAfterGlobalSeq({
-      sessionId,
-      afterGlobalSeq,
-      limit,
-    });
-
-    return context.json({ events });
-  });
-
-  app.get("/api/events/stream", (context) => {
-    const sessionId = context.req.query("sessionId") || undefined;
-    const afterGlobalSeq = Number(context.req.query("afterGlobalSeq") ?? 0);
-    const limit = Number(context.req.query("limit") ?? 100);
-
-    if (!Number.isInteger(afterGlobalSeq) || afterGlobalSeq < 0) {
-      return context.json({ error: "afterGlobalSeq must be a non-negative integer" }, 400);
-    }
-    if (!Number.isInteger(limit) || limit <= 0 || limit > 500) {
-      return context.json({ error: "limit must be an integer between 1 and 500" }, 400);
-    }
-
-    const db = context.get("db");
-    const encoder = new TextEncoder();
-    let cursor = afterGlobalSeq;
-    let stopped = false;
-
-    const stream = new ReadableStream({
-      async start(controller) {
-        const send = (text: string) => {
-          if (stopped) return;
-          try {
-            controller.enqueue(encoder.encode(text));
-          } catch {
-            stopped = true;
-            clearInterval(pollInterval);
-            clearInterval(keepalive);
-            try { controller.close(); } catch { /* already closed */ }
-          }
-        };
-
-        let pollInterval: ReturnType<typeof setInterval>;
-        let keepalive: ReturnType<typeof setInterval>;
-
-        // Send initial historical events
-        const initial = new EventStore(db).listAfterGlobalSeq({ sessionId, afterGlobalSeq, limit });
-        for (const event of initial) {
-          send(`id: ${event.globalSeq}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
-          cursor = event.globalSeq;
-        }
-        send(": cursor-ready\n\n");
-
-        // Poll for new events every 500ms
-        pollInterval = setInterval(() => {
-          if (stopped) return;
-          try {
-            const newEvents = new EventStore(db).listAfterGlobalSeq({ sessionId, afterGlobalSeq: cursor, limit: 50 });
-            for (const event of newEvents) {
-              send(`id: ${event.globalSeq}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
-              cursor = event.globalSeq;
-            }
-          } catch { /* db error, skip this tick */ }
-        }, 500);
-
-        // Keepalive every 25s
-        keepalive = setInterval(() => send(": keepalive\n\n"), 25_000);
-
-        // Clean up on abort
-        context.req.raw.signal.addEventListener("abort", () => {
-          stopped = true;
-          clearInterval(pollInterval);
-          clearInterval(keepalive);
-          try { controller.close(); } catch { /* already closed */ }
-        });
-      },
-      cancel() {
-        stopped = true;
-      },
-    });
-
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/event-stream; charset=utf-8",
-        "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
-      },
-    });
-  });
-
-  app.get("/api/schedules", (context) => {
-    const sessionId = context.req.query("sessionId");
+  app.get("/api/schedules", (c) => {
+    const sessionId = c.req.query("sessionId");
     if (!sessionId) {
-      return context.json({ error: "sessionId is required" }, 400);
+      return c.json({ error: "sessionId is required" }, 400);
     }
 
-    try {
-      const schedules = new SchedulerService(context.get("db")).listSchedules(sessionId).map(mapSchedule);
-      const response: ListSchedulesResponse = { schedules };
-      return context.json(response);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "List schedules failed";
-      if (message.startsWith("Session not found")) {
-        return context.json({ error: message }, 404);
-      }
-      return context.json({ error: message }, 500);
-    }
+    const schedulerService = new SchedulerService(db, runtimeService);
+    const schedules = schedulerService.list(sessionId);
+    return c.json({ schedules: schedules.map(mapSchedule) });
   });
 
-  app.post("/api/schedules", async (context) => {
-    const db = context.get("db");
-    const body = await readJsonBody(context.req);
-    if (!body.ok) {
-      return context.json({ error: body.error }, 400);
+  app.post("/api/schedules", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return c.json({ error: "Request body must be valid JSON" }, 400);
     }
+    const value = body as Record<string, unknown>;
 
-    const sessionId = body.value.sessionId;
+    const sessionId = value.sessionId;
     if (typeof sessionId !== "string" || sessionId.trim().length === 0) {
-      return context.json({ error: "sessionId is required" }, 400);
+      return c.json({ error: "sessionId is required" }, 400);
     }
 
-    const kind = body.value.kind;
+    const kind = value.kind;
     if (kind !== "once" && kind !== "cron") {
-      return context.json({ error: "kind must be once or cron" }, 400);
-    }
-
-    const cronExpr = body.value.cronExpr;
-    if (cronExpr !== undefined && cronExpr !== null && typeof cronExpr !== "string") {
-      return context.json({ error: "cronExpr must be a string or null" }, 400);
-    }
-
-    const runAt = body.value.runAt;
-    if (runAt !== undefined && runAt !== null && typeof runAt !== "string") {
-      return context.json({ error: "runAt must be a string or null" }, 400);
-    }
-
-    const timezone = body.value.timezone;
-    if (timezone !== undefined && typeof timezone !== "string") {
-      return context.json({ error: "timezone must be a string" }, 400);
-    }
-
-    const payload = body.value.payload;
-    if (payload !== undefined && !isJsonRecord(payload)) {
-      return context.json({ error: "payload must be a JSON object" }, 400);
-    }
-
-    const actorType = body.value.actorType ?? "web_user";
-    if (!isAuditActorType(actorType)) {
-      return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, telegram_user, discord_user, system, agent" }, 400);
-    }
-
-    const actorRef = body.value.actorRef;
-    if (actorRef !== undefined && actorRef !== null && typeof actorRef !== "string") {
-      return context.json({ error: "actorRef must be a string or null" }, 400);
+      return c.json({ error: "kind must be once or cron" }, 400);
     }
 
     try {
-      const schedule = new SchedulerService(db).createSchedule({
+      const schedulerService = new SchedulerService(db, runtimeService);
+      const schedule = schedulerService.create({
         sessionId: sessionId.trim(),
-        kind,
-        cronExpr: typeof cronExpr === "string" ? cronExpr : null,
-        runAt: typeof runAt === "string" ? runAt : null,
-        timezone: typeof timezone === "string" ? timezone : undefined,
-        payload: payload ? (payload as JsonObject) : {},
-        actorType,
-        actorRef: typeof actorRef === "string" ? actorRef : null,
+        kind: kind as "once" | "cron",
+        cronExpr: typeof value.cronExpr === "string" ? value.cronExpr : null,
+        runAt: typeof value.runAt === "string" ? value.runAt : null,
+        timezone: typeof value.timezone === "string" ? value.timezone : undefined,
+        payload: value.payload as JsonValue | undefined,
+        actorType: typeof value.actorType === "string" ? value.actorType : "web_user",
+        actorRef: typeof value.actorRef === "string" ? value.actorRef : undefined,
       });
-      const response: CreateScheduleResponse = { schedule: mapSchedule(schedule) };
-      return context.json(response, 201);
+      return c.json({ schedule: mapSchedule(schedule) }, 201);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Create schedule failed";
       if (message.startsWith("Session not found")) {
-        return context.json({ error: message }, 404);
+        return c.json({ error: message }, 404);
       }
-      if (message.includes("required") || message.includes("cron") || message.includes("timestamp")) {
-        return context.json({ error: message }, 400);
-      }
-      return context.json({ error: message }, 500);
+      return c.json({ error: message }, 500);
     }
   });
 
-  app.post("/api/schedules/due/run", async (context) => {
-    const db = context.get("db");
-    const body = await readOptionalJsonBody(context.req);
-    if (!body.ok) {
-      return context.json({ error: body.error }, 400);
-    }
-
-    const workerId = body.value.workerId;
-    if (workerId !== undefined && typeof workerId !== "string") {
-      return context.json({ error: "workerId must be a string" }, 400);
-    }
-
-    const now = body.value.now;
-    if (now !== undefined && typeof now !== "string") {
-      return context.json({ error: "now must be a string" }, 400);
-    }
-
-    const limit = body.value.limit;
-    if (limit !== undefined && (typeof limit !== "number" || !Number.isInteger(limit) || limit <= 0)) {
-      return context.json({ error: "limit must be a positive integer" }, 400);
-    }
-
+  app.post("/api/schedules/due/run", async (c) => {
     try {
-      const service = new SchedulerService(db);
-      const triggered = service.runDueSchedules({
-        workerId: typeof workerId === "string" ? workerId : "api",
-        now: typeof now === "string" ? now : undefined,
-        limit: typeof limit === "number" ? limit : undefined,
-      });
-      projectReadModelsUntilIdle(db);
+      const schedulerService = new SchedulerService(db, runtimeService);
+      const { triggered } = schedulerService.runDue();
 
-      const firstSessionId = triggered[0]?.schedule.sessionId ?? null;
-      const response: RunDueSchedulesResponse = {
-        triggered: triggered.map((item) => ({
-          schedule: mapSchedule(item.schedule),
-          taskId: item.task.id,
-        })),
-        workspace: createWorkspaceSnapshot(db, { selectedSessionId: firstSessionId }),
-      };
-      return context.json(response);
+      const workspaceService = new WorkspaceService(db, runtimeSupervisor);
+      // Best-effort: pick first triggered schedule's session
+      let selectedSessionId: string | null = null;
+      if (triggered.length > 0) {
+        const scheduleStore = new ScheduleStore(db);
+        // Try to find any schedule to get its sessionId
+        for (const t of triggered) {
+          const schedules = scheduleStore.listBySession(t.scheduleId);
+          if (schedules.length > 0) {
+            selectedSessionId = schedules[0].sessionId;
+            break;
+          }
+        }
+      }
+
+      return c.json({
+        triggered: triggered.map((t) => ({ schedule: { id: t.scheduleId }, taskId: t.taskId })),
+        workspace: workspaceService.getSnapshot(selectedSessionId),
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Run due schedules failed";
-      if (message.includes("lease") || message.includes("cron") || message.includes("limit") || message.includes("timestamp")) {
-        return context.json({ error: message }, 400);
-      }
-      return context.json({ error: message }, 500);
+      return c.json({ error: message }, 500);
     }
   });
 
-  app.post("/api/schedules/:scheduleId/pause", (context) =>
-    updateScheduleStatus(context, "pause", (service, scheduleId, actorType, actorRef) =>
-      service.pauseSchedule(scheduleId, actorType, actorRef),
-    ),
+  app.post("/api/schedules/:scheduleId/pause", (c) =>
+    handleScheduleStatusUpdate(c, db, "pause"),
   );
 
-  app.post("/api/schedules/:scheduleId/resume", (context) =>
-    updateScheduleStatus(context, "resume", (service, scheduleId, actorType, actorRef) =>
-      service.resumeSchedule(scheduleId, actorType, actorRef),
-    ),
+  app.post("/api/schedules/:scheduleId/resume", (c) =>
+    handleScheduleStatusUpdate(c, db, "resume"),
   );
 
-  app.post("/api/schedules/:scheduleId/cancel", (context) =>
-    updateScheduleStatus(context, "cancel", (service, scheduleId, actorType, actorRef) =>
-      service.cancelSchedule(scheduleId, actorType, actorRef),
-    ),
+  app.post("/api/schedules/:scheduleId/cancel", (c) =>
+    handleScheduleStatusUpdate(c, db, "cancel"),
   );
-
-  app.post("/api/feishu/messages", async (context) => {
-    const db = context.get("db");
-    const body = await readJsonBody(context.req);
-    if (!body.ok) {
-      return context.json({ error: body.error }, 400);
-    }
-
-    const messageId = body.value.messageId;
-    if (typeof messageId !== "string" || messageId.trim().length === 0) {
-      return context.json({ error: "messageId is required" }, 400);
-    }
-
-    const chatId = body.value.chatId;
-    if (typeof chatId !== "string" || chatId.trim().length === 0) {
-      return context.json({ error: "chatId is required" }, 400);
-    }
-
-    const text = body.value.text;
-    if (typeof text !== "string" || text.trim().length === 0) {
-      return context.json({ error: "text is required" }, 400);
-    }
-
-    const userId = body.value.userId;
-    if (userId !== undefined && userId !== null && typeof userId !== "string") {
-      return context.json({ error: "userId must be a string or null" }, 400);
-    }
-
-    const sessionId = body.value.sessionId;
-    if (sessionId !== undefined && sessionId !== null && typeof sessionId !== "string") {
-      return context.json({ error: "sessionId must be a string or null" }, 400);
-    }
-
-    const workspacePath = body.value.workspacePath;
-    if (workspacePath !== undefined && workspacePath !== null && typeof workspacePath !== "string") {
-      return context.json({ error: "workspacePath must be a string or null" }, 400);
-    }
-
-    const defaultAgentType = body.value.defaultAgentType;
-    if (defaultAgentType !== undefined && !isAgentType(defaultAgentType)) {
-      return context.json({ error: "defaultAgentType must be one of: codex, claude, trae" }, 400);
-    }
-
-    try {
-      const result = new FeishuInboundService(db, undefined, { workspacePolicy }).receiveMessage({
-        messageId,
-        chatId,
-        text,
-        userId: typeof userId === "string" ? userId : null,
-        sessionId: typeof sessionId === "string" ? sessionId : null,
-        workspacePath: typeof workspacePath === "string" ? workspacePath : defaultWorkspacePath,
-        defaultAgentType: isAgentType(defaultAgentType) ? defaultAgentType : undefined,
-      });
-      if (result.action === "message") {
-        new ContextBudgetService(db).evaluate({ sessionId: result.session.id });
-      }
-      projectReadModelsUntilIdle(db);
-
-      const selectedSessionId =
-        result.action === "message" || result.action === "agent_new"
-          ? result.session.id
-          : result.action === "handoff"
-            ? result.targetSessionId
-            : result.action === "context_compact" || result.action === "context_status"
-              ? result.sessionId
-              : null;
-
-      return context.json(
-        {
-          result,
-          workspace: createWorkspaceSnapshot(db, { selectedSessionId }),
-        },
-        201,
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Feishu message failed";
-      if (message.startsWith("Session not found")) {
-        return context.json({ error: message }, 404);
-      }
-      if (message.includes("agent type") || message.includes("required") || message.includes("archived")) {
-        return context.json({ error: message }, 400);
-      }
-      if (message.startsWith("No events found")) {
-        return context.json({ error: message }, 409);
-      }
-      if (error instanceof WorkspacePolicyError || message.startsWith("Workspace denied")) {
-        return context.json({ error: message }, 403);
-      }
-      return context.json({ error: message }, 500);
-    }
-  });
-
-  app.post("/api/qq/messages", async (context) => {
-    const db = context.get("db");
-    const body = await readJsonBody(context.req);
-    if (!body.ok) {
-      return context.json({ error: body.error }, 400);
-    }
-
-    const messageId = body.value.messageId;
-    if (typeof messageId !== "string" || messageId.trim().length === 0) {
-      return context.json({ error: "messageId is required" }, 400);
-    }
-
-    const chatId = body.value.chatId;
-    if (typeof chatId !== "string" || chatId.trim().length === 0) {
-      return context.json({ error: "chatId is required" }, 400);
-    }
-
-    const text = body.value.text;
-    if (typeof text !== "string" || text.trim().length === 0) {
-      return context.json({ error: "text is required" }, 400);
-    }
-
-    const userId = body.value.userId;
-    const chatType = body.value.chatType;
-    if (chatType !== "c2c" && chatType !== "group") {
-      return context.json({ error: "chatType must be 'c2c' or 'group'" }, 400);
-    }
-    const sessionId = body.value.sessionId;
-    const workspacePath = body.value.workspacePath;
-
-    try {
-      const result = new QQInboundService(db, undefined, { workspacePolicy }).receiveMessage({
-        messageId,
-        chatId,
-        text,
-        userId: typeof userId === "string" ? userId : null,
-        chatType,
-        sessionId: typeof sessionId === "string" ? sessionId : null,
-        workspacePath: typeof workspacePath === "string" ? workspacePath : defaultWorkspacePath,
-      });
-      if (result.action === "message") {
-        new ContextBudgetService(db).evaluate({ sessionId: result.session.id });
-      }
-      projectReadModelsUntilIdle(db);
-
-      const selectedSessionId =
-        result.action === "message" || result.action === "agent_new"
-          ? result.session.id
-          : result.action === "handoff"
-            ? result.targetSessionId
-            : result.action === "context_compact" || result.action === "context_status"
-              ? result.sessionId
-              : null;
-
-      return context.json(
-        { result, workspace: createWorkspaceSnapshot(db, { selectedSessionId }) },
-        201,
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "QQ message failed";
-      if (message.startsWith("Session not found")) return context.json({ error: message }, 404);
-      if (message.includes("agent type") || message.includes("required") || message.includes("archived")) return context.json({ error: message }, 400);
-      if (error instanceof WorkspacePolicyError || message.startsWith("Workspace denied")) return context.json({ error: message }, 403);
-      return context.json({ error: message }, 500);
-    }
-  });
-
-  app.post("/api/telegram/messages", async (context) => {
-    const db = context.get("db");
-    const body = await readJsonBody(context.req);
-    if (!body.ok) return context.json({ error: body.error }, 400);
-
-    const messageId = body.value.messageId;
-    if (typeof messageId !== "string" || !messageId.trim()) return context.json({ error: "messageId is required" }, 400);
-    const chatId = body.value.chatId;
-    if (typeof chatId !== "string" || !chatId.trim()) return context.json({ error: "chatId is required" }, 400);
-    const text = body.value.text;
-    if (typeof text !== "string" || !text.trim()) return context.json({ error: "text is required" }, 400);
-    const chatType = body.value.chatType;
-    if (chatType !== "private" && chatType !== "group" && chatType !== "supergroup") return context.json({ error: "chatType must be 'private', 'group', or 'supergroup'" }, 400);
-
-    try {
-      const result = new TelegramInboundService(db, undefined, { workspacePolicy }).receiveMessage({
-        messageId, chatId, text, chatType,
-        userId: typeof body.value.userId === "string" ? body.value.userId : null,
-        sessionId: typeof body.value.sessionId === "string" ? body.value.sessionId : null,
-        workspacePath: typeof body.value.workspacePath === "string" ? body.value.workspacePath : defaultWorkspacePath,
-      });
-      if (result.action === "message") new ContextBudgetService(db).evaluate({ sessionId: result.session.id });
-      projectReadModelsUntilIdle(db);
-      const sid = result.action === "message" || result.action === "agent_new" ? result.session.id : null;
-      return context.json({ result, workspace: createWorkspaceSnapshot(db, { selectedSessionId: sid }) }, 201);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Telegram message failed";
-      if (message.startsWith("Session not found")) return context.json({ error: message }, 404);
-      if (error instanceof WorkspacePolicyError || message.startsWith("Workspace denied")) return context.json({ error: message }, 403);
-      return context.json({ error: message }, 500);
-    }
-  });
-
-  app.post("/api/discord/messages", async (context) => {
-    const db = context.get("db");
-    const body = await readJsonBody(context.req);
-    if (!body.ok) return context.json({ error: body.error }, 400);
-
-    const messageId = body.value.messageId;
-    if (typeof messageId !== "string" || !messageId.trim()) return context.json({ error: "messageId is required" }, 400);
-    const chatId = body.value.chatId;
-    if (typeof chatId !== "string" || !chatId.trim()) return context.json({ error: "chatId is required" }, 400);
-    const text = body.value.text;
-    if (typeof text !== "string" || !text.trim()) return context.json({ error: "text is required" }, 400);
-    const isDm = body.value.isDm;
-    if (typeof isDm !== "boolean") return context.json({ error: "isDm must be a boolean" }, 400);
-
-    try {
-      const result = new DiscordInboundService(db, undefined, { workspacePolicy }).receiveMessage({
-        messageId, chatId, text, isDm,
-        userId: typeof body.value.userId === "string" ? body.value.userId : null,
-        sessionId: typeof body.value.sessionId === "string" ? body.value.sessionId : null,
-        workspacePath: typeof body.value.workspacePath === "string" ? body.value.workspacePath : defaultWorkspacePath,
-      });
-      if (result.action === "message") new ContextBudgetService(db).evaluate({ sessionId: result.session.id });
-      projectReadModelsUntilIdle(db);
-      const sid = result.action === "message" || result.action === "agent_new" ? result.session.id : null;
-      return context.json({ result, workspace: createWorkspaceSnapshot(db, { selectedSessionId: sid }) }, 201);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Discord message failed";
-      if (message.startsWith("Session not found")) return context.json({ error: message }, 404);
-      if (error instanceof WorkspacePolicyError || message.startsWith("Workspace denied")) return context.json({ error: message }, 403);
-      return context.json({ error: message }, 500);
-    }
-  });
-
-  app.get("/api/sessions/:sessionId/memory/archives", (context) => {
-    try {
-      const archives = new MemoryArchiveService(context.get("db"))
-        .listArchives(context.req.param("sessionId"))
-        .map(mapMemoryArchive);
-      const response: ListMemoryArchivesResponse = { archives };
-      return context.json(response);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "List memory archives failed";
-      if (message.startsWith("Session not found")) {
-        return context.json({ error: message }, 404);
-      }
-      return context.json({ error: message }, 500);
-    }
-  });
-
-  app.post("/api/sessions/:sessionId/memory/archives", async (context) => {
-    const body = await readJsonBody(context.req);
-    if (!body.ok) {
-      return context.json({ error: body.error }, 400);
-    }
-
-    const archiveDate = body.value.archiveDate;
-    if (typeof archiveDate !== "string") {
-      return context.json({ error: "archiveDate is required" }, 400);
-    }
-
-    try {
-      const result = new MemoryArchiveService(context.get("db")).createDailyArchive({
-        sessionId: context.req.param("sessionId"),
-        archiveDate,
-      });
-      projectReadModelsUntilIdle(context.get("db"));
-      const response: CreateMemoryArchiveResponse = {
-        archive: mapMemoryArchive(result.archive),
-        eventId: result.event.id,
-      };
-      return context.json(response, 201);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Create memory archive failed";
-      if (message.startsWith("Session not found")) {
-        return context.json({ error: message }, 404);
-      }
-      if (message.includes("archiveDate")) {
-        return context.json({ error: message }, 400);
-      }
-      if (message.startsWith("No events found")) {
-        return context.json({ error: message }, 409);
-      }
-      return context.json({ error: message }, 500);
-    }
-  });
-
-  app.post("/api/sessions/:sessionId/context/compact", async (context) => {
-    const db = context.get("db");
-    const body = await readOptionalJsonBody(context.req);
-    if (!body.ok) {
-      return context.json({ error: body.error }, 400);
-    }
-
-    const actorType = body.value.actorType ?? "web_user";
-    if (!isAuditActorType(actorType)) {
-      return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, telegram_user, discord_user, system, agent" }, 400);
-    }
-
-    const actorRef = body.value.actorRef;
-    if (actorRef !== undefined && actorRef !== null && typeof actorRef !== "string") {
-      return context.json({ error: "actorRef must be a string or null" }, 400);
-    }
-
-    const budgetTokens = body.value.budgetTokens;
-    if (
-      budgetTokens !== undefined &&
-      (typeof budgetTokens !== "number" || !Number.isInteger(budgetTokens) || budgetTokens <= 0)
-    ) {
-      return context.json({ error: "budgetTokens must be a positive integer" }, 400);
-    }
-
-    try {
-      const result = new ContextBudgetService(db).compactNow({
-        sessionId: context.req.param("sessionId"),
-        createdBy: actorType === "agent" ? "agent" : actorType === "system" ? "system" : "user",
-        budgetTokens: typeof budgetTokens === "number" ? budgetTokens : undefined,
-      });
-      new AuditLogStore(db).insert({
-        actorType,
-        actorRef: typeof actorRef === "string" ? actorRef : null,
-        action: "compact",
-        resourceType: "session",
-        resourceId: context.req.param("sessionId"),
-        payload: {
-          contextPackId: result.compacted?.contextPack.id ?? result.contextPack?.id ?? null,
-          eventId: result.compacted?.event.id ?? null,
-          budgetTokens: typeof budgetTokens === "number" ? budgetTokens : null,
-        },
-      });
-      projectReadModelsUntilIdle(db);
-
-      const workspace = createWorkspaceSnapshot(db, { selectedSessionId: context.req.param("sessionId") });
-      const response: CompactContextResponse = {
-        contextPackId: result.compacted?.contextPack.id ?? result.contextPack?.id ?? "",
-        eventId: result.compacted?.event.id ?? "",
-        contextBudget: workspace.contextBudget,
-        workspace,
-      };
-
-      return context.json(response, 201);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Context compact failed";
-      if (message.startsWith("Session not found")) {
-        return context.json({ error: message }, 404);
-      }
-      if (message.startsWith("No events found")) {
-        return context.json({ error: message }, 409);
-      }
-      if (message.includes("budget") || message.includes("threshold")) {
-        return context.json({ error: message }, 400);
-      }
-      return context.json({ error: message }, 500);
-    }
-  });
-
-  app.post("/api/sessions/:sessionId/context/restart", async (context) => {
-    const db = context.get("db");
-    const body = await readOptionalJsonBody(context.req);
-    if (!body.ok) {
-      return context.json({ error: body.error }, 400);
-    }
-
-    const actorType = body.value.actorType ?? "web_user";
-    if (!isAuditActorType(actorType)) {
-      return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, telegram_user, discord_user, system, agent" }, 400);
-    }
-
-    const actorRef = body.value.actorRef;
-    if (actorRef !== undefined && actorRef !== null && typeof actorRef !== "string") {
-      return context.json({ error: "actorRef must be a string or null" }, 400);
-    }
-
-    try {
-      const result = new ContextRestartService(db).restart({
-        sessionId: context.req.param("sessionId"),
-        actorType,
-        actorRef: typeof actorRef === "string" ? actorRef : null,
-      });
-      new ContextBudgetService(db).evaluate({ sessionId: context.req.param("sessionId"), autoCompact: false });
-      projectReadModelsUntilIdle(db);
-
-      const response: RestartContextResponse = {
-        contextPackId: result.contextPack.id,
-        taskId: result.task.id,
-        eventId: result.event.id,
-        workspace: createWorkspaceSnapshot(db, { selectedSessionId: context.req.param("sessionId") }),
-      };
-
-      return context.json(response, 201);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Restart from ContextPack failed";
-      if (message.startsWith("Session not found")) {
-        return context.json({ error: message }, 404);
-      }
-      if (message.includes("active run") || message.startsWith("No events found")) {
-        return context.json({ error: message }, 409);
-      }
-      return context.json({ error: message }, 500);
-    }
-  });
 
   return app;
 }
 
-async function readJsonBody(request: { json: () => Promise<unknown> }): Promise<
-  | { ok: true; value: Record<string, unknown> }
-  | { ok: false; error: string }
-> {
-  try {
-    const value = await request.json();
-    if (!isRecord(value)) {
-      return { ok: false, error: "Request body must be a JSON object" };
-    }
-    return { ok: true, value };
-  } catch {
-    return { ok: false, error: "Request body must be valid JSON" };
-  }
-}
+// ── Helpers ──
 
-async function readOptionalJsonBody(request: { json: () => Promise<unknown> }): Promise<
-  | { ok: true; value: Record<string, unknown> }
-  | { ok: false; error: string }
-> {
-  try {
-    const value = await request.json();
-    if (value === null || value === undefined) {
-      return { ok: true, value: {} };
-    }
-    if (!isRecord(value)) {
-      return { ok: false, error: "Request body must be a JSON object" };
-    }
-    return { ok: true, value };
-  } catch {
-    return { ok: true, value: {} };
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isJsonRecord(value: unknown): value is Record<string, unknown> {
-  return isRecord(value);
-}
-
-function isAgentType(value: unknown): value is AgentType {
+function isAgentType(value: unknown): value is string {
   return value === "codex" || value === "claude" || value === "trae";
-}
-
-function readDefaultParams(value: unknown): JsonObject {
-  return isJsonRecord(value) ? (value as JsonObject) : {};
-}
-
-function readRuntimeKind(value: JsonObject): "cli" | "acp" | null {
-  return value.runtimeKind === "cli" || value.runtimeKind === "acp" ? value.runtimeKind : null;
 }
 
 function isAuditActorType(value: unknown): value is AuditActorType {
   return value === "web_user" || value === "feishu_user" || value === "qq_user" || value === "telegram_user" || value === "discord_user" || value === "system" || value === "agent";
 }
 
-function isOperationRiskLevel(value: unknown): value is "medium" | "high" | "critical" {
-  return value === "medium" || value === "high" || value === "critical";
-}
-
-function isAgentDefaultScopeType(value: unknown): value is AgentDefaultScopeType {
+function isAgentDefaultScopeType(value: unknown): value is string {
   return value === "user" || value === "channel" || value === "workspace" || value === "system";
 }
 
-function displayAgent(agentType: AgentType): string {
-  if (agentType === "claude") {
-    return "Claude";
-  }
-  if (agentType === "trae") {
-    return "Trae";
-  }
+function displayAgent(agentType: string): string {
+  if (agentType === "claude") return "Claude";
+  if (agentType === "trae") return "Trae";
   return "Codex";
 }
 
-async function updateScheduleStatus(
-  context: Context<AppBindings>,
-  action: string,
-  update: (
-    service: SchedulerService,
-    scheduleId: string,
-    actorType: AuditActorType,
-    actorRef: string | null,
-  ) => ScheduleRecord,
-) {
-  const body = await readOptionalJsonBody(context.req);
-  if (!body.ok) {
-    return context.json({ error: body.error }, 400);
-  }
-
-  const actorType = body.value.actorType ?? "web_user";
-  if (!isAuditActorType(actorType)) {
-    return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, telegram_user, discord_user, system, agent" }, 400);
-  }
-
-  const actorRef = body.value.actorRef;
-  if (actorRef !== undefined && actorRef !== null && typeof actorRef !== "string") {
-    return context.json({ error: "actorRef must be a string or null" }, 400);
-  }
-
-  const scheduleId = context.req.param("scheduleId");
-  if (!scheduleId) {
-    return context.json({ error: "scheduleId is required" }, 400);
-  }
-
-  try {
-    const schedule = update(
-      new SchedulerService(context.get("db")),
-      scheduleId,
-      actorType,
-      typeof actorRef === "string" ? actorRef : null,
-    );
-    const response: UpdateScheduleResponse = { schedule: mapSchedule(schedule) };
-    return context.json(response);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : `Schedule ${action} failed`;
-    if (message.startsWith("Schedule not found")) {
-      return context.json({ error: message }, 404);
-    }
-    if (message.includes("cron")) {
-      return context.json({ error: message }, 400);
-    }
-    return context.json({ error: message }, 500);
-  }
-}
-
-function mapSchedule(schedule: ScheduleRecord): WorkspaceSchedule {
+function mapSchedule(record: ScheduleRecord): WorkspaceSchedule {
   return {
-    id: schedule.id,
-    sessionId: schedule.sessionId,
-    status: schedule.status,
-    kind: schedule.kind,
-    cronExpr: schedule.cronExpr,
-    runAt: schedule.runAt,
-    timezone: schedule.timezone,
-    nextRunAt: schedule.nextRunAt,
-    lastRunAt: schedule.lastRunAt,
+    id: record.id,
+    sessionId: record.sessionId,
+    status: record.status,
+    kind: record.kind,
+    cronExpr: record.cronExpr,
+    runAt: record.runAt,
+    timezone: record.timezone,
+    nextRunAt: record.nextRunAt,
+    lastRunAt: record.lastRunAt,
   };
 }
 
-function mapAgentDefault(record: AgentDefaultRecord): AgentDefault {
+function mapAgentDefault(record: AgentDefaultRecord) {
   return {
     id: record.id,
     scopeType: record.scopeType,
@@ -1578,7 +793,7 @@ function mapAgentDefault(record: AgentDefaultRecord): AgentDefault {
   };
 }
 
-function mapPermissionRequest(record: PermissionRequestRecord): JsonObject {
+function mapPermissionRequest(record: PermissionRequestRecord) {
   return {
     id: record.id,
     sessionId: record.sessionId,
@@ -1599,62 +814,6 @@ function mapPermissionRequest(record: PermissionRequestRecord): JsonObject {
   };
 }
 
-function auditWorkspaceDenied(
-  db: SqliteDatabase,
-  input: {
-    actorType: AuditActorType;
-    actorRef?: string | null;
-    resourceType: string;
-    resourceId: string | null;
-    error: WorkspacePolicyError;
-  },
-): void {
-  new AuditLogStore(db).insert({
-    actorType: input.actorType,
-    actorRef: input.actorRef ?? null,
-    action: "workspace_denied",
-    resourceType: input.resourceType,
-    resourceId: input.resourceId,
-    payload: {
-      workspacePath: input.error.workspacePath,
-      normalizedPath: input.error.normalizedPath,
-      reason: input.error.reason,
-      allowlist: input.error.allowlist,
-    },
-  });
-}
-
-function mapOperationConfirmation(record: OperationConfirmationRecord): OperationConfirmation {
-  return {
-    id: record.id,
-    action: record.action,
-    resourceType: record.resourceType,
-    resourceId: record.resourceId,
-    riskLevel: record.riskLevel,
-    prompt: record.prompt,
-    payload: record.payload,
-    status: record.status,
-    actorType: record.actorType,
-    actorRef: record.actorRef,
-    requestedAt: record.requestedAt,
-    expiresAt: record.expiresAt,
-    confirmedAt: record.confirmedAt,
-    consumedAt: record.consumedAt,
-  };
-}
-
-function mapMemoryArchive(record: MemoryArchiveRecord): MemoryArchive {
-  return {
-    id: record.id,
-    sessionId: record.sessionId,
-    archiveDate: record.archiveDate,
-    sourceGlobalSeqStart: record.sourceGlobalSeqStart,
-    sourceGlobalSeqEnd: record.sourceGlobalSeqEnd,
-    summary: record.summary,
-    updatedAt: record.updatedAt,
-  };
-}
-
 function parseFrontmatterDescription(content: string): string | null {
   const match = content.match(/^---\n([\s\S]*?)\n---/);
   if (!match) return null;
@@ -1666,13 +825,24 @@ function parseFrontmatterDescription(content: string): string | null {
   return null;
 }
 
-function readChannelConfig(db: SqliteDatabase, channelId: string): Record<string, string> {
-  const rows = db
-    .prepare("SELECT key, value FROM channel_configs WHERE channel_id = ?")
-    .all(channelId) as Array<{ key: string; value: string }>;
-  const config: Record<string, string> = {};
-  for (const row of rows) {
-    config[row.key] = row.value;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function handleScheduleStatusUpdate(
+  c: any,
+  db: SqliteDatabase,
+  action: "pause" | "resume" | "cancel",
+) {
+  const scheduleId = c.req.param("scheduleId");
+  const schedulerService = new SchedulerService(db);
+
+  try {
+    const schedule =
+      action === "pause" ? schedulerService.pause(scheduleId) :
+      action === "resume" ? schedulerService.resume(scheduleId) :
+      schedulerService.cancel(scheduleId);
+
+    return c.json({ schedule: mapSchedule(schedule!) });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : `Schedule ${action} failed`;
+    return c.json({ error: message }, 500);
   }
-  return config;
 }
