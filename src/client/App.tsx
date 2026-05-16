@@ -30,7 +30,6 @@ export default function App() {
   const prevMsgCountRef = useRef(0);
   const streamingTextRef = useRef("");
   const isStreamingRef = useRef(false);
-  const mutationStartMsgCountRef = useRef(0);
   const [streamingText, setStreamingText] = useState("");
 
   const { data: skillsData } = useQuery({
@@ -129,9 +128,10 @@ export default function App() {
     }
   }, [streamingText]);
 
-  // Clear streaming text when NEW agent message arrives in workspace
+  // Clear streaming text when agent response appears as the latest message
   useEffect(() => {
-    if (isStreamingRef.current && messages.length > mutationStartMsgCountRef.current && messages.some(m => m.role === "agent")) {
+    const last = messages[messages.length - 1];
+    if (isStreamingRef.current && last?.role === "agent") {
       streamingTextRef.current = "";
       setStreamingText("");
       isStreamingRef.current = false;
@@ -160,7 +160,6 @@ export default function App() {
       streamingTextRef.current = "";
       setStreamingText("");
       isStreamingRef.current = true;
-      mutationStartMsgCountRef.current = messages.length;
       let sid = sessionId;
       if (!sid) {
         const res = await createSession({ agentType });
@@ -293,7 +292,7 @@ export default function App() {
               </div>
             );
           })}
-          {(sendMessage.isPending || streamingText) && !(messages.length > mutationStartMsgCountRef.current && messages.some(m => m.role === "agent")) && (
+          {(sendMessage.isPending || streamingText) && messages[messages.length - 1]?.role !== "agent" && (
             <div className="chat-bubble agent">
               <div className="chat-bubble-header"><strong>Agent</strong></div>
               {streamingText ? (
