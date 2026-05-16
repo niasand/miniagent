@@ -78,7 +78,8 @@ export type RuntimeEventDraft = {
     | "tool_call"
     | "tool_call_update"
     | "acp_session_started"
-    | "acp_cancel_requested";
+    | "acp_cancel_requested"
+    | "usage_report";
   payload: JsonObject;
 };
 

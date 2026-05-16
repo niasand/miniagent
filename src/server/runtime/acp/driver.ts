@@ -316,6 +316,16 @@ class AcpRunHandle implements RuntimeRunHandle {
       sessionId: this.externalSessionId,
       prompt: toPromptBlocks(input.input),
     });
+
+    // Capture token usage from ACP response if available
+    const usage = extractUsage(result);
+    if (usage) {
+      this.callbacks.emit({
+        type: "usage_report",
+        payload: { protocol: "acp", ...usage, receivedAt: nowIso() },
+      });
+    }
+
     const stopReason = readString(result, "stopReason") ?? "end_turn";
     if (stopReason === "cancelled") {
       this.callbacks.updateProtocolState?.({ cancelState: "acknowledged" });
@@ -581,4 +591,31 @@ function canExecute(command: string): boolean {
 
 function quoteShell(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function extractUsage(result: JsonValue): { inputTokens?: number; outputTokens?: number } | null {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return null;
+  const obj = result as Record<string, unknown>;
+
+  // Try common ACP usage field shapes
+  const usage = obj.usage ?? obj.tokenUsage ?? obj.tokens;
+  if (usage && typeof usage === "object" && !Array.isArray(usage)) {
+    const u = usage as Record<string, unknown>;
+    return {
+      inputTokens: typeof u.inputTokens === "number" ? u.inputTokens : typeof u.input_tokens === "number" ? u.input_tokens : undefined,
+      outputTokens: typeof u.outputTokens === "number" ? u.outputTokens : typeof u.output_tokens === "number" ? u.output_tokens : undefined,
+    };
+  }
+
+  // Try top-level fields
+  const input = obj.inputTokens ?? obj.input_tokens;
+  const output = obj.outputTokens ?? obj.output_tokens;
+  if (typeof input === "number" || typeof output === "number") {
+    return {
+      inputTokens: typeof input === "number" ? input : undefined,
+      outputTokens: typeof output === "number" ? output : undefined,
+    };
+  }
+
+  return null;
 }

@@ -45,6 +45,8 @@ type ActiveRun = {
   handle: RuntimeRunHandle;
   batcher: TextDeltaBatcher;
   cancelTimer: ReturnType<typeof setTimeout> | null;
+  inputTokens: number;
+  outputTokens: number;
 };
 
 export class RuntimeSupervisor {
@@ -155,6 +157,8 @@ export class RuntimeSupervisor {
         handle,
         batcher: new TextDeltaBatcher(this.maxTextDeltaBytes),
         cancelTimer: null,
+        inputTokens: 0,
+        outputTokens: 0,
       };
       this.activeRuns.set(run.id, activeRun);
 
@@ -235,6 +239,12 @@ export class RuntimeSupervisor {
     if (!activeRun) return;
 
     for (const draft of drafts) {
+      if (draft.type === "usage_report") {
+        const payload = draft.payload as Record<string, unknown>;
+        if (typeof payload.inputTokens === "number") activeRun.inputTokens += payload.inputTokens;
+        if (typeof payload.outputTokens === "number") activeRun.outputTokens += payload.outputTokens;
+        continue;
+      }
       if (draft.type === "text_delta") {
         this.appendDrafts(activeRun, activeRun.batcher.push(draft));
       } else {
@@ -342,7 +352,11 @@ export class RuntimeSupervisor {
       ? ((new Date(run.stoppedAt).getTime() - new Date(run.startedAt).getTime()) / 1000).toFixed(1)
       : null;
 
-    const stats = durationSec ? `\n\n⏱ ${durationSec}s` : "";
+    const statsParts: string[] = [];
+    if (durationSec) statsParts.push(`⏱ ${durationSec}s`);
+    if (activeRun.inputTokens > 0) statsParts.push(`📥 ${activeRun.inputTokens.toLocaleString()} in`);
+    if (activeRun.outputTokens > 0) statsParts.push(`📤 ${activeRun.outputTokens.toLocaleString()} out`);
+    const stats = statsParts.length > 0 ? `\n\n${statsParts.join(" · ")}` : "";
     const fullText = text + stats;
 
     const channelType = session.channelType as OutboxChannel;
