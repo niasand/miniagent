@@ -30,6 +30,7 @@ export default function App() {
   const prevMsgCountRef = useRef(0);
   const streamingTextRef = useRef("");
   const isStreamingRef = useRef(false);
+  const mutationStartMsgCountRef = useRef(0);
   const [streamingText, setStreamingText] = useState("");
 
   const { data: skillsData } = useQuery({
@@ -77,24 +78,22 @@ export default function App() {
 
     const connect = (afterSeq: number) => {
       if (stopped) return;
-      const url = `/api/events/stream?sessionId=${encodeURIComponent(sessionId)}&afterGlobalSeq=${afterSeq}&limit=100`;
-      console.log("[SSE] connecting", url);
-      source = new EventSource(url);
+      source = new EventSource(
+        `/api/events/stream?sessionId=${encodeURIComponent(sessionId)}&afterGlobalSeq=${afterSeq}&limit=100`,
+      );
       const refresh = () => queryClient.invalidateQueries({ queryKey: ["workspace", sessionId] });
       for (const type of ["message_created", "run_started", "run_completed", "run_output_appended"]) {
         source.addEventListener(type, refresh);
       }
       source.addEventListener("text_delta", (e: MessageEvent) => {
-        console.log("[SSE] text_delta received, isStreaming:", isStreamingRef.current);
         if (isStreamingRef.current) {
           try {
             const evt = JSON.parse(e.data);
-            console.log("[SSE] text_delta payload:", evt.payload?.text);
             if (evt.payload?.text) {
               streamingTextRef.current += evt.payload.text;
               setStreamingText(streamingTextRef.current);
             }
-          } catch (err) { console.error("[SSE] parse error", err); }
+          } catch { /* ignore parse errors */ }
         }
         refresh();
       });
@@ -104,8 +103,7 @@ export default function App() {
       source.addEventListener("text_delta", (e: MessageEvent) => {
         try { lastGlobalSeqRef.current = JSON.parse(e.data).globalSeq ?? lastGlobalSeqRef.current; } catch {}
       });
-      source.onerror = (err) => {
-        console.log("[SSE] error, readyState:", source?.readyState, err);
+      source.onerror = () => {
         source?.close();
         if (!stopped) setTimeout(() => connect(lastGlobalSeqRef.current), 3_000);
       };
@@ -131,9 +129,9 @@ export default function App() {
     }
   }, [streamingText]);
 
-  // Clear streaming text when agent message arrives in workspace
+  // Clear streaming text when NEW agent message arrives in workspace
   useEffect(() => {
-    if (isStreamingRef.current && messages.some(m => m.role === "agent")) {
+    if (isStreamingRef.current && messages.length > mutationStartMsgCountRef.current && messages.some(m => m.role === "agent")) {
       streamingTextRef.current = "";
       setStreamingText("");
       isStreamingRef.current = false;
@@ -159,31 +157,23 @@ export default function App() {
 
   const sendMessage = useMutation({
     mutationFn: async (text: string) => {
-      console.log("[sendMessage] start", { text, sessionId, isStreaming: isStreamingRef.current });
       streamingTextRef.current = "";
       setStreamingText("");
       isStreamingRef.current = true;
+      mutationStartMsgCountRef.current = messages.length;
       let sid = sessionId;
       if (!sid) {
-        console.log("[sendMessage] creating session...");
         const res = await createSession({ agentType });
         sid = res.sessionId;
-        console.log("[sendMessage] session created", sid);
         setSessionId(sid);
       }
-      console.log("[sendMessage] sending message to", sid);
       const result = await sendSessionMessage(sid, { text });
-      console.log("[sendMessage] message sent", result);
       return { ...result, sessionId: sid };
     },
     onSuccess: (data) => {
-      console.log("[sendMessage] onSuccess", data);
       setDraft("");
       setSessionId(data.sessionId);
       queryClient.invalidateQueries({ queryKey: ["workspace", data.sessionId] });
-    },
-    onError: (error) => {
-      console.error("[sendMessage] onError", error);
     },
   });
 
@@ -303,7 +293,7 @@ export default function App() {
               </div>
             );
           })}
-          {(sendMessage.isPending || streamingText) && !messages.some(m => m.role === "agent") && (
+          {(sendMessage.isPending || streamingText) && !(messages.length > mutationStartMsgCountRef.current && messages.some(m => m.role === "agent")) && (
             <div className="chat-bubble agent">
               <div className="chat-bubble-header"><strong>Agent</strong></div>
               {streamingText ? (
