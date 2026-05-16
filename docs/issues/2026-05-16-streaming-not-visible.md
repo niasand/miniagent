@@ -32,6 +32,23 @@ Console log proof: `[SSE] text_delta received, isStreaming: false`
 
 **Fix:** `src/client/App.tsx` — changed to check `messages[messages.length - 1]?.role === "agent"` (last message only), so stale messages don't interfere.
 
+### 4. Last-message check still hit by stale agent messages (second pass)
+
+Fix #3 was insufficient. The `messages` effect still cleared `isStreamingRef` prematurely because:
+
+1. User sends message → `isStreamingRef = true`
+2. Workspace poll refetches → old run's agent message is still the last message
+3. Effect fires: `last?.role === "agent"` → `isStreamingRef = false`
+4. SSE `text_delta` arrives → `isStreaming: false` → no streaming text accumulated
+
+Console log proof (same symptom): `[SSE] text_delta received, isStreaming: false`
+
+**Fix:** `src/client/App.tsx` — three changes:
+
+- Added `activeRunIdRef` to track the current run ID from SSE `run_started` events. The `text_delta` handler now gates on `activeRunIdRef.current` (truthy = active run) instead of `isStreamingRef`.
+- Added `streamStartCountRef` to capture `messages.length` at send time. The `messages` effect only clears streaming when `messages.length > streamStartCountRef.current` (genuinely new message) AND the last message is from the agent.
+- Added SSE `run_completed` handler to clear `activeRunIdRef` when the active run finishes.
+
 ## Additional fixes in this session
 
 - **Vite proxy SSE buffering:** Configured proxy to not buffer SSE events (`src/vite.config.ts`)
