@@ -2,7 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Search, SendHorizontal, Settings, Sparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
+import "highlight.js/styles/atom-one-dark.css";
 import { fetchChannels, saveChannelConfig, type ChannelInfo } from "./api/channels.js";
 import { createSession } from "./api/sessions.js";
 import { fetchSkills } from "./api/skills.js";
@@ -321,7 +323,7 @@ export default function App() {
                   {msg.time && <span className="chat-time">{msg.time}</span>}
                 </div>
                 <div className="prose-mini">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.markdown}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{msg.markdown}</ReactMarkdown>
                 </div>
               </div>
             );
@@ -331,7 +333,7 @@ export default function App() {
               <div className="chat-bubble-header"><strong>Agent</strong></div>
               {streamingText ? (
                 <div className="prose-mini">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamingText}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{streamingText}</ReactMarkdown>
                 </div>
               ) : (
                 <div className="chat-typing">
