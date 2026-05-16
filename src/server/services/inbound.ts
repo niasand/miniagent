@@ -63,6 +63,46 @@ export class InboundService {
     return this.handleUserMessage(msg, trimmed);
   }
 
+  receiveOnSession(
+    session: SessionRecord,
+    msg: { messageId: string; userId: string; text: string },
+  ): InboundResult {
+    const trimmed = msg.text.trim();
+    if (!trimmed) return { action: "ignored", session };
+
+    const sourceType = this.channelType as SourceType;
+    const dedupeKey = `${this.channelType}:${msg.messageId}`;
+    const actorType = `${this.channelType}_user` as AuditActorType;
+
+    const { task, event } = this.sessions.createTask({
+      sessionId: session.id,
+      sourceType,
+      sourceRef: msg.userId,
+      type: "message",
+      input: { text: trimmed, userId: msg.userId },
+      dedupeKey,
+    });
+
+    this.messages.insert({
+      sessionId: session.id,
+      role: "user",
+      content: trimmed,
+      metadata: { userId: msg.userId, sourceType, messageId: msg.messageId },
+      sourceEventId: event.id,
+    });
+
+    this.auditLogs.insert({
+      actorType,
+      actorRef: msg.userId,
+      action: "message_received",
+      resourceType: "task",
+      resourceId: task.id,
+      payload: { text: trimmed.slice(0, 200), channelType: this.channelType },
+    });
+
+    return { action: "message", session, taskId: task.id };
+  }
+
   private handleUserMessage(msg: InboundMessage, text: string): InboundResult {
     const session = this.getOrCreateSession(msg);
     this.options.workspacePolicy.assertAllowed(session.workspacePath);

@@ -227,14 +227,23 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
     }
 
     try {
+      const sessionId = c.req.param("sessionId");
+      const existingSession = sessionStore.getSession(sessionId);
+
       const inbound = new InboundService(db, "web", { workspacePolicy });
-      const result = inbound.receiveMessage({
-        messageId: `web:${Date.now()}`,
-        chatId: c.req.param("sessionId"),
-        userId: (typeof actorRef === "string" ? actorRef : "web_user"),
-        text,
-        chatType: "private",
-      });
+      const result = existingSession
+        ? inbound.receiveOnSession(existingSession, {
+            messageId: `web:${Date.now()}`,
+            userId: (typeof actorRef === "string" ? actorRef : "web_user"),
+            text,
+          })
+        : inbound.receiveMessage({
+            messageId: `web:${Date.now()}`,
+            chatId: sessionId,
+            userId: (typeof actorRef === "string" ? actorRef : "web_user"),
+            text,
+            chatType: "private",
+          });
 
       // Auto-start run for queued task
       if (result.taskId) {
