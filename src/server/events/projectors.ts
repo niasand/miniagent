@@ -312,12 +312,171 @@ export class QQOutboxProjector {
   }
 }
 
+export class TelegramOutboxProjector {
+  private readonly outbox: OutboxStore;
+  private readonly projectors: ProjectorStore;
+
+  constructor(private readonly db: SqliteDatabase) {
+    this.outbox = new OutboxStore(db);
+    this.projectors = new ProjectorStore(db);
+  }
+
+  projectNextBatch(options: ProjectorOptions = {}): ProjectBatchResult {
+    return this.projectors.projectBatch("telegram_outbox", { limit: options.batchSize ?? DEFAULT_BATCH_SIZE }, (events) => {
+      for (const event of events) {
+        if (event.type.startsWith("delivery_")) continue;
+        if (event.type !== "run_finished" && event.type !== "run_failed") continue;
+
+        const targetRef = this.readTargetRef(event.sessionId);
+        if (!targetRef) continue;
+
+        const text = event.type === "run_finished"
+          ? collectRunText(this.db, event.runId)
+          : runStatusText(event);
+        if (!text) continue;
+
+        const stats = readRunStatsLine(this.db, event.runId);
+        const chunks = splitChunks(text, stats, TELEGRAM_MAX_CONTENT);
+
+        for (let i = 0; i < chunks.length; i++) {
+          const suffix = chunks.length > 1 ? `:${i + 1}` : "";
+          this.outbox.enqueueOnce({
+            sessionId: event.sessionId,
+            eventId: event.id,
+            eventGlobalSeq: event.globalSeq,
+            channelType: "telegram",
+            targetRef,
+            kind: "telegram_markdown",
+            viewModel: { type: "telegram_markdown", text: chunks[i] },
+            idempotencyKey: `telegram:${targetRef}:${event.id}${suffix}`,
+          });
+        }
+      }
+    });
+  }
+
+  private readTargetRef(sessionId: string): string | null {
+    const row = this.db
+      .prepare("SELECT channel_ref FROM sessions WHERE id = ? AND channel_type = 'telegram'")
+      .get(sessionId) as { channel_ref: string | null } | undefined;
+    return row?.channel_ref ?? null;
+  }
+}
+
+export class DiscordOutboxProjector {
+  private readonly outbox: OutboxStore;
+  private readonly projectors: ProjectorStore;
+
+  constructor(private readonly db: SqliteDatabase) {
+    this.outbox = new OutboxStore(db);
+    this.projectors = new ProjectorStore(db);
+  }
+
+  projectNextBatch(options: ProjectorOptions = {}): ProjectBatchResult {
+    return this.projectors.projectBatch("discord_outbox", { limit: options.batchSize ?? DEFAULT_BATCH_SIZE }, (events) => {
+      for (const event of events) {
+        if (event.type.startsWith("delivery_")) continue;
+        if (event.type !== "run_finished" && event.type !== "run_failed") continue;
+
+        const targetRef = this.readTargetRef(event.sessionId);
+        if (!targetRef) continue;
+
+        const text = event.type === "run_finished"
+          ? collectRunText(this.db, event.runId)
+          : runStatusText(event);
+        if (!text) continue;
+
+        const stats = readRunStatsLine(this.db, event.runId);
+        const chunks = splitChunks(text, stats, DISCORD_MAX_CONTENT);
+
+        for (let i = 0; i < chunks.length; i++) {
+          const suffix = chunks.length > 1 ? `:${i + 1}` : "";
+          this.outbox.enqueueOnce({
+            sessionId: event.sessionId,
+            eventId: event.id,
+            eventGlobalSeq: event.globalSeq,
+            channelType: "discord",
+            targetRef,
+            kind: "discord_markdown",
+            viewModel: { type: "discord_markdown", text: chunks[i] },
+            idempotencyKey: `discord:${targetRef}:${event.id}${suffix}`,
+          });
+        }
+      }
+    });
+  }
+
+  private readTargetRef(sessionId: string): string | null {
+    const row = this.db
+      .prepare("SELECT channel_ref FROM sessions WHERE id = ? AND channel_type = 'discord'")
+      .get(sessionId) as { channel_ref: string | null } | undefined;
+    return row?.channel_ref ?? null;
+  }
+}
+
+// ── Shared helpers for channel outbox projectors ──
+
 const QQ_MAX_CONTENT = 2048;
 const FEISHU_MAX_CONTENT = 4096;
+const TELEGRAM_MAX_CONTENT = 4096;
+const DISCORD_MAX_CONTENT = 2000;
+
+function collectRunText(db: SqliteDatabase, runId: string | null): string {
+  if (!runId) return "";
+  const rows = db
+    .prepare("SELECT payload_json FROM events WHERE run_id = ? AND type = 'text_delta' ORDER BY global_seq")
+    .all(runId) as Array<{ payload_json: string }>;
+  return rows.map((r) => {
+    const p = parseJson(r.payload_json) as Record<string, unknown>;
+    return typeof p.text === "string" ? p.text : "";
+  }).join("");
+}
+
+function readRunStatsLine(db: SqliteDatabase, runId: string | null): string | null {
+  if (!runId) return null;
+  const run = db
+    .prepare("SELECT started_at, stopped_at FROM agent_runs WHERE id = ?")
+    .get(runId) as { started_at: string | null; stopped_at: string | null } | undefined;
+  if (!run?.started_at) return null;
+
+  const durationMs = run.stopped_at
+    ? new Date(run.stopped_at).getTime() - new Date(run.started_at).getTime()
+    : null;
+  const duration = durationMs !== null ? `${(durationMs / 1000).toFixed(1)}s` : "";
+
+  let tokens = "";
+  const usageRow = db
+    .prepare("SELECT payload_json FROM events WHERE run_id = ? AND type = 'usage_update' ORDER BY global_seq DESC LIMIT 1")
+    .get(runId) as { payload_json: string } | undefined;
+  if (usageRow) {
+    const p = parseJson(usageRow.payload_json) as Record<string, unknown>;
+    if (typeof p.used === "number" && typeof p.size === "number") {
+      tokens = `in ${p.used.toLocaleString()} / out ${p.size.toLocaleString()}`;
+    }
+  }
+  if (!tokens) {
+    const budgetRow = db
+      .prepare("SELECT cb.token_estimate FROM context_budgets cb JOIN agent_runs ar ON ar.session_id = cb.session_id WHERE ar.id = ?")
+      .get(runId) as { token_estimate: number } | undefined;
+    if (budgetRow) tokens = `~${budgetRow.token_estimate.toLocaleString()} tokens`;
+  }
+
+  const parts: string[] = [];
+  if (duration) parts.push(duration);
+  if (tokens) parts.push(tokens);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+function runStatusText(event: StoredEvent): string {
+  const payload = readObject(event.payload);
+  const status = typeof payload.status === "string" ? payload.status : "failed";
+  const reason = typeof payload.stopReason === "string" && payload.stopReason ? `: ${payload.stopReason}` : "";
+  return `Run ${status}${reason}`;
+}
 
 function splitChunks(text: string, statsLine: string | null, maxLen: number): string[] {
   const footer = statsLine ? `\n\n---\n⏱ ${statsLine}` : "";
-  const full = text + statsLine;
+  const full = text + footer;
 
   if (full.length <= maxLen) return [full];
 

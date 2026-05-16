@@ -106,7 +106,7 @@ export class TelegramPollingClient {
               chatId: msg.chat.id,
               chatType: msg.chat.type as "private" | "group" | "supergroup",
               userId: msg.from.id,
-              text: msg.text,
+              text: msg.text as string,
             });
           }
         }

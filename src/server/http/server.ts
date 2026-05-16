@@ -3,6 +3,8 @@ import { migrate, openDatabase } from "../db/migrate.js";
 import { startProjectorLoop } from "../events/projector-runner.js";
 import { createApp } from "./app.js";
 import { QQGatewayService } from "../channels/qq-gateway-service.js";
+import { TelegramGatewayService } from "../channels/telegram-gateway-service.js";
+import { DiscordGatewayService } from "../channels/discord-gateway-service.js";
 import { WorkspacePolicy } from "../security/workspace-policy.js";
 import { RuntimeAdapterRegistry } from "../runtime/registry.js";
 import { RuntimeSupervisor } from "../runtime/runtime-supervisor.js";
@@ -33,9 +35,15 @@ const runtimeSupervisor = new RuntimeSupervisor({
 
 const app = createApp(db, { workspacePolicy, runtimeRegistry, runtimeSupervisor });
 
-// QQ gateway runs as background service alongside HTTP
+// Channel gateways run as background services alongside HTTP
 const qqGateway = new QQGatewayService(db, workspacePolicy, runtimeSupervisor);
 qqGateway.start();
+
+const telegramGateway = new TelegramGatewayService(db, workspacePolicy, runtimeSupervisor);
+telegramGateway.start();
+
+const discordGateway = new DiscordGatewayService(db, workspacePolicy, runtimeSupervisor);
+discordGateway.start();
 
 serve({
   fetch: app.fetch,

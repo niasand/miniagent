@@ -89,7 +89,7 @@ export type CreateSessionInput = {
   title: string;
   agentType: string;
   workspacePath: string;
-  channelType?: "web" | "feishu" | "qq" | null;
+  channelType?: "web" | "feishu" | "qq" | "telegram" | "discord" | null;
   channelRef?: string | null;
   defaultParams?: JsonValue;
   sourceSessionId?: string | null;

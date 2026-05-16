@@ -7,6 +7,8 @@ import { ContextBudgetService } from "../context/context-budget-service.js";
 import { ContextRestartService } from "../context/context-restart-service.js";
 import { FeishuInboundService } from "../channels/feishu-inbound-service.js";
 import { QQInboundService } from "../channels/qq-inbound-service.js";
+import { TelegramInboundService } from "../channels/telegram-inbound-service.js";
+import { DiscordInboundService } from "../channels/discord-inbound-service.js";
 import { EventStore } from "../events/event-store.js";
 import { projectReadModelsUntilIdle } from "../events/projector-runner.js";
 import { HandoffService } from "../handoff/handoff-service.js";
@@ -1183,6 +1185,72 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
       const message = error instanceof Error ? error.message : "QQ message failed";
       if (message.startsWith("Session not found")) return context.json({ error: message }, 404);
       if (message.includes("agent type") || message.includes("required") || message.includes("archived")) return context.json({ error: message }, 400);
+      if (error instanceof WorkspacePolicyError || message.startsWith("Workspace denied")) return context.json({ error: message }, 403);
+      return context.json({ error: message }, 500);
+    }
+  });
+
+  app.post("/api/telegram/messages", async (context) => {
+    const db = context.get("db");
+    const body = await readJsonBody(context.req);
+    if (!body.ok) return context.json({ error: body.error }, 400);
+
+    const messageId = body.value.messageId;
+    if (typeof messageId !== "string" || !messageId.trim()) return context.json({ error: "messageId is required" }, 400);
+    const chatId = body.value.chatId;
+    if (typeof chatId !== "string" || !chatId.trim()) return context.json({ error: "chatId is required" }, 400);
+    const text = body.value.text;
+    if (typeof text !== "string" || !text.trim()) return context.json({ error: "text is required" }, 400);
+    const chatType = body.value.chatType;
+    if (chatType !== "private" && chatType !== "group" && chatType !== "supergroup") return context.json({ error: "chatType must be 'private', 'group', or 'supergroup'" }, 400);
+
+    try {
+      const result = new TelegramInboundService(db, undefined, { workspacePolicy }).receiveMessage({
+        messageId, chatId, text, chatType,
+        userId: typeof body.value.userId === "string" ? body.value.userId : null,
+        sessionId: typeof body.value.sessionId === "string" ? body.value.sessionId : null,
+        workspacePath: typeof body.value.workspacePath === "string" ? body.value.workspacePath : defaultWorkspacePath,
+      });
+      if (result.action === "message") new ContextBudgetService(db).evaluate({ sessionId: result.session.id });
+      projectReadModelsUntilIdle(db);
+      const sid = result.action === "message" || result.action === "agent_new" ? result.session.id : null;
+      return context.json({ result, workspace: createWorkspaceSnapshot(db, { selectedSessionId: sid }) }, 201);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Telegram message failed";
+      if (message.startsWith("Session not found")) return context.json({ error: message }, 404);
+      if (error instanceof WorkspacePolicyError || message.startsWith("Workspace denied")) return context.json({ error: message }, 403);
+      return context.json({ error: message }, 500);
+    }
+  });
+
+  app.post("/api/discord/messages", async (context) => {
+    const db = context.get("db");
+    const body = await readJsonBody(context.req);
+    if (!body.ok) return context.json({ error: body.error }, 400);
+
+    const messageId = body.value.messageId;
+    if (typeof messageId !== "string" || !messageId.trim()) return context.json({ error: "messageId is required" }, 400);
+    const chatId = body.value.chatId;
+    if (typeof chatId !== "string" || !chatId.trim()) return context.json({ error: "chatId is required" }, 400);
+    const text = body.value.text;
+    if (typeof text !== "string" || !text.trim()) return context.json({ error: "text is required" }, 400);
+    const isDm = body.value.isDm;
+    if (typeof isDm !== "boolean") return context.json({ error: "isDm must be a boolean" }, 400);
+
+    try {
+      const result = new DiscordInboundService(db, undefined, { workspacePolicy }).receiveMessage({
+        messageId, chatId, text, isDm,
+        userId: typeof body.value.userId === "string" ? body.value.userId : null,
+        sessionId: typeof body.value.sessionId === "string" ? body.value.sessionId : null,
+        workspacePath: typeof body.value.workspacePath === "string" ? body.value.workspacePath : defaultWorkspacePath,
+      });
+      if (result.action === "message") new ContextBudgetService(db).evaluate({ sessionId: result.session.id });
+      projectReadModelsUntilIdle(db);
+      const sid = result.action === "message" || result.action === "agent_new" ? result.session.id : null;
+      return context.json({ result, workspace: createWorkspaceSnapshot(db, { selectedSessionId: sid }) }, 201);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Discord message failed";
+      if (message.startsWith("Session not found")) return context.json({ error: message }, 404);
       if (error instanceof WorkspacePolicyError || message.startsWith("Workspace denied")) return context.json({ error: message }, 403);
       return context.json({ error: message }, 500);
     }
