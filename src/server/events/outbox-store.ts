@@ -4,8 +4,8 @@ import { stringifyJson, type JsonValue } from "../../shared/json.js";
 import { addMillisecondsIso, nowIso } from "../../shared/time.js";
 import { redactJson } from "../security/redaction.js";
 
-export type OutboxChannel = "web" | "feishu" | "qq";
-export type OutboxKind = "web_event" | "feishu_card_create" | "feishu_card_update" | "feishu_text" | "qq_markdown";
+export type OutboxChannel = "web" | "feishu" | "qq" | "telegram" | "discord";
+export type OutboxKind = "web_event" | "feishu_card_create" | "feishu_card_update" | "feishu_text" | "qq_markdown" | "telegram_markdown" | "discord_markdown";
 export type OutboxStatus = "pending" | "sending" | "sent" | "failed" | "dead";
 
 export type EnqueueOutboxInput = {

@@ -4,7 +4,7 @@ import { parseJson, stringifyJson, type JsonValue } from "../../shared/json.js";
 import { nowIso } from "../../shared/time.js";
 import { redactJson } from "../security/redaction.js";
 
-export type AuditActorType = "web_user" | "feishu_user" | "qq_user" | "system" | "agent";
+export type AuditActorType = "web_user" | "feishu_user" | "qq_user" | "telegram_user" | "discord_user" | "system" | "agent";
 
 export type AuditLogRecord = {
   id: string;

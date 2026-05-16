@@ -267,7 +267,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
 
     const actorType = body.value.actorType ?? "web_user";
     if (!isAuditActorType(actorType)) {
-      return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, system, agent" }, 400);
+      return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, telegram_user, discord_user, system, agent" }, 400);
     }
 
     const actorRef = body.value.actorRef;
@@ -640,7 +640,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
 
     const actorType = body.value.actorType ?? "web_user";
     if (!isAuditActorType(actorType)) {
-      return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, system, agent" }, 400);
+      return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, telegram_user, discord_user, system, agent" }, 400);
     }
 
     const actorRef = body.value.actorRef;
@@ -728,7 +728,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
 
     const actorType = body.value.actorType ?? "web_user";
     if (!isAuditActorType(actorType)) {
-      return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, system, agent" }, 400);
+      return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, telegram_user, discord_user, system, agent" }, 400);
     }
 
     const actorRef = body.value.actorRef;
@@ -930,7 +930,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
 
     const actorType = body.value.actorType ?? "web_user";
     if (!isAuditActorType(actorType)) {
-      return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, system, agent" }, 400);
+      return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, telegram_user, discord_user, system, agent" }, 400);
     }
 
     const actorRef = body.value.actorRef;
@@ -1250,7 +1250,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
 
     const actorType = body.value.actorType ?? "web_user";
     if (!isAuditActorType(actorType)) {
-      return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, system, agent" }, 400);
+      return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, telegram_user, discord_user, system, agent" }, 400);
     }
 
     const actorRef = body.value.actorRef;
@@ -1319,7 +1319,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions = {}) {
 
     const actorType = body.value.actorType ?? "web_user";
     if (!isAuditActorType(actorType)) {
-      return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, system, agent" }, 400);
+      return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, telegram_user, discord_user, system, agent" }, 400);
     }
 
     const actorRef = body.value.actorRef;
@@ -1413,7 +1413,7 @@ function readRuntimeKind(value: JsonObject): "cli" | "acp" | null {
 }
 
 function isAuditActorType(value: unknown): value is AuditActorType {
-  return value === "web_user" || value === "feishu_user" || value === "qq_user" || value === "system" || value === "agent";
+  return value === "web_user" || value === "feishu_user" || value === "qq_user" || value === "telegram_user" || value === "discord_user" || value === "system" || value === "agent";
 }
 
 function isOperationRiskLevel(value: unknown): value is "medium" | "high" | "critical" {
@@ -1451,7 +1451,7 @@ async function updateScheduleStatus(
 
   const actorType = body.value.actorType ?? "web_user";
   if (!isAuditActorType(actorType)) {
-    return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, system, agent" }, 400);
+    return context.json({ error: "actorType must be one of: web_user, feishu_user, qq_user, telegram_user, discord_user, system, agent" }, 400);
   }
 
   const actorRef = body.value.actorRef;
