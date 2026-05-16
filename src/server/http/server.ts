@@ -5,6 +5,7 @@ import { createApp } from "./app.js";
 import { QQGatewayService } from "../channels/qq-gateway-service.js";
 import { TelegramGatewayService } from "../channels/telegram-gateway-service.js";
 import { DiscordGatewayService } from "../channels/discord-gateway-service.js";
+import { FeishuGatewayService } from "../channels/feishu-gateway-service.js";
 import { WorkspacePolicy } from "../security/workspace-policy.js";
 import { RuntimeAdapterRegistry } from "../runtime/registry.js";
 import { RuntimeSupervisor } from "../runtime/runtime-supervisor.js";
@@ -44,6 +45,9 @@ telegramGateway.start();
 
 const discordGateway = new DiscordGatewayService(db, workspacePolicy, runtimeSupervisor);
 discordGateway.start();
+
+const feishuGateway = new FeishuGatewayService(db, workspacePolicy, runtimeSupervisor);
+feishuGateway.start();
 
 serve({
   fetch: app.fetch,
