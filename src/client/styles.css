@@ -509,6 +509,8 @@ button { cursor: pointer; }
   font-size: 14px;
   outline: none;
   line-height: 1.5;
+  overflow-wrap: break-word;
+  word-break: break-all;
 }
 
 .chat-input:focus {
@@ -572,7 +574,7 @@ button { cursor: pointer; }
 
 /* ── Prose (markdown) ── */
 
-.prose-mini { color: var(--color-foreground); font-size: 14px; line-height: 1.58; }
+.prose-mini { color: var(--color-foreground); font-size: 14px; line-height: 1.58; overflow-wrap: break-word; word-break: break-all; }
 .prose-mini p { margin: 0 0 10px; }
 .prose-mini p:last-child { margin-bottom: 0; }
 
