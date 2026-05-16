@@ -1,0 +1,317 @@
+import type { SqliteDatabase } from "../db/migrate.js";
+import { SessionStore, type AgentRunRecord } from "../stores/session-store.js";
+import { EventStore, type StoredEvent } from "../stores/event-store.js";
+import { PermissionRequestStore } from "../stores/permission-request-store.js";
+import { RuntimeAdapterRegistry } from "./registry.js";
+import { TextDeltaBatcher } from "./text-delta-batcher.js";
+import { ChildProcessFactory, type RuntimeProcess, type RuntimeProcessExit } from "./process.js";
+import type {
+  RuntimeSessionDriver, RuntimeRunHandle, RuntimeInput,
+  RuntimeEventDraft, RuntimeDriverCallbacks, RuntimeErrorClassification,
+  RuntimeLaunchContext, RuntimePermissionResponseInput,
+} from "./types.js";
+import { nowIso } from "../../shared/time.js";
+import { createId } from "../../shared/ids.js";
+import type { JsonObject, JsonValue } from "../../shared/json.js";
+
+export type RuntimeSupervisorOptions = {
+  db: SqliteDatabase;
+  adapterRegistry?: RuntimeAdapterRegistry;
+  processFactory?: typeof ChildProcessFactory;
+  maxTextDeltaBytes?: number;
+  cancelKillTimeoutMs?: number;
+};
+
+export type StartRuntimeTaskInput = {
+  sessionId: string;
+  taskId: string;
+  agentType?: string;
+};
+
+export type StartedRuntimeRun = {
+  run: AgentRunRecord;
+  pid: number | null;
+};
+
+type ActiveRun = {
+  runId: string;
+  sessionId: string;
+  taskId: string;
+  driver: RuntimeSessionDriver;
+  process: RuntimeProcess;
+  handle: RuntimeRunHandle;
+  batcher: TextDeltaBatcher;
+  cancelTimer: ReturnType<typeof setTimeout> | null;
+};
+
+export class RuntimeSupervisor {
+  private readonly db: SqliteDatabase;
+  private readonly sessions: SessionStore;
+  private readonly events: EventStore;
+  private readonly permissionRequests: PermissionRequestStore;
+  private readonly adapterRegistry: RuntimeAdapterRegistry;
+  private readonly processFactory: InstanceType<typeof ChildProcessFactory>;
+  private readonly maxTextDeltaBytes: number;
+  private readonly cancelKillTimeoutMs: number;
+  private readonly activeRuns = new Map<string, ActiveRun>();
+
+  constructor(options: RuntimeSupervisorOptions) {
+    this.db = options.db;
+    this.events = new EventStore(options.db);
+    this.sessions = new SessionStore(options.db, this.events);
+    this.permissionRequests = new PermissionRequestStore(options.db);
+    this.adapterRegistry = options.adapterRegistry ?? new RuntimeAdapterRegistry();
+    this.processFactory = new (options.processFactory ?? ChildProcessFactory)();
+    this.maxTextDeltaBytes = options.maxTextDeltaBytes ?? 4_096;
+    this.cancelKillTimeoutMs = options.cancelKillTimeoutMs ?? 5_000;
+  }
+
+  startTask(input: StartRuntimeTaskInput): StartedRuntimeRun {
+    const session = this.sessions.getSession(input.sessionId);
+    if (!session) throw new Error(`Session not found: ${input.sessionId}`);
+
+    const task = this.sessions.getTask(input.taskId);
+    if (!task) throw new Error(`Task not found: ${input.taskId}`);
+
+    const agentType = input.agentType ?? session.agentType;
+    const runtimeKind = "acp";
+    const driver = this.adapterRegistry.get(agentType, runtimeKind);
+    const runId = createId("run");
+
+    const externalSessionId = this.sessions.getLatestExternalSessionId(session.id, agentType);
+    const taskInput = resolveResumeInput(task.input, task.type, externalSessionId);
+
+    const launchContext: RuntimeLaunchContext = {
+      session: {
+        id: session.id,
+        agentType: session.agentType,
+        workspacePath: session.workspacePath,
+        defaultParams: asJsonObject(session.defaultParams),
+      },
+      task: {
+        id: task.id,
+        type: task.type,
+        input: taskInput,
+      },
+      run: { id: runId },
+    };
+
+    const launchSpec = driver.createLaunchSpec(launchContext);
+
+    const { run } = this.sessions.startRun({
+      id: runId,
+      sessionId: session.id,
+      taskId: task.id,
+      agentType,
+      launchSpec,
+      runtimeKind: "acp",
+    });
+
+    try {
+      const process = this.processFactory.spawn(launchSpec);
+      this.sessions.updateRunProcess(run.id, process.pid);
+
+      const earlyDrafts: RuntimeEventDraft[] = [];
+      let earlyExit: RuntimeProcessExit | null = null;
+
+      const handle = driver.start(
+        { ...launchContext, launchSpec },
+        process,
+        {
+          emit: (drafts) => {
+            const normalized = Array.isArray(drafts) ? drafts : [drafts];
+            if (this.activeRuns.has(run.id)) {
+              this.handleDrafts(run.id, normalized);
+              return;
+            }
+            earlyDrafts.push(...normalized);
+          },
+          exit: (exit) => {
+            if (this.activeRuns.has(run.id)) {
+              this.handleExit(run.id, exit);
+              return;
+            }
+            earlyExit = exit;
+          },
+          updateProtocolState: (state) => {
+            this.sessions.updateRunProtocolState(run.id, state);
+          },
+        },
+      );
+
+      const activeRun: ActiveRun = {
+        runId: run.id,
+        sessionId: session.id,
+        taskId: task.id,
+        driver,
+        process,
+        handle,
+        batcher: new TextDeltaBatcher(this.maxTextDeltaBytes),
+        cancelTimer: null,
+      };
+      this.activeRuns.set(run.id, activeRun);
+
+      if (earlyDrafts.length > 0) this.handleDrafts(run.id, earlyDrafts);
+      if (earlyExit) this.handleExit(run.id, earlyExit);
+
+      return { run: this.sessions.getRun(run.id) ?? run, pid: process.pid };
+    } catch (error) {
+      const classification = driver.classifyError(error);
+      this.sessions.finishRun({
+        runId: run.id,
+        status: mapClassificationToRunStatus(classification),
+        errorClass: classification.class,
+        stopReason: classification.message,
+      });
+      throw error;
+    }
+  }
+
+  sendInput(runId: string, input: RuntimeInput): void {
+    const activeRun = this.requireActiveRun(runId);
+    activeRun.handle.sendInput(input);
+  }
+
+  respondPermission(runId: string, input: RuntimePermissionResponseInput): void {
+    const activeRun = this.requireActiveRun(runId);
+    if (!activeRun.handle.respondPermission) {
+      throw new Error(`Runtime run does not support permission responses: ${runId}`);
+    }
+    activeRun.handle.respondPermission(input);
+    this.permissionRequests.respond(
+      runId,
+      input.requestId,
+      input.outcome === "cancelled" ? "cancelled" : "approved",
+      input.optionId,
+    );
+    const run = this.sessions.getRun(runId);
+    if (run?.status === "waiting_permission") {
+      this.sessions.setRunStatus(runId, "running");
+    }
+  }
+
+  stop(runId: string): void {
+    const activeRun = this.requireActiveRun(runId);
+    this.sessions.setRunStatus(runId, "stopping");
+    activeRun.handle.stop();
+
+    if (!this.activeRuns.has(runId)) return;
+    if (this.cancelKillTimeoutMs <= 0 || activeRun.cancelTimer) return;
+
+    activeRun.cancelTimer = setTimeout(() => {
+      const current = this.activeRuns.get(runId);
+      if (!current) return;
+      this.sessions.updateRunProtocolState(runId, { cancelState: "killed" });
+      current.process.stop("SIGTERM");
+    }, this.cancelKillTimeoutMs);
+  }
+
+  flush(runId: string): void {
+    const activeRun = this.requireActiveRun(runId);
+    this.appendDrafts(activeRun, activeRun.handle.flush());
+    this.appendDrafts(activeRun, activeRun.batcher.flush());
+  }
+
+  // ── Private ──
+
+  private handleDrafts(runId: string, drafts: RuntimeEventDraft[]): void {
+    const activeRun = this.activeRuns.get(runId);
+    if (!activeRun) return;
+
+    for (const draft of drafts) {
+      if (draft.type === "text_delta") {
+        this.appendDrafts(activeRun, activeRun.batcher.push(draft));
+      } else {
+        this.appendDrafts(activeRun, activeRun.batcher.flush());
+        this.appendDrafts(activeRun, [draft]);
+      }
+    }
+  }
+
+  private handleExit(runId: string, exit: RuntimeProcessExit): void {
+    const activeRun = this.activeRuns.get(runId);
+    if (!activeRun) return;
+
+    this.appendDrafts(activeRun, activeRun.batcher.flush());
+
+    if (activeRun.cancelTimer) clearTimeout(activeRun.cancelTimer);
+
+    const classification = classifyExit(activeRun.driver, exit);
+    this.sessions.finishRun({
+      runId,
+      status: exit.exitCode === 0 && !exit.signal ? "succeeded" : mapClassificationToRunStatus(classification),
+      exitCode: exit.exitCode,
+      stopReason: exit.message ?? exit.signal,
+      errorClass: exit.exitCode === 0 && !exit.signal ? null : classification.class,
+      stoppedAt: exit.exitedAt,
+    });
+
+    this.activeRuns.delete(runId);
+  }
+
+  private appendDrafts(activeRun: ActiveRun, drafts: RuntimeEventDraft[]): void {
+    for (const draft of drafts) {
+      const event = this.events.append({
+        sessionId: activeRun.sessionId,
+        runId: activeRun.runId,
+        taskId: activeRun.taskId,
+        type: draft.type,
+        payload: draft.payload,
+        createdAt: nowIso(),
+      });
+      if (draft.type === "permission_prompt") {
+        const acpRequestId = typeof draft.payload.requestId === "string" ? draft.payload.requestId : null;
+        this.permissionRequests.upsert({
+          sessionId: activeRun.sessionId,
+          runId: activeRun.runId,
+          taskId: activeRun.taskId,
+          eventId: event.id,
+          acpRequestId,
+          prompt: typeof draft.payload.prompt === "string"
+            ? draft.payload.prompt
+            : typeof draft.payload.text === "string"
+              ? draft.payload.text
+              : "Agent requests permission",
+          options: draft.payload.options,
+          toolCall: draft.payload.toolCall,
+        });
+        this.sessions.setRunStatus(activeRun.runId, "waiting_permission");
+      }
+    }
+  }
+
+  private requireActiveRun(runId: string): ActiveRun {
+    const activeRun = this.activeRuns.get(runId);
+    if (!activeRun) throw new Error(`Runtime run is not active: ${runId}`);
+    return activeRun;
+  }
+}
+
+// ── Helpers ──
+
+function classifyExit(driver: RuntimeSessionDriver, exit: RuntimeProcessExit): RuntimeErrorClassification {
+  if (exit.exitCode === 0 && !exit.signal) {
+    return { class: "unknown", message: "Process exited successfully", retryable: false };
+  }
+  return driver.classifyError(exit.message ?? exit.signal ?? `Process exited with code ${exit.exitCode}`);
+}
+
+function mapClassificationToRunStatus(
+  classification: RuntimeErrorClassification,
+): Extract<AgentRunRecord["status"], "failed" | "cancelled" | "overflowed"> {
+  if (classification.class === "context_overflow") return "overflowed";
+  if (classification.class === "user_cancelled") return "cancelled";
+  return "failed";
+}
+
+function asJsonObject(value: JsonValue): JsonObject {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  return {};
+}
+
+function resolveResumeInput(input: JsonValue, taskType: string, externalSessionId: string | null): JsonValue {
+  if (taskType !== "resume" || !externalSessionId) return input;
+  const object = asJsonObject(input);
+  if (typeof object.externalSessionId === "string") return input;
+  return { ...object, externalSessionId };
+}
