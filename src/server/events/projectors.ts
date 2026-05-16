@@ -77,22 +77,39 @@ export class FeishuOutboxProjector {
         if (event.type.startsWith("delivery_")) {
           continue;
         }
+        if (event.type !== "run_finished" && event.type !== "run_failed") {
+          continue;
+        }
 
         const targetRef = this.readFeishuTargetRef(event.sessionId);
         if (!targetRef) {
           continue;
         }
 
-        this.outbox.enqueueOnce({
-          sessionId: event.sessionId,
-          eventId: event.id,
-          eventGlobalSeq: event.globalSeq,
-          channelType: "feishu",
-          targetRef,
-          kind: event.type === "task_created" ? "feishu_card_create" : "feishu_card_update",
-          viewModel: mapEventToFeishuCard(event),
-          idempotencyKey: `feishu:${targetRef}:${event.id}`,
-        });
+        const text = event.type === "run_finished"
+          ? this.collectRunText(event.runId)
+          : this.runStatusText(event);
+
+        if (!text) {
+          continue;
+        }
+
+        const stats = this.readRunStats(event.runId);
+        const chunks = splitChunks(text, stats, FEISHU_MAX_CONTENT);
+
+        for (let i = 0; i < chunks.length; i++) {
+          const suffix = chunks.length > 1 ? `:${i + 1}` : "";
+          this.outbox.enqueueOnce({
+            sessionId: event.sessionId,
+            eventId: event.id,
+            eventGlobalSeq: event.globalSeq,
+            channelType: "feishu",
+            targetRef,
+            kind: "feishu_text",
+            viewModel: { type: "feishu_text", text: chunks[i] },
+            idempotencyKey: `feishu:${targetRef}:${event.id}${suffix}`,
+          });
+        }
       }
     });
   }
@@ -103,6 +120,69 @@ export class FeishuOutboxProjector {
       .get(sessionId) as { channel_ref: string | null } | undefined;
 
     return row?.channel_ref ?? null;
+  }
+
+  private collectRunText(runId: string | null): string {
+    if (!runId) return "";
+    const rows = this.db
+      .prepare(
+        "SELECT payload_json FROM events WHERE run_id = ? AND type = 'text_delta' ORDER BY global_seq",
+      )
+      .all(runId) as Array<{ payload_json: string }>;
+    return rows.map((r) => {
+      const p = parseJson(r.payload_json) as Record<string, unknown>;
+      return typeof p.text === "string" ? p.text : "";
+    }).join("");
+  }
+
+  private runStatusText(event: StoredEvent): string {
+    const payload = readObject(event.payload);
+    const status = typeof payload.status === "string" ? payload.status : "failed";
+    const reason = typeof payload.stopReason === "string" && payload.stopReason ? `: ${payload.stopReason}` : "";
+    return `Run ${status}${reason}`;
+  }
+
+  private readRunStats(runId: string | null): string | null {
+    if (!runId) return null;
+    const run = this.db
+      .prepare("SELECT started_at, stopped_at FROM agent_runs WHERE id = ?")
+      .get(runId) as { started_at: string | null; stopped_at: string | null } | undefined;
+    if (!run?.started_at) return null;
+
+    const durationMs = run.stopped_at
+      ? new Date(run.stopped_at).getTime() - new Date(run.started_at).getTime()
+      : null;
+    const duration = durationMs !== null ? `${(durationMs / 1000).toFixed(1)}s` : "";
+
+    let tokens = "";
+    const usageRow = this.db
+      .prepare(
+        "SELECT payload_json FROM events WHERE run_id = ? AND type = 'usage_update' ORDER BY global_seq DESC LIMIT 1",
+      )
+      .get(runId) as { payload_json: string } | undefined;
+
+    if (usageRow) {
+      const p = parseJson(usageRow.payload_json) as Record<string, unknown>;
+      if (typeof p.used === "number" && typeof p.size === "number") {
+        tokens = `in ${p.used.toLocaleString()} / out ${p.size.toLocaleString()}`;
+      }
+    }
+
+    if (!tokens) {
+      const budgetRow = this.db
+        .prepare(
+          "SELECT cb.token_estimate FROM context_budgets cb JOIN agent_runs ar ON ar.session_id = cb.session_id WHERE ar.id = ?",
+        )
+        .get(runId) as { token_estimate: number } | undefined;
+      if (budgetRow) {
+        tokens = `~${budgetRow.token_estimate.toLocaleString()} tokens`;
+      }
+    }
+
+    const parts: string[] = [];
+    if (duration) parts.push(duration);
+    if (tokens) parts.push(tokens);
+    return parts.length > 0 ? parts.join(" · ") : null;
   }
 }
 
@@ -140,7 +220,7 @@ export class QQOutboxProjector {
         }
 
         const stats = this.readRunStats(event.runId);
-        const chunks = splitQQChunks(text, stats);
+        const chunks = splitChunks(text, stats, QQ_MAX_CONTENT);
 
         for (let i = 0; i < chunks.length; i++) {
           const suffix = chunks.length > 1 ? `:${i + 1}` : "";
@@ -233,16 +313,17 @@ export class QQOutboxProjector {
 }
 
 const QQ_MAX_CONTENT = 2048;
+const FEISHU_MAX_CONTENT = 4096;
 
-function splitQQChunks(text: string, statsLine: string | null): string[] {
+function splitChunks(text: string, statsLine: string | null, maxLen: number): string[] {
   const footer = statsLine ? `\n\n---\n⏱ ${statsLine}` : "";
   const full = text + statsLine;
 
-  if (full.length <= QQ_MAX_CONTENT) return [full];
+  if (full.length <= maxLen) return [full];
 
   const chunks: string[] = [];
   let remaining = text;
-  const limit = QQ_MAX_CONTENT - 50;
+  const limit = maxLen - 50;
 
   while (remaining.length > 0) {
     if (remaining.length <= limit) {
@@ -313,43 +394,6 @@ function mapEventToWebViewModel(event: StoredEvent): JsonObject {
       createdAt: event.createdAt,
     },
   };
-}
-
-function mapEventToFeishuCard(event: StoredEvent): JsonObject {
-  return {
-    type: "feishu_card",
-    title: "MiniAgent",
-    event: {
-      globalSeq: event.globalSeq,
-      id: event.id,
-      sessionId: event.sessionId,
-      runId: event.runId,
-      taskId: event.taskId,
-      type: event.type,
-      payload: event.payload,
-      createdAt: event.createdAt,
-    },
-  };
-}
-
-function mapEventToQQMarkdown(event: StoredEvent): JsonObject {
-  return {
-    type: "qq_markdown",
-    eventType: event.type,
-    text: extractMarkdownText(event),
-  };
-}
-
-function extractMarkdownText(event: StoredEvent): string {
-  const payload = readObject(event.payload);
-  if (typeof payload.text === "string") {
-    return payload.text;
-  }
-  if (event.type === "task_created") {
-    const input = readObject(payload.input);
-    return readText(input);
-  }
-  return "";
 }
 
 function readRunStatusMessage(event: StoredEvent): string {
