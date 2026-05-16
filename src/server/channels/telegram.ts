@@ -10,12 +10,26 @@ export class TelegramChannel implements ChannelAdapter {
   private abortController: AbortController | null = null;
   private offset = 0;
   private attempt = 0;
+  private botUsername: string | null = null;
 
   constructor(private readonly config: Record<string, string>) {}
 
   async start(onMessage: (msg: ChannelMessage) => void): Promise<void> {
     this.stopped = false;
+    await this.fetchBotInfo();
     this.poll(onMessage);
+  }
+
+  private async fetchBotInfo(): Promise<void> {
+    try {
+      const url = `${API_BASE}/bot${this.config.bot_token}/getMe`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json() as { result?: { username?: string } };
+        this.botUsername = data.result?.username ?? null;
+        console.log(`[Telegram] Bot username: @${this.botUsername}`);
+      }
+    } catch { /* ignore */ }
   }
 
   stop(): void {
@@ -31,7 +45,7 @@ export class TelegramChannel implements ChannelAdapter {
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: chatId, text: content, parse_mode: "MarkdownV2" }),
+        body: JSON.stringify({ chat_id: chatId, text: content }),
       });
 
       if (res.ok) {
@@ -66,12 +80,16 @@ export class TelegramChannel implements ChannelAdapter {
           if (update.message?.text) {
             const msg = update.message;
             const text = msg.text as string;
+            const isMentioned = this.botUsername
+              ? text.includes(`@${this.botUsername}`)
+              : false;
             onMessage({
               messageId: String(update.update_id),
               chatId: `${msg.chat.type}:${msg.chat.id}`,
               userId: String(msg.from.id),
               text,
               chatType: msg.chat.type === "private" ? "private" : "group",
+              isMentioned,
             });
           }
         }

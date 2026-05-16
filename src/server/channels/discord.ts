@@ -12,6 +12,7 @@ export class DiscordChannel implements ChannelAdapter {
   private seq: number | null = null;
   private sessionId: string | null = null;
   private resumeUrl: string | null = null;
+  private botUserId: string | null = null;
 
   constructor(private readonly config: Record<string, string>) {}
 
@@ -94,16 +95,24 @@ export class DiscordChannel implements ChannelAdapter {
       case 11: // HEARTBEAT_ACK
         break;
       case 0: { // DISPATCH
+        if (payload.t === "READY") {
+          const d = payload.d as { user?: { id?: string } };
+          this.botUserId = d.user?.id ?? null;
+          console.log(`[Discord] Ready, botUserId=${this.botUserId}`);
+          return;
+        }
         if (payload.t === "MESSAGE_CREATE") {
           const msg = payload.d as DiscordMessage;
           // Ignore own messages
           if (msg.author.bot) return;
+          const isMentioned = this.botUserId ? msg.content.includes(`<@${this.botUserId}>`) : false;
           onMessage({
             messageId: msg.id,
             chatId: `channel:${msg.channel_id}`,
             userId: msg.author.id,
             text: msg.content,
             chatType: msg.guild_id ? "group" : "private",
+            isMentioned,
           });
         }
         break;

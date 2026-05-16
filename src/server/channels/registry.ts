@@ -6,8 +6,12 @@ import { TelegramChannel } from "./telegram.js";
 import { DiscordChannel } from "./discord.js";
 import { QQChannel } from "./qq.js";
 
+const DEDUP_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const DEDUP_MAX_SIZE = 1000;
+
 export class ChannelRegistry {
   private adapters = new Map<string, ChannelAdapter>();
+  private dedupCache = new Map<string, number>(); // messageId → timestamp
 
   constructor(
     private readonly db: SqliteDatabase,
@@ -27,12 +31,38 @@ export class ChannelRegistry {
 
       this.adapters.set(ch.channelId, adapter);
       try {
-        await adapter.start((msg) => this.onMessage(ch.channelId, msg));
+        await adapter.start((msg) => this.handleChannelMessage(ch.channelId, msg));
         console.log(`[Channel] ${ch.channelId} started`);
       } catch (err) {
         console.error(`[Channel] ${ch.channelId} failed to start:`, err instanceof Error ? err.message : err);
       }
     }
+  }
+
+  private handleChannelMessage(channelType: string, msg: ChannelMessage): void {
+    const dedupKey = `${channelType}:${msg.messageId}`;
+    const now = Date.now();
+
+    // Evict stale entries if cache is full
+    if (this.dedupCache.size >= DEDUP_MAX_SIZE) {
+      for (const [key, ts] of this.dedupCache) {
+        if (now - ts > DEDUP_TTL_MS) this.dedupCache.delete(key);
+      }
+      // If still full after eviction, clear oldest half
+      if (this.dedupCache.size >= DEDUP_MAX_SIZE) {
+        const entries = [...this.dedupCache.entries()].sort((a, b) => a[1] - b[1]);
+        for (let i = 0; i < entries.length / 2; i++) this.dedupCache.delete(entries[i][0]);
+      }
+    }
+
+    // Skip duplicate
+    if (this.dedupCache.has(dedupKey)) {
+      console.log(`[Channel] Dedup: skipping duplicate message ${dedupKey}`);
+      return;
+    }
+
+    this.dedupCache.set(dedupKey, now);
+    this.onMessage(channelType, msg);
   }
 
   stopAll(): void {

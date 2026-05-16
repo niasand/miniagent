@@ -4,6 +4,7 @@ export type ChannelMessage = {
   userId: string;
   text: string;
   chatType: "private" | "group";
+  isMentioned?: boolean; // true if bot was @mentioned in group chat
 };
 
 export type SendResult = {

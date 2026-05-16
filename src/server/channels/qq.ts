@@ -160,6 +160,7 @@ export class QQChannel implements ChannelAdapter {
         userId: author?.user_openid ?? author?.member_openid ?? "",
         text: this.stripAtBot(data.content as string ?? ""),
         chatType: "group",
+        isMentioned: true, // QQ gateway only sends group messages when bot is @mentioned
       });
       return;
     }

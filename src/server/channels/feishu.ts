@@ -6,6 +6,10 @@ export class FeishuChannel implements ChannelAdapter {
   private wsClient: lark.WSClient | null = null;
   private larkClient: lark.Client | null = null;
   private connected = false;
+  private lastMessageAt = 0;
+  private backfillTimer: ReturnType<typeof setInterval> | null = null;
+  private onMessageRef: ((msg: ChannelMessage) => void) | null = null;
+  private knownChats = new Set<string>(); // track chats we've seen
 
   constructor(private readonly config: Record<string, string>) {}
 
@@ -13,6 +17,7 @@ export class FeishuChannel implements ChannelAdapter {
     const { app_id, app_secret } = this.config;
     if (!app_id || !app_secret) throw new Error("Feishu not configured");
 
+    this.onMessageRef = onMessage;
     this.larkClient = new lark.Client({
       appId: app_id,
       appSecret: app_secret,
@@ -45,11 +50,15 @@ export class FeishuChannel implements ChannelAdapter {
             text = `[${messageType}]`;
           }
 
+          const isMentioned = /@_user_\d+/.test(text);
           text = text.replace(/@_user_\d+\s*/g, "").trim();
           if (!text) return;
 
           const chatType = message.chat_type === "p2p" ? "private" : "group";
           const chatRef = chatType === "private" ? `p2p:${chatId}` : `group:${chatId}`;
+
+          this.lastMessageAt = Date.now();
+          this.knownChats.add(chatRef);
 
           onMessage({
             messageId: message.message_id,
@@ -57,6 +66,7 @@ export class FeishuChannel implements ChannelAdapter {
             userId: senderOpenId,
             text,
             chatType,
+            isMentioned,
           });
         } catch (err) {
           console.error("[Feishu] Message handling failed:", err);
@@ -72,9 +82,84 @@ export class FeishuChannel implements ChannelAdapter {
 
     await this.wsClient.start({ eventDispatcher });
     this.connected = true;
+
+    // Start periodic backfill check (every 5 minutes)
+    this.backfillTimer = setInterval(() => {
+      this.checkBackfill().catch((err) => {
+        console.error("[Feishu] Backfill check failed:", err instanceof Error ? err.message : err);
+      });
+    }, 5 * 60 * 1000);
+  }
+
+  private async checkBackfill(): Promise<void> {
+    if (!this.larkClient || !this.onMessageRef) return;
+
+    const now = Date.now();
+    // If we haven't seen a message in 5+ minutes, we might have missed some during disconnect
+    if (now - this.lastMessageAt < 5 * 60 * 1000) return;
+
+    const since = new Date(this.lastMessageAt);
+    console.log(`[Feishu] Backfill check: fetching messages since ${since.toISOString()}`);
+
+    for (const chatRef of this.knownChats) {
+      try {
+        const chatId = chatRef.replace(/^(p2p|group):/, "");
+        const res = await this.larkClient.im.v1.message.list({
+          params: {
+            container_id_type: "chat",
+            container_id: chatId,
+            start_time: String(Math.floor(this.lastMessageAt / 1000)),
+            end_time: String(Math.floor(now / 1000)),
+            page_size: 50,
+          },
+        });
+
+        const items = res.data?.items ?? [];
+        for (const item of items) {
+          if (!item.message_id || !item.body?.content) continue;
+          // Skip bot's own messages
+          if (item.sender?.sender_type === "app") continue;
+
+          const content = item.body.content;
+          let text = "";
+          try {
+            const parsed = JSON.parse(content);
+            text = parsed.text ?? content;
+          } catch {
+            text = content;
+          }
+
+          const isMentioned = /@_user_\d+/.test(text);
+          text = text.replace(/@_user_\d+\s*/g, "").trim();
+          if (!text) continue;
+
+          const chatType = chatRef.startsWith("p2p:") ? "private" : "group";
+          this.onMessageRef({
+            messageId: item.message_id,
+            chatId: chatRef,
+            userId: (item.sender as any)?.sender_id?.open_id ?? (item.sender as any)?.id ?? "",
+            text,
+            chatType,
+            isMentioned,
+          });
+        }
+
+        if (items.length > 0) {
+          console.log(`[Feishu] Backfill: recovered ${items.length} messages from ${chatRef}`);
+        }
+      } catch (err) {
+        console.error(`[Feishu] Backfill failed for ${chatRef}:`, err instanceof Error ? err.message : err);
+      }
+    }
+
+    this.lastMessageAt = now;
   }
 
   stop(): void {
+    if (this.backfillTimer) {
+      clearInterval(this.backfillTimer);
+      this.backfillTimer = null;
+    }
     if (this.wsClient) {
       try { (this.wsClient as any).close(); } catch { /* ignore */ }
     }

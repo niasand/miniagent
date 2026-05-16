@@ -17,6 +17,7 @@ export type InboundMessage = {
   userId: string;
   text: string;
   chatType: "private" | "group";
+  isMentioned?: boolean;
 };
 
 export type InboundResult = {
@@ -53,6 +54,11 @@ export class InboundService {
   receiveMessage(msg: InboundMessage): InboundResult {
     const trimmed = msg.text.trim();
     if (!trimmed) return { action: "ignored", session: this.getOrCreateSession(msg) };
+
+    // Group mention gating: skip group messages that don't mention the bot
+    if (msg.chatType === "group" && msg.isMentioned === false) {
+      return { action: "ignored", session: this.getOrCreateSession(msg) };
+    }
 
     // Check slash commands
     const slashCmd = SLASH_COMMANDS.find((cmd) => trimmed.toLowerCase().startsWith(cmd));
