@@ -232,7 +232,6 @@ button { cursor: pointer; }
 .channel-status--disconnected { color: #ef4444; }
 
 .channel-config-btn {
-  margin-top: 8px;
   height: 30px;
   border: 1px solid var(--color-border);
   border-radius: 6px;
