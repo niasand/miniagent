@@ -1,6 +1,7 @@
 import type { SqliteDatabase } from "../db/migrate.js";
 import { SessionStore, type AgentRunRecord } from "../stores/session-store.js";
 import { EventStore } from "../stores/event-store.js";
+import { MessageStore } from "../stores/message-store.js";
 import { PermissionRequestStore } from "../stores/permission-request-store.js";
 import { OutboxStore, type OutboxChannel, type OutboxKind } from "../stores/outbox-store.js";
 import { RuntimeAdapterRegistry } from "./registry.js";
@@ -50,6 +51,7 @@ export class RuntimeSupervisor {
   private readonly db: SqliteDatabase;
   private readonly sessions: SessionStore;
   private readonly events: EventStore;
+  private readonly messages: MessageStore;
   private readonly permissionRequests: PermissionRequestStore;
   private readonly adapterRegistry: RuntimeAdapterRegistry;
   private readonly processFactory: InstanceType<typeof ChildProcessFactory>;
@@ -62,6 +64,7 @@ export class RuntimeSupervisor {
     this.db = options.db;
     this.events = new EventStore(options.db);
     this.sessions = new SessionStore(options.db, this.events);
+    this.messages = new MessageStore(options.db);
     this.permissionRequests = new PermissionRequestStore(options.db);
     this.adapterRegistry = options.adapterRegistry ?? new RuntimeAdapterRegistry();
     this.processFactory = new (options.processFactory ?? ChildProcessFactory)();
@@ -259,6 +262,7 @@ export class RuntimeSupervisor {
       stoppedAt: exit.exitedAt,
     });
 
+    this.persistAgentMessage(activeRun);
     this.enqueueRunReply(activeRun);
 
     this.activeRuns.delete(runId);
@@ -299,6 +303,23 @@ export class RuntimeSupervisor {
     const activeRun = this.activeRuns.get(runId);
     if (!activeRun) throw new Error(`Runtime run is not active: ${runId}`);
     return activeRun;
+  }
+
+  private persistAgentMessage(activeRun: ActiveRun): void {
+    const deltas = this.events.listByRun(activeRun.runId, "text_delta");
+    const text = deltas
+      .map((e) => typeof (e.payload as Record<string, unknown>)?.text === "string" ? (e.payload as Record<string, unknown>).text as string : "")
+      .join("");
+    if (!text) return;
+
+    const lastDelta = deltas[deltas.length - 1];
+    this.messages.insert({
+      sessionId: activeRun.sessionId,
+      runId: activeRun.runId,
+      role: "assistant",
+      content: text,
+      sourceEventId: lastDelta.id,
+    });
   }
 
   private enqueueRunReply(activeRun: ActiveRun): void {
