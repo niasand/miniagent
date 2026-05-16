@@ -49,6 +49,18 @@ Console log proof (same symptom): `[SSE] text_delta received, isStreaming: false
 - Added `streamStartCountRef` to capture `messages.length` at send time. The `messages` effect only clears streaming when `messages.length > streamStartCountRef.current` (genuinely new message) AND the last message is from the agent.
 - Added SSE `run_completed` handler to clear `activeRunIdRef` when the active run finishes.
 
+### 5. Typing dots disappear between mutation settle and first text_delta
+
+`sendMessage.isPending` becomes `false` when the mutation completes, but the first `text_delta` event hasn't arrived yet. The typing indicator condition `(sendMessage.isPending || streamingText)` evaluates to `false` during this gap, hiding the "..." dots.
+
+**Fix:** `src/client/App.tsx` — added `isStreaming` as a React state variable (not just a ref) so it drives re-renders. The typing indicator condition becomes `(sendMessage.isPending || isStreaming || streamingText)`. `isStreaming` is set to `true` on send and cleared when the agent message appears.
+
+### 6. Session lost on page refresh
+
+`sessionId` was stored only in React component state (`useState`), which is cleared on page refresh. The user lost all conversation context after refreshing.
+
+**Fix:** `src/client/App.tsx` — initialize `sessionId` from `localStorage.getItem("sessionId")` and persist with `localStorage.setItem()` on session creation.
+
 ## Additional fixes in this session
 
 - **Vite proxy SSE buffering:** Configured proxy to not buffer SSE events (`src/vite.config.ts`)

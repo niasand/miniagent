@@ -19,7 +19,7 @@ type DrawerTab = "skills" | "channels";
 export default function App() {
   const queryClient = useQueryClient();
   const [agentType, setAgentType] = useState<AgentType>("claude");
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(() => localStorage.getItem("sessionId"));
   const [draft, setDraft] = useState("");
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -30,6 +30,7 @@ export default function App() {
   const prevMsgCountRef = useRef(0);
   const streamingTextRef = useRef("");
   const isStreamingRef = useRef(false);
+  const [isStreaming, setIsStreaming] = useState(false);
   const activeRunIdRef = useRef<string | null>(null);
   const [streamingText, setStreamingText] = useState("");
 
@@ -154,6 +155,7 @@ export default function App() {
         streamingTextRef.current = "";
         setStreamingText("");
         isStreamingRef.current = false;
+        setIsStreaming(false);
       }
     }
   }, [messages]);
@@ -180,6 +182,7 @@ export default function App() {
       streamingTextRef.current = "";
       setStreamingText("");
       isStreamingRef.current = true;
+      setIsStreaming(true);
       activeRunIdRef.current = null;
       streamStartCountRef.current = messages.length;
       let sid = sessionId;
@@ -194,6 +197,7 @@ export default function App() {
     onSuccess: (data) => {
       setDraft("");
       setSessionId(data.sessionId);
+      localStorage.setItem("sessionId", data.sessionId);
       queryClient.invalidateQueries({ queryKey: ["workspace", data.sessionId] });
     },
   });
@@ -314,7 +318,7 @@ export default function App() {
               </div>
             );
           })}
-          {(sendMessage.isPending || streamingText) && messages[messages.length - 1]?.role !== "agent" && (
+          {(sendMessage.isPending || isStreaming || streamingText) && messages[messages.length - 1]?.role !== "agent" && (
             <div className="chat-bubble agent">
               <div className="chat-bubble-header"><strong>Agent</strong></div>
               {streamingText ? (
