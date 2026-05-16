@@ -57,15 +57,18 @@ export class WorkspaceService {
       // Get run stats from latest run
       const latestRun = this.getLatestRun(sessionId);
       if (latestRun) {
-        const events = this.events.listAfterGlobalSeq({ sessionId, afterGlobalSeq: (latestRun.firstGlobalSeq ?? 0) - 1, limit: 500 });
+        const firstSeq = latestRun.first_global_seq ?? latestRun.firstGlobalSeq ?? 0;
+        const events = this.events.listAfterGlobalSeq({ sessionId, afterGlobalSeq: firstSeq - 1, limit: 500 });
         const textDeltas = events.filter((e) => e.type === "text_delta");
         let tokensUsed = 0;
         for (const e of textDeltas) {
           const p = e.payload as { tokenEstimate?: number };
           tokensUsed += p.tokenEstimate ?? 0;
         }
-        const duration = latestRun.startedAt && latestRun.stoppedAt
-          ? Math.round((new Date(latestRun.stoppedAt).getTime() - new Date(latestRun.startedAt).getTime()) / 1000)
+        const startedAt = latestRun.started_at ?? latestRun.startedAt;
+        const stoppedAt = latestRun.stopped_at ?? latestRun.stoppedAt;
+        const duration = startedAt && stoppedAt
+          ? Math.round((new Date(stoppedAt).getTime() - new Date(startedAt).getTime()) / 1000)
           : null;
         runStats = { durationSeconds: duration, tokensUsed: tokensUsed || null, tokensTotal: null };
       }

@@ -305,7 +305,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Handoff failed";
-      if (message.startsWith("Session not found")) {
+      if (message.includes("not found")) {
         return c.json({ error: message }, 404);
       }
       return c.json({ error: message }, 500);

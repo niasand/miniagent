@@ -1,7 +1,7 @@
 import type { JsonValue } from "../../shared/json.js";
 
 const REDACTED = "[REDACTED]";
-const SECRET_KEY_PATTERN = /(api[_-]?key|authorization|bearer|credential|password|secret|token)/i;
+const SECRET_KEY_PATTERN = /^(api[_-]?key|auth|authorization|bearer|client[_-]?secret|cookie|credential|passwd|password|secret|access[_-]?token|refresh[_-]?token|id[_-]?token|private[_-]?key|api[_-]?secret)$/i;
 const SECRET_VALUE_PATTERNS = [
   /\bsk-[A-Za-z0-9_-]{12,}\b/g,
   /\bBearer\s+[A-Za-z0-9._~+/=-]{12,}\b/gi,

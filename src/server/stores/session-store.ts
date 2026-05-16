@@ -201,7 +201,7 @@ export class SessionStore {
 
   listSessions(limit = 50): SessionRecord[] {
     const rows = this.db.prepare(
-      "SELECT * FROM sessions WHERE status != 'archived' ORDER BY updated_at DESC LIMIT ?"
+      "SELECT * FROM sessions WHERE status != 'archived' ORDER BY updated_at DESC, id DESC LIMIT ?"
     ).all(limit) as SessionRow[];
     return rows.map(mapSessionRow);
   }

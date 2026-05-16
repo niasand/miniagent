@@ -7,6 +7,7 @@ import { MessageStore } from "../src/server/stores/message-store.js";
 import { OutboxStore } from "../src/server/stores/outbox-store.js";
 import { ScheduleStore } from "../src/server/stores/schedule-store.js";
 import { PermissionRequestStore } from "../src/server/stores/permission-request-store.js";
+import { ContextBudgetStore } from "../src/server/stores/context-budget-store.js";
 
 let db: SqliteDatabase;
 let events: EventStore;
@@ -306,5 +307,23 @@ describe("PermissionRequestStore", () => {
 
     const list = permissions.listByRun("run_1");
     expect(list).toHaveLength(1);
+  });
+});
+
+describe("ContextBudgetStore", () => {
+  it("upserts and retrieves budget", () => {
+    const budgets = new ContextBudgetStore(db);
+
+    // Check before upsert
+    const before = budgets.get("ses_test1");
+    expect(before).toBeNull();
+
+    const result = budgets.upsert("ses_test1", { budgetTokens: 100_000, tokenEstimate: 30_000 });
+    expect(result).not.toBeNull();
+
+    const fetched = budgets.get("ses_test1");
+    expect(fetched).not.toBeNull();
+    expect(fetched!.budgetTokens).toBe(100_000);
+    expect(fetched!.tokenEstimate).toBe(30_000);
   });
 });

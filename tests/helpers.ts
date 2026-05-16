@@ -3,6 +3,8 @@ import { migrate, defaultMigrationsDir, type SqliteDatabase } from "../src/serve
 
 export function createTestDb(): SqliteDatabase {
   const db = new Database(":memory:");
+  db.pragma("foreign_keys = ON");
+  // Skip WAL for :memory: (not supported, causes silent issues)
   migrate(db, defaultMigrationsDir);
   return db;
 }
