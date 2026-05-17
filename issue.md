@@ -105,3 +105,39 @@ useEffect(() => {
 调试时在 curl 层面验证了 API 和代理都正常，但问题其实在浏览器端——前端代码用 `enabled` guard 完全跳过了请求。应该先看浏览器 Network 面板确认请求是否发出，而不是只在服务端排查。
 
 另外，前端 snapshot 类型只声明了 `{ messages, runStats }`，忽略了服务端返回的 `selectedSessionId` 和 `sessions` 列表。类型定义不完整导致 fallback 机制无法被前端利用。
+
+---
+
+# ISSUE-003: 无法查看和切换历史 session 消息
+
+**Status:** Fixed
+**Date:** 2026-05-17
+**Component:** `src/client/App.tsx` — session list UI
+
+## Symptom
+
+打开 MiniAgent 页面后只能看到当前 session（localStorage 记住的）的消息，无法浏览或切换到其他 session 查看历史消息。页面没有任何 session 列表入口。
+
+## Root Cause
+
+服务端 `/api/workspace` 已返回完整的 `sessions` 数组（29 个 session），`WorkspaceSnapshot` 类型也定义了 `sessions: WorkspaceSessionSummary[]`。但前端只使用了 `messages` 和 `runStats`，完全没有渲染 `snapshot.sessions`。
+
+具体缺失：
+1. `DrawerTab` 类型只有 `"skills" | "channels"`，无 session 相关 tab
+2. 底部操作栏没有 History 入口按钮
+3. 没有 session 列表组件和切换逻辑（`setSessionId` + `localStorage.setItem`）
+4. workspace query 的类型声明是内联的 `{ selectedSessionId, messages, runStats }`，缺少 `sessions` 字段
+
+## Fix
+
+1. 在左侧 drawer 新增 "History" tab（`DrawerTab` 加 `"sessions"`）
+2. 渲染 `snapshot.sessions` 列表，显示 title + status dot
+3. 点击 session 项切换 `sessionId` 并刷新 workspace query
+4. 底部栏加 History 按钮入口
+5. workspace query 类型改用 `WorkspaceSnapshot`（从 `../shared/workspace.js` 导入），不再内联声明
+
+涉及文件：`src/client/App.tsx`、`src/client/styles.css`
+
+## Lesson
+
+ISSUE-002 修复了"刷新后看不到消息"（前端不发请求），这次是同一个数据链路的下一环——数据到了前端但没渲染。两层的根因都是前端没完整利用服务端已返回的数据。下次遇到"看不到数据"的问题，应该先确认数据是否已到前端（console.log snapshot），再排查渲染层。
