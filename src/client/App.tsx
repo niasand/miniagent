@@ -413,7 +413,12 @@ export default function App() {
           <textarea
             className="chat-input"
             value={draft}
-            onChange={(e) => setDraft(e.currentTarget.value)}
+            onChange={(e) => {
+              const el = e.currentTarget;
+              el.style.height = "auto";
+              el.style.height = Math.min(el.scrollHeight, 120) + "px";
+              setDraft(el.value);
+            }}
             onKeyDown={handleKeyDown}
             placeholder="Type a message..."
             rows={1}
