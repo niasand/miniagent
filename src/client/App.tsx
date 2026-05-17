@@ -379,12 +379,12 @@ export default function App() {
 
         <div className="chat-bar">
           <div className="chat-bar-left">
+            <button className={`bar-btn ${drawerOpen && drawerTab === "channels" ? "bar-btn--active" : ""}`} onClick={() => openDrawer("channels")} title="Channels">
+              <Settings className="h-4 w-4" />
+            </button>
             <button className={`bar-btn ${drawerOpen && drawerTab === "skills" ? "bar-btn--active" : ""}`} onClick={() => openDrawer("skills")} title="Skills">
               <Sparkles className="h-4 w-4" />
               <span className="bar-btn-label">Skills</span>
-            </button>
-            <button className={`bar-btn ${drawerOpen && drawerTab === "channels" ? "bar-btn--active" : ""}`} onClick={() => openDrawer("channels")} title="Channels">
-              <Settings className="h-4 w-4" />
             </button>
             <button className={`bar-btn ${drawerOpen && drawerTab === "sessions" ? "bar-btn--active" : ""}`} onClick={() => openDrawer("sessions")} title="History">
               <Clock className="h-4 w-4" />
