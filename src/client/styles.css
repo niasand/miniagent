@@ -184,6 +184,58 @@ button { cursor: pointer; }
   font-weight: 400;
 }
 
+/* Session list items */
+
+.session-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  padding: 8px 10px;
+  color: var(--color-foreground);
+  font-size: 13px;
+  text-align: left;
+  transition: background 120ms;
+}
+
+.session-item:hover { background: var(--color-muted); }
+
+.session-item--active {
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
+  color: var(--color-primary);
+}
+
+.session-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.session-status {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+}
+
+.session-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-muted-foreground);
+}
+
+.session-status--idle .session-dot { background: var(--color-muted-foreground); }
+.session-status--running .session-dot { background: #22c55e; }
+.session-status--failed .session-dot { background: #ef4444; }
+.session-status--compact .session-dot { background: #f59e0b; }
+.session-status--queued .session-dot { background: #3b82f6; }
+
 /* Channel cards */
 
 .channel-card {

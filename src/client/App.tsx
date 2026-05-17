@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Search, SendHorizontal, Settings, Sparkles, X } from "lucide-react";
+import { ChevronDown, Clock, Search, SendHorizontal, Settings, Sparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
@@ -10,13 +10,14 @@ import { createSession } from "./api/sessions.js";
 import { fetchSkills } from "./api/skills.js";
 import { sendSessionMessage } from "./api/messages.js";
 import type { AgentType, ChatMessage, RunStats, SkillMeta } from "./api/types.js";
+import type { WorkspaceSnapshot } from "../shared/workspace.js";
 
 const AGENT_OPTIONS: Array<{ value: AgentType; label: string }> = [
   { value: "codex", label: "Codex" },
   { value: "claude", label: "Claude" },
 ];
 
-type DrawerTab = "skills" | "channels";
+type DrawerTab = "skills" | "channels" | "sessions";
 
 export default function App() {
   const queryClient = useQueryClient();
@@ -64,7 +65,7 @@ export default function App() {
       const qs = sessionId ? `?sessionId=${sessionId}` : "";
       const res = await fetch(`/api/workspace${qs}`);
       if (!res.ok) throw new Error("Failed");
-      return res.json() as Promise<{ selectedSessionId: string | null; messages: ChatMessage[]; runStats: RunStats }>;
+      return res.json() as Promise<WorkspaceSnapshot>;
     },
     refetchInterval: 3_000,
   });
@@ -77,8 +78,8 @@ export default function App() {
     }
   }, [snapshot?.selectedSessionId, sessionId]);
 
-  const messages: ChatMessage[] = snapshot?.messages ?? [];
-  const runStats: RunStats = snapshot?.runStats ?? { durationSeconds: null, tokensUsed: null, tokensTotal: null };
+  const messages = snapshot?.messages ?? [];
+  const runStats = snapshot?.runStats ?? { durationSeconds: null, tokensUsed: null, tokensTotal: null };
 
   // SSE: capture text_delta for streaming + trigger workspace refresh
   const lastGlobalSeqRef = useRef(0);
@@ -250,6 +251,12 @@ export default function App() {
           >
             <Settings className="h-3.5 w-3.5" /> Channels
           </button>
+          <button
+            className={`drawer-tab ${drawerTab === "sessions" ? "active" : ""}`}
+            onClick={() => setDrawerTab("sessions")}
+          >
+            <Clock className="h-3.5 w-3.5" /> History
+          </button>
           <button className="drawer-close" onClick={() => setDrawerOpen(false)}>
             <X className="h-4 w-4" />
           </button>
@@ -289,6 +296,31 @@ export default function App() {
           <div className="drawer-list">
             {channels.map((ch) => (
               <ChannelCard key={ch.id} channel={ch} onSaved={() => queryClient.invalidateQueries({ queryKey: ["channels"] })} />
+            ))}
+          </div>
+        )}
+
+        {/* Sessions tab */}
+        {drawerTab === "sessions" && (
+          <div className="drawer-list">
+            {(snapshot?.sessions ?? []).length === 0 && (
+              <div className="drawer-empty">No sessions yet</div>
+            )}
+            {(snapshot?.sessions ?? []).map((s) => (
+              <button
+                key={s.id}
+                className={`session-item ${s.id === sessionId ? "session-item--active" : ""}`}
+                onClick={() => {
+                  setSessionId(s.id);
+                  localStorage.setItem("sessionId", s.id);
+                  queryClient.invalidateQueries({ queryKey: ["workspace", s.id] });
+                }}
+              >
+                <span className="session-title">{s.title || "Untitled"}</span>
+                <span className={`session-status session-status--${s.status}`}>
+                  <span className="session-dot" />
+                </span>
+              </button>
             ))}
           </div>
         )}
@@ -353,6 +385,10 @@ export default function App() {
             </button>
             <button className={`bar-btn ${drawerOpen && drawerTab === "channels" ? "bar-btn--active" : ""}`} onClick={() => openDrawer("channels")} title="Channels">
               <Settings className="h-4 w-4" />
+            </button>
+            <button className={`bar-btn ${drawerOpen && drawerTab === "sessions" ? "bar-btn--active" : ""}`} onClick={() => openDrawer("sessions")} title="History">
+              <Clock className="h-4 w-4" />
+              <span className="bar-btn-label">History</span>
             </button>
             <div className="dropdown-wrapper">
               <button className="bar-btn" onClick={() => setAgentMenuOpen(!agentMenuOpen)} title="Switch agent">
