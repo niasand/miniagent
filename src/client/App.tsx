@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import QRCode from "qrcode";
 import { ChevronDown, Clock, Search, SendHorizontal, Settings, Sparkles, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
@@ -29,9 +29,10 @@ export default function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerTab, setDrawerTab] = useState<DrawerTab>("skills");
   const [skillsQuery, setSkillsQuery] = useState("");
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const skillsSearchRef = useRef<HTMLInputElement>(null);
   const prevMsgCountRef = useRef(0);
+  const lastAutoScrollSessionRef = useRef<string | null>(null);
   const streamingTextRef = useRef("");
   const isStreamingRef = useRef(false);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -80,7 +81,14 @@ export default function App() {
   }, [snapshot?.selectedSessionId, sessionId]);
 
   const messages = snapshot?.messages ?? [];
+  const lastMessageId = messages[messages.length - 1]?.id ?? "";
   const runStats = snapshot?.runStats ?? { durationSeconds: null, tokensUsed: null, tokensTotal: null };
+
+  const scrollMessagesToBottom = (behavior: ScrollBehavior) => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior });
+  };
 
   // SSE: capture text_delta for streaming + trigger workspace refresh
   const lastGlobalSeqRef = useRef(0);
@@ -144,17 +152,35 @@ export default function App() {
     };
   }, [sessionId, queryClient]);
 
-  // Auto-scroll on new messages or streaming text
-  useEffect(() => {
-    if (messages.length > prevMsgCountRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  // Auto-scroll on initial load, session switches, and new messages.
+  useLayoutEffect(() => {
+    const sessionKey = sessionId ?? snapshot?.selectedSessionId ?? "";
+    if (messages.length === 0) {
+      prevMsgCountRef.current = 0;
+      lastAutoScrollSessionRef.current = sessionKey;
+      return;
     }
+
+    const isInitialLoad = prevMsgCountRef.current === 0;
+    const isNewSession = lastAutoScrollSessionRef.current !== sessionKey;
+    const behavior: ScrollBehavior = isInitialLoad || isNewSession ? "auto" : "smooth";
+
+    const frame = requestAnimationFrame(() => scrollMessagesToBottom(behavior));
+    const timer = window.setTimeout(() => {
+      if (isInitialLoad || isNewSession) scrollMessagesToBottom("auto");
+    }, 80);
+
     prevMsgCountRef.current = messages.length;
-  }, [messages.length]);
+    lastAutoScrollSessionRef.current = sessionKey;
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [messages.length, lastMessageId, sessionId, snapshot?.selectedSessionId]);
 
   useEffect(() => {
     if (streamingText) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      scrollMessagesToBottom("smooth");
     }
   }, [streamingText]);
 
@@ -330,7 +356,7 @@ export default function App() {
 
       {/* Main content */}
       <div className="chat-main">
-        <div className="chat-messages">
+        <div className="chat-messages" ref={messagesContainerRef}>
           {messages.length === 0 && (
             <div className="chat-empty">
               <Sparkles className="chat-empty-icon" />
@@ -380,7 +406,6 @@ export default function App() {
               )}
             </div>
           )}
-          <div ref={messagesEndRef} />
         </div>
 
         <div className="chat-bar">
