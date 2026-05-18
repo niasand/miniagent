@@ -23,6 +23,7 @@
 ### [services](services/_index.md) — 业务服务层
 
 <!-- 文档列表（由 /add_wiki 自动维护） -->
+- [业务服务层概览](services/overview.md) — InboundService + WorkspaceService + HTTP API
 
 ### [stores](stores/_index.md) — 数据存储层
 

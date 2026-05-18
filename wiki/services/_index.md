@@ -4,4 +4,4 @@
 
 <!-- 由 /add_wiki 自动维护 -->
 
-_暂无文档_
+- [业务服务层概览](overview.md) — InboundService 消息管道 + WorkspaceService 快照聚合 + HTTP API
