@@ -5,3 +5,4 @@
 <!-- 由 /add_wiki 自动维护 -->
 
 - [已知问题与踩坑记录](known-issues.md) — React 闭包崩溃、WeChat 三层问题、launchd TCC 限制
+- [安全模块：密钥脱敏与工作区访问控制](security.md) — redaction 键名/值匹配 + workspace allowlist 路径遏制

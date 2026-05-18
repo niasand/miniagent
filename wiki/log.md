@@ -9,4 +9,6 @@
 | 2026-05-18 | CREATE | runtime/overview.md | ingest | Agent 运行时（来源：src/server/runtime/ 代码分析） |
 | 2026-05-18 | CREATE | stores/overview.md | ingest | 数据存储层（来源：src/server/stores/ + db/ 代码分析） |
 | 2026-05-18 | CREATE | development/known-issues.md | ingest | 已知问题汇总（来源：issue.md） |
+| 2026-05-18 | CREATE | services/overview.md | add-wiki | 业务服务层（来源：src/server/services/ + http/app.ts） |
+| 2026-05-18 | CREATE | development/security.md | add-wiki | 安全模块（来源：src/server/security/） |
 <!-- LOG_END -->
