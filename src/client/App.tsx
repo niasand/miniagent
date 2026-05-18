@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import QRCode from "qrcode";
-import { ChevronDown, Clock, Search, SendHorizontal, Settings, Sparkles, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, Clock, Search, SendHorizontal, Settings, Sparkles, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
@@ -95,6 +95,10 @@ export default function App() {
       return;
     }
     container.scrollTo({ top: container.scrollHeight, behavior });
+  };
+
+  const scrollMessagesToTop = () => {
+    messagesContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   // SSE: capture text_delta for streaming + trigger workspace refresh
@@ -426,6 +430,17 @@ export default function App() {
             </div>
           )}
         </div>
+
+        {messages.length > 0 && (
+          <div className="chat-scroll-controls">
+            <button className="chat-scroll-btn" onClick={scrollMessagesToTop} title="Back to top" aria-label="Back to top">
+              <ArrowUp className="h-4 w-4" />
+            </button>
+            <button className="chat-scroll-btn" onClick={() => scrollMessagesToBottom("smooth")} title="Back to bottom" aria-label="Back to bottom">
+              <ArrowDown className="h-4 w-4" />
+            </button>
+          </div>
+        )}
 
         <div className="chat-bar">
           <div className="chat-bar-left">
