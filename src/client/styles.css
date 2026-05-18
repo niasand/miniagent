@@ -454,6 +454,10 @@ button { cursor: pointer; }
   margin: 0 auto;
 }
 
+.chat-messages--settling {
+  opacity: 0;
+}
+
 .chat-empty {
   flex: 1;
   display: flex;

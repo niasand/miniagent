@@ -33,6 +33,7 @@ export default function App() {
   const skillsSearchRef = useRef<HTMLInputElement>(null);
   const prevMsgCountRef = useRef(0);
   const lastAutoScrollSessionRef = useRef<string | null>(null);
+  const [settledMessagesSessionKey, setSettledMessagesSessionKey] = useState<string | null>(null);
   const streamingTextRef = useRef("");
   const isStreamingRef = useRef(false);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -82,11 +83,17 @@ export default function App() {
 
   const messages = snapshot?.messages ?? [];
   const lastMessageId = messages[messages.length - 1]?.id ?? "";
+  const messagesSessionKey = sessionId ?? snapshot?.selectedSessionId ?? "";
+  const messagesSettling = messages.length > 0 && settledMessagesSessionKey !== messagesSessionKey;
   const runStats = snapshot?.runStats ?? { durationSeconds: null, tokensUsed: null, tokensTotal: null };
 
   const scrollMessagesToBottom = (behavior: ScrollBehavior) => {
     const container = messagesContainerRef.current;
     if (!container) return;
+    if (behavior === "auto") {
+      container.scrollTop = container.scrollHeight;
+      return;
+    }
     container.scrollTo({ top: container.scrollHeight, behavior });
   };
 
@@ -154,29 +161,41 @@ export default function App() {
 
   // Auto-scroll on initial load, session switches, and new messages.
   useLayoutEffect(() => {
-    const sessionKey = sessionId ?? snapshot?.selectedSessionId ?? "";
-    if (messages.length === 0) {
+    if (messages.length === 0 || !messagesSessionKey) {
       prevMsgCountRef.current = 0;
-      lastAutoScrollSessionRef.current = sessionKey;
+      lastAutoScrollSessionRef.current = messagesSessionKey;
+      if (settledMessagesSessionKey !== messagesSessionKey) {
+        setSettledMessagesSessionKey(messagesSessionKey);
+      }
       return;
     }
 
     const isInitialLoad = prevMsgCountRef.current === 0;
-    const isNewSession = lastAutoScrollSessionRef.current !== sessionKey;
-    const behavior: ScrollBehavior = isInitialLoad || isNewSession ? "auto" : "smooth";
+    const isNewSession = lastAutoScrollSessionRef.current !== messagesSessionKey;
+    const shouldSnapToBottom = isInitialLoad || isNewSession || settledMessagesSessionKey !== messagesSessionKey;
 
-    const frame = requestAnimationFrame(() => scrollMessagesToBottom(behavior));
+    if (shouldSnapToBottom) {
+      scrollMessagesToBottom("auto");
+    }
+
+    const frame = requestAnimationFrame(() => {
+      scrollMessagesToBottom(shouldSnapToBottom ? "auto" : "smooth");
+      if (shouldSnapToBottom) setSettledMessagesSessionKey(messagesSessionKey);
+    });
     const timer = window.setTimeout(() => {
-      if (isInitialLoad || isNewSession) scrollMessagesToBottom("auto");
+      if (shouldSnapToBottom) {
+        scrollMessagesToBottom("auto");
+        setSettledMessagesSessionKey(messagesSessionKey);
+      }
     }, 80);
 
     prevMsgCountRef.current = messages.length;
-    lastAutoScrollSessionRef.current = sessionKey;
+    lastAutoScrollSessionRef.current = messagesSessionKey;
     return () => {
       cancelAnimationFrame(frame);
       window.clearTimeout(timer);
     };
-  }, [messages.length, lastMessageId, sessionId, snapshot?.selectedSessionId]);
+  }, [messages.length, lastMessageId, messagesSessionKey, settledMessagesSessionKey]);
 
   useEffect(() => {
     if (streamingText) {
@@ -356,7 +375,7 @@ export default function App() {
 
       {/* Main content */}
       <div className="chat-main">
-        <div className="chat-messages" ref={messagesContainerRef}>
+        <div className={`chat-messages ${messagesSettling ? "chat-messages--settling" : ""}`} ref={messagesContainerRef}>
           {messages.length === 0 && (
             <div className="chat-empty">
               <Sparkles className="chat-empty-icon" />
