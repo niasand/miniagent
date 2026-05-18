@@ -326,6 +326,7 @@ export default function App() {
           </div>
         )}
       </div>
+      {drawerOpen && <div className="drawer-backdrop" onClick={() => setDrawerOpen(false)} />}
 
       {/* Main content */}
       <div className="chat-main">
@@ -336,7 +337,7 @@ export default function App() {
               <p>Send a message to start</p>
             </div>
           )}
-          {messages.map((msg, index) => {
+          {messages.map((msg) => {
             // System "Run succeeded" → stat card
             if (msg.role === "system" && msg.markdown.startsWith("Run succeeded")) {
               return (
@@ -353,7 +354,11 @@ export default function App() {
               <div key={msg.id} className={`chat-bubble ${msg.role}`}>
                 <div className="chat-bubble-header">
                   <strong>{msg.author}</strong>
-                  {msg.time && <span className="chat-time">{msg.time}</span>}
+                  {msg.time && (
+                    <span className="chat-time" title={msg.createdAt ?? msg.time}>
+                      {formatMessageTime(msg.createdAt ?? msg.time)}
+                    </span>
+                  )}
                 </div>
                 <div className="prose-mini">
                   <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{msg.markdown}</ReactMarkdown>
@@ -435,6 +440,21 @@ export default function App() {
       )}
     </main>
   );
+}
+
+function formatMessageTime(value?: string): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  const sameDay = date.toDateString() === new Date().toDateString();
+  return new Intl.DateTimeFormat(undefined, {
+    month: sameDay ? undefined : "short",
+    day: sameDay ? undefined : "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
 }
 
 const CHANNEL_FIELDS: Record<string, Array<{ key: string; label: string }>> = {

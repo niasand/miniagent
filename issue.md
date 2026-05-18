@@ -141,3 +141,79 @@ useEffect(() => {
 ## Lesson
 
 ISSUE-002 修复了"刷新后看不到消息"（前端不发请求），这次是同一个数据链路的下一环——数据到了前端但没渲染。两层的根因都是前端没完整利用服务端已返回的数据。下次遇到"看不到数据"的问题，应该先确认数据是否已到前端（console.log snapshot），再排查渲染层。
+
+---
+
+# ISSUE-004: macOS launchd 无法启动 MiniAgent 服务
+
+**Status:** Fixed
+**Date:** 2026-05-17
+**Component:** `~/Library/LaunchAgents/com.miniagent.*.plist`
+
+## Symptom
+
+`launchctl list` 显示 `com.miniagent.api` 和 `com.miniagent.web` 持续 exit code 78 (EX_CONFIG)，服务无法启动。手动运行 `scripts/start-api.sh` 却完全正常。
+
+## Root Cause
+
+macOS 隐私安全策略阻止 launchd 访问 `~/Documents` 目录。手动测试确认：
+
+```
+/bin/bash: /Users/zhiwei/Documents/MiniAgent/scripts/start-api.sh: Operation not permitted
+```
+
+launchd 进程没有 Full Disk Access 权限，无法执行 Documents 下的脚本。同时 `com.miniagent.web.plist` 第 13 行有 XML 标签不匹配（`<string>` 开头 `</key>` 结尾）。
+
+## Fix
+
+1. 项目从 `~/Documents/MiniAgent` 移至 `~/Projects/MiniAgent`
+2. 更新 4 个文件的路径：`scripts/start-api.sh`、`scripts/start-web.sh`、两个 plist
+3. 修复 web plist 的 XML 标签错误
+
+## Lesson
+
+macOS 对 Documents/Downloads/Desktop 有额外的 TCC (Transparency, Consent, and Control) 保护。launchd 作为系统服务受此限制。项目放在 `~/Projects` 或其他非保护目录可避免。排查 launchd 问题时，`launchctl print gui/$(id -u)/<label>` 查看详细状态，`last exit code = 78: EX_CONFIG` 是线索。
+
+---
+
+# ISSUE-005: WeChat channel 消息收发不工作
+
+**Status:** Fixed
+**Date:** 2026-05-18
+**Component:** `src/server/channels/wechat.ts`、`src/server/db/migrations/`
+
+## Symptom
+
+微信扫码登录成功后，WeChat channel 启动正常（`[Channel] wechat started`），但：
+1. 发消息无回复
+2. 收到的消息报 `CHECK constraint failed: source_type IN (...)` — DB 不包含 'wechat'
+3. 即使 DB 修复后，token 保存后 channel 不自动启动
+
+## Root Cause
+
+三层问题叠加：
+
+1. **DB CHECK 约束缺 wechat** — migration 0002 改了 sessions/outbox/audit_logs 的 channel_type 约束，但漏了 tasks 表的 source_type 约束
+2. **保存配置后不启动 channel** — `ChannelRegistry.startAll()` 只在服务启动时执行，扫码保存 token 后 channel adapter 不会自动加载
+3. **get_qrcode_status 缺少 header** — 需要带 `iLink-App-ClientVersion: 1` 和 35s 超时
+4. **QR 码 URL 不是图片** — 微信返回的 `qrcode_img_content` 是 HTML 页面链接（`liteapp.weixin.qq.com`），需要用 qrcode 库在前端生成二维码
+
+## Fix
+
+1. 新增 migration `0003_extend_source_type.sql`，tasks 表 source_type 加 wechat/wecom/dingtalk
+2. `ChannelRegistry` 新增 `startChannel()` 方法，`PUT /api/channels/:channelId/config` 保存后自动启动
+3. 后端 QR status 代理加 `iLink-App-ClientVersion: 1` header + 35s timeout
+4. 前端用 `qrcode` npm 包把 URL 编码为二维码图片
+5. `SourceType` 类型扩展加上 wechat/wecom/dingtalk
+6. wechat.ts 加 `AbortSignal.timeout(40s)` 防止长轮询永远挂起
+
+涉及文件：`src/server/channels/registry.ts`、`src/server/channels/wechat.ts`、`src/server/http/app.ts`、`src/server/stores/session-store.ts`、`src/client/App.tsx`、`src/client/api/channels.ts`、`src/client/styles.css`
+
+## Lesson
+
+微信 iLink Bot API 的关键细节：
+- `get_qrcode_status` 必须带 `iLink-App-ClientVersion: 1` header
+- `getupdates` 是 35 秒长轮询，必须设超时（否则 Node.js fetch 永远挂起）
+- `qrcode_img_content` 返回的是微信内嵌页面 URL，不是图片，需要前端自行生成 QR 码
+- 多个消费者用空 `get_updates_buf` 调 getupdates 会互相竞争游标
+- 扫码保存 token 后需要主动触发 channel adapter 启动，不能依赖服务重启
