@@ -41,3 +41,28 @@ export async function testChannel(channelId: string): Promise<{ ok: boolean; mes
   });
   return (await response.json()) as { ok: boolean; message: string };
 }
+
+export type WeChatQRResponse = {
+  qrcode?: string;
+  qrcode_url?: string;
+  qrcode_img_content?: string;
+  token?: string;
+  error?: string;
+};
+
+export type WeChatQRStatus = {
+  status?: string;
+  bot_token?: string;
+  baseurl?: string;
+  error?: string;
+};
+
+export async function requestWechatQRCode(): Promise<WeChatQRResponse> {
+  const res = await fetch("/api/channels/wechat/qrcode");
+  return (await res.json()) as WeChatQRResponse;
+}
+
+export async function pollWechatQRStatus(qrcode: string): Promise<WeChatQRStatus> {
+  const res = await fetch(`/api/channels/wechat/qrcode-status?qrcode=${encodeURIComponent(qrcode)}`);
+  return (await res.json()) as WeChatQRStatus;
+}

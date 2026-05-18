@@ -47,6 +47,12 @@ export class ChannelConfigStore {
     return this.get(channelId);
   }
 
+  isConfigured(channelId: string, config: ChannelConfig = this.get(channelId)): boolean {
+    if (channelId === "web") return true;
+    const channel = KNOWN_CHANNELS.find((ch) => ch.id === channelId);
+    return Boolean(channel && channel.configKeys.every((key) => config[key]?.trim()));
+  }
+
   listChannels(): ChannelInfo[] {
     const channels: ChannelInfo[] = [{ channelId: "web", label: "Web", configured: true, config: {} }];
     for (const ch of KNOWN_CHANNELS) {

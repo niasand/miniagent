@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import QRCode from "qrcode";
 import { ChevronDown, Clock, Search, SendHorizontal, Settings, Sparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import "highlight.js/styles/atom-one-dark.css";
-import { fetchChannels, saveChannelConfig, testChannel, type ChannelInfo } from "./api/channels.js";
+import { fetchChannels, saveChannelConfig, testChannel, requestWechatQRCode, pollWechatQRStatus, type ChannelInfo } from "./api/channels.js";
 import { createSession } from "./api/sessions.js";
 import { fetchSkills } from "./api/skills.js";
 import { sendSessionMessage } from "./api/messages.js";
@@ -470,6 +471,10 @@ function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSaved: () =
   const [error, setError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [qrUrl, setQrUrl] = useState<string | null>(null);
+  const [qrStatus, setQrStatus] = useState<string>("");
+  const [qrPolling, setQrPolling] = useState(false);
+  const qrPollingRef = useRef(false);
 
   const configurable = channel.id in CHANNEL_FIELDS;
   const fields = CHANNEL_FIELDS[channel.id] ?? [];
@@ -518,6 +523,54 @@ function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSaved: () =
     setError(null);
   };
 
+  const handleWechatQRLogin = async () => {
+    setError(null);
+    setQrStatus("loading");
+    setQrPolling(true);
+    qrPollingRef.current = true;
+    try {
+      const qr = await requestWechatQRCode();
+      if (qr.error) { setError(qr.error); setQrPolling(false); qrPollingRef.current = false; return; }
+      const qrContent = qr.qrcode_img_content ?? qr.qrcode_url ?? "";
+      if (!qrContent) { setError("No QR code URL returned"); setQrPolling(false); qrPollingRef.current = false; return; }
+      const dataUrl = await QRCode.toDataURL(qrContent, { width: 200, margin: 2 });
+      setQrUrl(dataUrl);
+      setQrStatus("waiting");
+      const qrcodeKey = qr.qrcode ?? qr.token ?? "";
+      if (!qrcodeKey) { setError("No qrcode key returned"); setQrPolling(false); qrPollingRef.current = false; return; }
+      // Poll until confirmed/expired
+      const poll = async () => {
+        if (!qrPollingRef.current) return;
+        try {
+          const s = await pollWechatQRStatus(qrcodeKey);
+          if (s.error) { setQrStatus("error"); setError(s.error); setQrPolling(false); qrPollingRef.current = false; return; }
+          if (s.status === "confirmed" && s.bot_token) {
+            setQrStatus("confirmed");
+            setQrPolling(false);
+            qrPollingRef.current = false;
+            try {
+              await saveChannelConfig("wechat", { bot_token: s.bot_token, ...(s.baseurl ? { base_url: s.baseurl } : {}) });
+            } catch (e) {
+              setQrStatus("error");
+              setError(e instanceof Error ? e.message : "Save config failed");
+              return;
+            }
+            onSaved();
+            return;
+          }
+          if (s.status === "expired") { setQrStatus("expired"); setQrPolling(false); qrPollingRef.current = false; return; }
+          if (s.status === "scaned") setQrStatus("scanned");
+          if (qrPollingRef.current) setTimeout(poll, 2000);
+        } catch { if (qrPollingRef.current) setTimeout(poll, 3000); }
+      };
+      setTimeout(poll, 2000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "QR request failed");
+      setQrPolling(false);
+      qrPollingRef.current = false;
+    }
+  };
+
   return (
     <div className="channel-card">
       <div className="channel-card-header">
@@ -529,7 +582,30 @@ function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSaved: () =
       </div>
       <p className="channel-card-desc">{channel.description}</p>
 
-      {configurable && !editing && (
+      {/* WeChat QR Login */}
+      {channel.id === "wechat" && !editing && (
+        <div className="channel-actions">
+          <button className="channel-config-btn" onClick={handleWechatQRLogin} disabled={qrPolling}>
+            {qrPolling ? "Waiting..." : "Scan QR Login"}
+          </button>
+          <button className="channel-test-btn" onClick={handleTest} disabled={testing}>
+            {testing ? "Testing..." : "Test Connection"}
+          </button>
+        </div>
+      )}
+      {channel.id === "wechat" && qrUrl && (
+        <div className="wechat-qr-container">
+          <img src={qrUrl} alt="WeChat QR Code" className="wechat-qr-img" />
+          <p className="wechat-qr-status">
+            {qrStatus === "waiting" && "Scan with WeChat..."}
+            {qrStatus === "scanned" && "Scanned! Confirm on phone..."}
+            {qrStatus === "confirmed" && "Login successful!"}
+            {qrStatus === "expired" && "QR expired. Try again."}
+          </p>
+        </div>
+      )}
+
+      {configurable && channel.id !== "wechat" && !editing && (
         <div className="channel-actions">
           <button className="channel-config-btn" onClick={startEdit}>
             Configure

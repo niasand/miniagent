@@ -12,6 +12,8 @@ import { DingTalkChannel } from "./dingtalk.js";
 const DEDUP_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const DEDUP_MAX_SIZE = 1000;
 
+export type StartChannelResult = { ok: boolean; message: string };
+
 export class ChannelRegistry {
   private adapters = new Map<string, ChannelAdapter>();
   private dedupCache = new Map<string, number>(); // messageId → timestamp
@@ -29,15 +31,9 @@ export class ChannelRegistry {
       if (ch.channelId === "web") continue; // web uses SSE, no adapter
       if (!ch.configured) continue;
 
-      const adapter = this.createAdapter(ch.channelId, ch.config);
-      if (!adapter) continue;
-
-      this.adapters.set(ch.channelId, adapter);
-      try {
-        await adapter.start((msg) => this.handleChannelMessage(ch.channelId, msg));
-        console.log(`[Channel] ${ch.channelId} started`);
-      } catch (err) {
-        console.error(`[Channel] ${ch.channelId} failed to start:`, err instanceof Error ? err.message : err);
+      const result = await this.startChannel(ch.channelId, ch.config);
+      if (!result.ok) {
+        console.error(`[Channel] ${ch.channelId} failed to start:`, result.message);
       }
     }
   }
@@ -80,6 +76,32 @@ export class ChannelRegistry {
 
   get(channelType: string): ChannelAdapter | null {
     return this.adapters.get(channelType) ?? null;
+  }
+
+  async startChannel(channelId: string, config: Record<string, string>): Promise<StartChannelResult> {
+    const adapter = this.createAdapter(channelId, config);
+    if (!adapter) return { ok: false, message: `Unknown channel: ${channelId}` };
+
+    if (adapter.test) {
+      const testResult = await adapter.test();
+      if (!testResult.ok) return testResult;
+    }
+
+    try {
+      await adapter.start((msg) => this.handleChannelMessage(channelId, msg));
+      const existing = this.adapters.get(channelId);
+      if (existing) {
+        try { existing.stop(); } catch { /* ignore */ }
+      }
+      this.adapters.set(channelId, adapter);
+      console.log(`[Channel] ${channelId} started`);
+      return { ok: true, message: "Started" };
+    } catch (err) {
+      try { adapter.stop(); } catch { /* ignore */ }
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[Channel] ${channelId} failed to start:`, message);
+      return { ok: false, message };
+    }
   }
 
   async testChannel(channelId: string): Promise<TestResult> {

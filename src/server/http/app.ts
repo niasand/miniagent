@@ -656,13 +656,55 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
       if (typeof value === "string") config[key] = value;
     }
 
-    const result = configStore.set(c.req.param("channelId"), config);
-    return c.json({ config: result });
+    const channelId = c.req.param("channelId");
+    const nextConfig = { ...configStore.get(channelId), ...config };
+    let startResult: { ok: boolean; message: string } | null = null;
+    if (channelId !== "web" && configStore.isConfigured(channelId, nextConfig)) {
+      startResult = await channelRegistry.startChannel(channelId, nextConfig);
+      if (!startResult.ok) {
+        return c.json({ error: startResult.message, channelStart: startResult }, 400);
+      }
+    }
+
+    const result = configStore.set(channelId, config);
+    return c.json({ config: result, channelStart: startResult });
   });
 
   app.post("/api/channels/:channelId/test", async (c) => {
     const result = await channelRegistry.testChannel(c.req.param("channelId"));
     return c.json(result, result.ok ? 200 : 400);
+  });
+
+  // ── WeChat QR Login ──
+
+  app.get("/api/channels/wechat/qrcode", async (c) => {
+    try {
+      const res = await fetch("https://ilinkai.weixin.qq.com/ilink/bot/get_bot_qrcode?bot_type=3", {
+        headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!res.ok) return c.json({ error: `Upstream ${res.status}` }, 502);
+      const data = await res.json() as { qrcode?: string; qrcode_url?: string; token?: string; [k: string]: unknown };
+      return c.json(data);
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : "Failed" }, 500);
+    }
+  });
+
+  app.get("/api/channels/wechat/qrcode-status", async (c) => {
+    const qrcode = c.req.query("qrcode");
+    if (!qrcode) return c.json({ error: "Missing qrcode param" }, 400);
+    try {
+      const res = await fetch(`https://ilinkai.weixin.qq.com/ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(qrcode)}`, {
+        headers: { "Content-Type": "application/json", "iLink-App-ClientVersion": "1" },
+        signal: AbortSignal.timeout(35_000),
+      });
+      if (!res.ok) return c.json({ error: `Upstream ${res.status}` }, 502);
+      const data = await res.json() as { status?: string; bot_token?: string; baseurl?: string; [k: string]: unknown };
+      return c.json(data);
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : "Failed" }, 500);
+    }
   });
 
   // ── DingTalk Webhook ──

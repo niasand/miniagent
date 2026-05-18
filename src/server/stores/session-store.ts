@@ -9,7 +9,7 @@ export type TaskStatus = "scheduled" | "queued" | "running" | "succeeded" | "fai
 export type RunStatus =
   | "queued" | "starting" | "running" | "waiting_permission" | "compacting"
   | "stopping" | "succeeded" | "failed" | "cancelled" | "overflowed";
-export type SourceType = "web" | "feishu" | "qq" | "telegram" | "discord" | "cron" | "handoff" | "mcp" | "system";
+export type SourceType = "web" | "feishu" | "qq" | "telegram" | "discord" | "wechat" | "wecom" | "dingtalk" | "cron" | "handoff" | "mcp" | "system";
 export type TaskType = "message" | "compact" | "handoff" | "schedule_run" | "stop" | "resume";
 export type RuntimeKind = "cli" | "acp";
 

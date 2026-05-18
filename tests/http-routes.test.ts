@@ -13,6 +13,7 @@ import type { Hono } from "hono";
 
 let db: SqliteDatabase;
 let app: Hono;
+let channelRegistry: ChannelRegistry;
 
 beforeEach(() => {
   db = createTestDb();
@@ -20,7 +21,8 @@ beforeEach(() => {
   const runtimeRegistry = new RuntimeAdapterRegistry();
   const outboxStore = new OutboxStore(db);
   const runtimeSupervisor = new RuntimeSupervisor({ db, adapterRegistry: runtimeRegistry, outboxStore });
-  const channelRegistry = new ChannelRegistry(db, () => {});
+  channelRegistry = new ChannelRegistry(db, () => {});
+  channelRegistry.startChannel = async () => ({ ok: true, message: "Started" });
 
   app = createApp(db, {
     workspacePolicy,
@@ -384,6 +386,34 @@ describe("PUT /api/channels/:channelId/config", () => {
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.config.app_id).toBe("test_app_id");
+    expect(data.channelStart).toEqual({ ok: true, message: "Started" });
+  });
+
+  it("returns start errors for fully configured channels", async () => {
+    channelRegistry.startChannel = async () => ({ ok: false, message: "invalid token" });
+
+    const res = await putJson("/api/channels/telegram/config", {
+      bot_token: "bad-token",
+    });
+
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toBe("invalid token");
+  });
+
+  it("does not start channels until required config is present", async () => {
+    let started = false;
+    channelRegistry.startChannel = async () => {
+      started = true;
+      return { ok: true, message: "Started" };
+    };
+
+    const res = await putJson("/api/channels/feishu/config", {
+      app_id: "test_app_id",
+    });
+
+    expect(res.status).toBe(200);
+    expect(started).toBe(false);
   });
 
   it("rejects non-object body", async () => {
