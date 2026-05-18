@@ -234,3 +234,49 @@ macOS 对 Documents/Downloads/Desktop 有额外的 TCC (Transparency, Consent, a
 - `qrcode_img_content` 返回的是微信内嵌页面 URL，不是图片，需要前端自行生成 QR 码
 - 多个消费者用空 `get_updates_buf` 调 getupdates 会互相竞争游标
 - 扫码保存 token 后需要主动触发 channel adapter 启动，不能依赖服务重启
+
+---
+
+# ISSUE-006: 刷新后点击 scroll-to-top 会自动弹回底部
+
+**Status:** Fixed
+**Date:** 2026-05-18
+**Component:** `src/client/App.tsx` — chat scroll auto-scroll logic
+
+## Symptom
+
+页面刷新后，点击向上箭头（scroll-to-top）按钮，页面先滚动到最顶部，然后立刻又自动滑回最底部。
+
+## Root Cause
+
+`useLayoutEffect` 的 auto-scroll 逻辑中，`requestAnimationFrame` 无条件执行 `scrollMessagesToBottom`：
+
+```tsx
+// BUG: 无论 shouldSnapToBottom 是否为 true，RAF 都会滚动到底部
+const frame = requestAnimationFrame(() => {
+  scrollMessagesToBottom(shouldSnapToBottom ? "auto" : "smooth");
+  if (shouldSnapToBottom) setSettledMessagesSessionKey(messagesSessionKey);
+});
+```
+
+刷新后的时序：
+1. 首次 effect 触发：`shouldSnapToBottom = true`（初始加载），滚动到底部，`setState` 触发重渲染
+2. 二次 effect 触发：`shouldSnapToBottom = false`（已 settled），但 RAF 仍执行 `scrollMessagesToBottom("smooth")`
+3. 用户点击 scroll-to-top，滚动到顶部
+4. 若此时 messages 批次加载导致 `messages.length` 变化，effect 再次触发，RAF 再次将页面弹回底部
+
+另外 `streamingText` 的 effect 也无条件滚动到底部，会在用户向上浏览历史消息时被强制拉回。
+
+## Fix
+
+1. **RAF 只在 `shouldSnapToBottom` 时执行**：将 RAF 和 setTimeout 移入 `if (shouldSnapToBottom)` 块内，不再对已 settled 的 session 做额外滚动
+2. **新增 `isNearBottomRef`**：追踪用户是否在底部附近（80px 阈值）
+3. **scroll 事件监听**：通过 passive scroll listener 实时更新 `isNearBottomRef`
+4. **`scrollMessagesToTop` 标记离开底部**：手动滚动到顶部时设 `isNearBottomRef = false`
+5. **`streamingText` 效果加守卫**：只在 `isNearBottomRef.current === true` 时自动滚动
+
+涉及文件：`src/client/App.tsx`
+
+## Lesson
+
+React 的 `useLayoutEffect` 中使用 `requestAnimationFrame` 做异步操作时，cleanup 函数可能无法及时取消已排队的回调。正确做法是让异步操作本身带条件守卫，而不是依赖 cleanup 取消。另外，任何"自动滚动到底部"的逻辑都必须检查用户是否主动离开了底部，否则会与手动滚动操作冲突。

@@ -32,6 +32,7 @@ export default function App() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const skillsSearchRef = useRef<HTMLInputElement>(null);
   const prevMsgCountRef = useRef(0);
+  const isNearBottomRef = useRef(true);
   const lastAutoScrollSessionRef = useRef<string | null>(null);
   const [settledMessagesSessionKey, setSettledMessagesSessionKey] = useState<string | null>(null);
   const streamingTextRef = useRef("");
@@ -90,6 +91,7 @@ export default function App() {
   const scrollMessagesToBottom = (behavior: ScrollBehavior) => {
     const container = messagesContainerRef.current;
     if (!container) return;
+    isNearBottomRef.current = true;
     if (behavior === "auto") {
       container.scrollTop = container.scrollHeight;
       return;
@@ -98,6 +100,7 @@ export default function App() {
   };
 
   const scrollMessagesToTop = () => {
+    isNearBottomRef.current = false;
     messagesContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -180,29 +183,41 @@ export default function App() {
 
     if (shouldSnapToBottom) {
       scrollMessagesToBottom("auto");
-    }
-
-    const frame = requestAnimationFrame(() => {
-      scrollMessagesToBottom(shouldSnapToBottom ? "auto" : "smooth");
-      if (shouldSnapToBottom) setSettledMessagesSessionKey(messagesSessionKey);
-    });
-    const timer = window.setTimeout(() => {
-      if (shouldSnapToBottom) {
+      const frame = requestAnimationFrame(() => {
         scrollMessagesToBottom("auto");
         setSettledMessagesSessionKey(messagesSessionKey);
-      }
-    }, 80);
+      });
+      const timer = window.setTimeout(() => {
+        scrollMessagesToBottom("auto");
+        setSettledMessagesSessionKey(messagesSessionKey);
+      }, 80);
+      prevMsgCountRef.current = messages.length;
+      lastAutoScrollSessionRef.current = messagesSessionKey;
+      return () => {
+        cancelAnimationFrame(frame);
+        window.clearTimeout(timer);
+      };
+    }
 
     prevMsgCountRef.current = messages.length;
     lastAutoScrollSessionRef.current = messagesSessionKey;
-    return () => {
-      cancelAnimationFrame(frame);
-      window.clearTimeout(timer);
-    };
   }, [messages.length, lastMessageId, messagesSessionKey, settledMessagesSessionKey]);
 
+  // Track user scroll position to avoid overriding manual scroll.
   useEffect(() => {
-    if (streamingText) {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const onScroll = () => {
+      const threshold = 80;
+      isNearBottomRef.current =
+        container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+    };
+    container.addEventListener("scroll", onScroll, { passive: true });
+    return () => container.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    if (streamingText && isNearBottomRef.current) {
       scrollMessagesToBottom("smooth");
     }
   }, [streamingText]);
