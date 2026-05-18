@@ -7,6 +7,8 @@
 ### [architecture](architecture/_index.md) — 系统架构
 
 <!-- 文档列表（由 /add_wiki 自动维护） -->
+- [系统架构概览](architecture/overview.md) — EventStore-first 的本地多 Agent 控制面
+- [主流程详解](architecture/main-flows.md) — 6 条核心数据流
 
 ### [channels](channels/_index.md) — 消息通道集成
 
@@ -27,3 +29,4 @@
 ### [development](development/_index.md) — 开发与运维
 
 <!-- 文档列表（由 /add_wiki 自动维护） -->
+- [已知问题与踩坑记录](development/known-issues.md) — React/WeChat/launchd 历史问题
