@@ -1,3 +1,20 @@
+---
+title: "Bug 与问题追踪"
+category: "qa"
+tags: ["qa", "bugs", "issues", "tracking"]
+created: "2026-05-18"
+updated: "2026-05-18"
+sources: []
+coverage: "high"
+status: "active"
+---
+
+MiniAgent 的 Bug 追踪记录。每次修复 bug 后自动追加到此文件。
+
+**格式**：`# ISSUE-NNN: 简短标题`，含状态、日期、组件、现象、根因、修复方案、涉及文件、经验教训。
+
+---
+
 # ISSUE-001: Channel config input paste causes React crash
 
 **Status:** Fixed

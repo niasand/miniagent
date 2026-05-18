@@ -22,7 +22,7 @@ Glob: wiki/**/*.md（排除 _index.md、log.md）
 
 每个文件必须包含以下 YAML frontmatter 字段：
 - `title`（string）
-- `category`（必须是 6 个合法值之一：architecture / channels / runtime / services / stores / development）
+- `category`（必须是 7 个合法值之一：architecture / channels / runtime / services / stores / development / qa）
 - `tags`（array）
 - `created`（YYYY-MM-DD 格式）
 - `updated`（YYYY-MM-DD 格式）
@@ -104,7 +104,7 @@ Glob: wiki/<category>/*.md（对每个 category）
 ```markdown
 ## 知识库健康报告
 
-**检查时间**：YYYY-MM-DD | **页面总数**：N | **分类数**：6
+**检查时间**：YYYY-MM-DD | **页面总数**：N | **分类数**：7
 
 ### 概览
 

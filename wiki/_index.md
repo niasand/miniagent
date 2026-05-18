@@ -35,3 +35,8 @@
 <!-- 文档列表（由 /add_wiki 自动维护） -->
 - [已知问题与踩坑记录](development/known-issues.md) — React/WeChat/launchd 历史问题
 - [安全模块](development/security.md) — 密钥脱敏 + 工作区访问控制
+
+### [qa](qa/_index.md) — QA 与问题追踪
+
+<!-- 文档列表（由 /add_wiki 自动维护） -->
+- [Bug 与问题追踪](qa/issue.md) — ISSUE-001 ~ ISSUE-005 历史问题

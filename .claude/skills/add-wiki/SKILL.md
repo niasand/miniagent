@@ -2,7 +2,7 @@
 name: add-wiki
 description: |
   创建或更新 MiniAgent 知识库的 wiki 文档。根据用户提供的主题，自动调研（代码库分析、ARCHITECTURE.md、
-  CLAUDE.md、issue.md），按模板生成规范文档，写入 wiki/ 目录并更新索引。
+  CLAUDE.md、wiki/qa/issue.md），按模板生成规范文档，写入 wiki/ 目录并更新索引。
   触发词："添加 wiki"、"新增文档"、"记录到知识库"、"add wiki"、"/add_wiki"。
   也适用于"帮我记录一下 channel 的架构"、"把这个流程写到知识库里"等场景。
 ---
@@ -23,7 +23,7 @@ description: |
 
 ### 2. 确定 category
 
-根据主题自动匹配到以下 6 个分类之一：
+根据主题自动匹配到以下 7 个分类之一：
 
 | Category | 内容范围 | 判断线索 |
 |----------|---------|---------|
@@ -33,6 +33,7 @@ description: |
 | `services` | 业务服务层 | "inbound"、"workspace"、"delivery"、"投递"、"服务" |
 | `stores` | 数据存储层 | "store"、"event"、"outbox"、"session"、"migration"、"数据库"、"SQLite" |
 | `development` | 开发与运维流程 | "部署"、"测试"、"启动"、"launchd"、"排障"、"环境" |
+| `qa` | Bug 追踪、问题记录 | "bug"、"issue"、"问题"、"crash"、"报错"、"修复" |
 
 无法判断时，用 AskUserQuestion 确认。
 
