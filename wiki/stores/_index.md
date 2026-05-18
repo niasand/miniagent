@@ -4,4 +4,4 @@
 
 <!-- 由 /add_wiki 自动维护 -->
 
-_暂无文档_
+- [数据存储层概览](overview.md) — SQLite + Event Sourcing + Transactional Outbox，15 张表全解

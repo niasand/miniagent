@@ -13,10 +13,12 @@
 ### [channels](channels/_index.md) — 消息通道集成
 
 <!-- 文档列表（由 /add_wiki 自动维护） -->
+- [消息通道系统概览](channels/overview.md) — 7 个平台 + Adapter 接口 + Registry
 
 ### [runtime](runtime/_index.md) — Agent 运行时
 
 <!-- 文档列表（由 /add_wiki 自动维护） -->
+- [Agent 运行时系统概览](runtime/overview.md) — Supervisor + ACP + 状态机
 
 ### [services](services/_index.md) — 业务服务层
 
@@ -25,6 +27,7 @@
 ### [stores](stores/_index.md) — 数据存储层
 
 <!-- 文档列表（由 /add_wiki 自动维护） -->
+- [数据存储层概览](stores/overview.md) — EventStore + Outbox + 15 张表
 
 ### [development](development/_index.md) — 开发与运维
 

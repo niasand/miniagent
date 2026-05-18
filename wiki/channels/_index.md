@@ -4,4 +4,4 @@
 
 <!-- 由 /add_wiki 自动维护 -->
 
-_暂无文档_
+- [消息通道系统概览](overview.md) — ChannelAdapter 接口、ChannelRegistry、7 个平台的实现
