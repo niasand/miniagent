@@ -208,8 +208,17 @@ export default function App() {
     const container = messagesContainerRef.current;
     if (!container) return;
     const onScroll = () => scrollController.updatePosition();
+    const onUserScrollIntent = () => scrollController.markUserScrollIntent();
     container.addEventListener("scroll", onScroll, { passive: true });
-    return () => container.removeEventListener("scroll", onScroll);
+    container.addEventListener("wheel", onUserScrollIntent, { passive: true });
+    container.addEventListener("touchstart", onUserScrollIntent, { passive: true });
+    container.addEventListener("pointerdown", onUserScrollIntent);
+    return () => {
+      container.removeEventListener("scroll", onScroll);
+      container.removeEventListener("wheel", onUserScrollIntent);
+      container.removeEventListener("touchstart", onUserScrollIntent);
+      container.removeEventListener("pointerdown", onUserScrollIntent);
+    };
   }, [scrollController]);
 
   useEffect(() => {

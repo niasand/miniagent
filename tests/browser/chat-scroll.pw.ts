@@ -22,6 +22,7 @@ test("clicking back to top after refresh is not overridden by initial auto-scrol
   const messages = page.locator(".chat-messages");
   await expect.poll(() => messages.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
   await expect.poll(() => messages.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  await expect.poll(() => distanceFromBottom(messages)).toBeLessThanOrEqual(1);
 
   await page.getByRole("button", { name: "Back to top" }).click();
   await expect.poll(() => messages.evaluate((el) => el.scrollTop)).toBeLessThan(20);
@@ -35,6 +36,74 @@ test("clicking back to top after refresh is not overridden by initial auto-scrol
 
   expect(afterDelayedAutoScroll.scrollTop).toBeLessThan(50);
   expect(afterDelayedAutoScroll.distanceFromBottom).toBeGreaterThan(200);
+});
+
+test("refresh keeps the scrollbar pinned through late content growth", async ({ page }) => {
+  await page.addInitScript((id) => {
+    localStorage.setItem("sessionId", id);
+  }, sessionId);
+
+  await mockWorkspaceApis(page, createScrollableSnapshot());
+
+  await page.goto("/");
+
+  const messages = page.locator(".chat-messages");
+  await expect.poll(() => messages.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await expect.poll(() => distanceFromBottom(messages)).toBeLessThanOrEqual(1);
+
+  await page.waitForTimeout(120);
+  await messages.evaluate((el) => {
+    const lateContent = document.createElement("div");
+    lateContent.style.height = "240px";
+    lateContent.dataset.testid = "late-content";
+    el.append(lateContent);
+  });
+
+  await expect.poll(() => distanceFromBottom(messages)).toBeLessThanOrEqual(1);
+});
+
+test("reload ignores the browser-restored message scroll position", async ({ page }) => {
+  await page.addInitScript((id) => {
+    localStorage.setItem("sessionId", id);
+  }, sessionId);
+
+  await mockWorkspaceApis(page, createScrollableSnapshot());
+
+  await page.goto("/");
+
+  const messages = page.locator(".chat-messages");
+  await expect.poll(() => messages.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await expect.poll(() => distanceFromBottom(messages)).toBeLessThanOrEqual(1);
+
+  await messages.evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  await expect.poll(() => messages.evaluate((el) => el.scrollTop)).toBeLessThan(20);
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect.poll(() => messages.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await expect.poll(() => distanceFromBottom(messages)).toBeLessThanOrEqual(1);
+});
+
+test("initial load corrects non-user scroll restoration during settling", async ({ page }) => {
+  await page.addInitScript((id) => {
+    localStorage.setItem("sessionId", id);
+  }, sessionId);
+
+  await mockWorkspaceApis(page, createScrollableSnapshot());
+
+  await page.goto("/");
+
+  const messages = page.locator(".chat-messages");
+  await expect.poll(() => messages.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await expect.poll(() => distanceFromBottom(messages)).toBeLessThanOrEqual(1);
+
+  await page.waitForTimeout(120);
+  await messages.evaluate((el) => {
+    el.scrollTop = 0;
+  });
+
+  await expect.poll(() => distanceFromBottom(messages)).toBeLessThanOrEqual(1);
 });
 
 test("composer input sits below the toolbar and grows on Shift+Enter", async ({ page }) => {
@@ -88,6 +157,10 @@ async function mockWorkspaceApis(page: Page, snapshot: WorkspaceSnapshot) {
       body: "",
     });
   });
+}
+
+function distanceFromBottom(locator: ReturnType<Page["locator"]>) {
+  return locator.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
 }
 
 function createScrollableSnapshot(): WorkspaceSnapshot {

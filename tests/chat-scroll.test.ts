@@ -26,7 +26,7 @@ describe("createChatScrollController", () => {
     frameCallbacks[0]?.(0);
     timerCallbacks[0]?.();
 
-    expect(calls).toEqual(["bottom:auto", "top:smooth", "settle", "settle"]);
+    expect(calls).toEqual(["bottom:auto", "top:smooth", "settle"]);
   });
 
   it("keeps deferred initial scrolls while the user remains pinned to the bottom", () => {
@@ -52,7 +52,30 @@ describe("createChatScrollController", () => {
     frameCallbacks[0]?.(0);
     timerCallbacks[0]?.();
 
-    expect(calls).toEqual(["bottom:auto", "bottom:auto", "settle", "bottom:auto", "settle"]);
+    expect(calls).toEqual(["bottom:auto", "bottom:auto", "settle", "bottom:auto"]);
+  });
+
+  it("corrects non-user scroll restoration while initial load is settling", () => {
+    const { container, calls } = createScrollContainer();
+    const controller = createChatScrollController({ getContainer: () => container });
+    const timerCallbacks: Array<() => void> = [];
+
+    controller.scheduleInitialLoad({
+      markSettled: () => calls.push("settle"),
+      requestFrame: () => 1,
+      cancelFrame: () => {},
+      setTimer: (callback) => {
+        timerCallbacks.push(callback);
+        return timerCallbacks.length;
+      },
+      clearTimer: () => {},
+    });
+
+    container.scrollTop = 0;
+    controller.updatePosition();
+    timerCallbacks[1]?.();
+
+    expect(calls).toEqual(["bottom:auto", "top:auto", "bottom:auto", "settle"]);
   });
 
   it("uses the same pinned-bottom rule for streaming updates", () => {
