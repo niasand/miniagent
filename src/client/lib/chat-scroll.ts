@@ -80,31 +80,29 @@ export function createChatScrollController({
     cancelFrame,
     setTimer,
     clearTimer,
-    settleDelayMs = 80,
+    settleDelayMs = 360,
   }: InitialScrollScheduleOptions) => {
     initialSettling = true;
     userDetached = false;
     scrollToBottom("auto");
 
-    let settled = false;
-    const settle = () => {
+    const correctPosition = () => {
       if (!userDetached) {
         scrollToBottom("auto");
       }
-      if (!settled) {
-        settled = true;
-        markSettled();
-      }
     };
 
-    const frame = requestFrame(settle);
+    const finishSettling = () => {
+      correctPosition();
+      initialSettling = false;
+      markSettled();
+    };
+
+    const frame = requestFrame(correctPosition);
     const timers = [
-      setTimer(settle, settleDelayMs),
-      setTimer(settle, 180),
-      setTimer(() => {
-        settle();
-        initialSettling = false;
-      }, 360),
+      setTimer(correctPosition, 80),
+      setTimer(correctPosition, 180),
+      setTimer(finishSettling, settleDelayMs),
     ];
 
     return () => {

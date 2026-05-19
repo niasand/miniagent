@@ -25,6 +25,8 @@ describe("createChatScrollController", () => {
     controller.scrollToTop("smooth");
     frameCallbacks[0]?.(0);
     timerCallbacks[0]?.();
+    timerCallbacks[1]?.();
+    timerCallbacks[2]?.();
 
     expect(calls).toEqual(["bottom:auto", "top:smooth", "settle"]);
   });
@@ -51,8 +53,10 @@ describe("createChatScrollController", () => {
 
     frameCallbacks[0]?.(0);
     timerCallbacks[0]?.();
+    timerCallbacks[1]?.();
+    timerCallbacks[2]?.();
 
-    expect(calls).toEqual(["bottom:auto", "bottom:auto", "settle", "bottom:auto"]);
+    expect(calls).toEqual(["bottom:auto", "bottom:auto", "bottom:auto", "bottom:auto", "bottom:auto", "settle"]);
   });
 
   it("corrects non-user scroll restoration while initial load is settling", () => {
@@ -75,7 +79,37 @@ describe("createChatScrollController", () => {
     controller.updatePosition();
     timerCallbacks[1]?.();
 
-    expect(calls).toEqual(["bottom:auto", "top:auto", "bottom:auto", "settle"]);
+    expect(calls).toEqual(["bottom:auto", "top:auto", "bottom:auto"]);
+  });
+
+  it("marks initial load settled only after the final correction", () => {
+    const { container, calls } = createScrollContainer();
+    const controller = createChatScrollController({ getContainer: () => container });
+    const frameCallbacks: FrameRequestCallback[] = [];
+    const timerCallbacks: Array<() => void> = [];
+
+    controller.scheduleInitialLoad({
+      markSettled: () => calls.push("settle"),
+      requestFrame: (callback) => {
+        frameCallbacks.push(callback);
+        return 1;
+      },
+      cancelFrame: () => {},
+      setTimer: (callback) => {
+        timerCallbacks.push(callback);
+        return timerCallbacks.length;
+      },
+      clearTimer: () => {},
+    });
+
+    frameCallbacks[0]?.(0);
+    timerCallbacks[0]?.();
+    timerCallbacks[1]?.();
+    expect(calls).toEqual(["bottom:auto", "bottom:auto", "bottom:auto", "bottom:auto"]);
+
+    timerCallbacks[2]?.();
+
+    expect(calls).toEqual(["bottom:auto", "bottom:auto", "bottom:auto", "bottom:auto", "bottom:auto", "settle"]);
   });
 
   it("uses the same pinned-bottom rule for streaming updates", () => {

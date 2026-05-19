@@ -20,9 +20,10 @@ test("clicking back to top after refresh is not overridden by initial auto-scrol
   await page.goto("/");
 
   const messages = page.locator(".chat-messages");
-  await expect.poll(() => messages.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await expect.poll(() => messages.evaluate((el) => el.scrollHeight > el.clientHeight), { timeout: 5_000 }).toBe(true);
   await expect.poll(() => messages.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
   await expect.poll(() => distanceFromBottom(messages)).toBeLessThanOrEqual(1);
+  await expect(messages).not.toHaveClass(/chat-messages--settling/);
 
   await page.getByRole("button", { name: "Back to top" }).click();
   await expect.poll(() => messages.evaluate((el) => el.scrollTop)).toBeLessThan(20);
@@ -74,6 +75,7 @@ test("reload ignores the browser-restored message scroll position", async ({ pag
   const messages = page.locator(".chat-messages");
   await expect.poll(() => messages.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
   await expect.poll(() => distanceFromBottom(messages)).toBeLessThanOrEqual(1);
+  await expect(messages).not.toHaveClass(/chat-messages--settling/);
 
   await messages.evaluate((el) => {
     el.scrollTop = 0;
@@ -99,11 +101,13 @@ test("initial load corrects non-user scroll restoration during settling", async 
   await expect.poll(() => distanceFromBottom(messages)).toBeLessThanOrEqual(1);
 
   await page.waitForTimeout(120);
+  await expect(messages).toHaveClass(/chat-messages--settling/);
   await messages.evaluate((el) => {
     el.scrollTop = 0;
   });
 
   await expect.poll(() => distanceFromBottom(messages)).toBeLessThanOrEqual(1);
+  await expect(messages).not.toHaveClass(/chat-messages--settling/);
 });
 
 test("composer input sits below the toolbar and grows on Shift+Enter", async ({ page }) => {

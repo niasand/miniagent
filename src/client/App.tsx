@@ -89,6 +89,7 @@ export default function App() {
   }, [snapshot?.selectedSessionId, sessionId]);
 
   const messages = snapshot?.messages ?? [];
+  const hasWorkspaceSnapshot = snapshot !== undefined;
   const lastMessageId = messages[messages.length - 1]?.id ?? "";
   const messagesSessionKey = sessionId ?? snapshot?.selectedSessionId ?? "";
   const messagesSettling = messages.length > 0 && settledMessagesSessionKey !== messagesSessionKey;
@@ -173,10 +174,19 @@ export default function App() {
 
   // Auto-scroll on initial load, session switches, and new messages.
   useLayoutEffect(() => {
-    if (messages.length === 0 || !messagesSessionKey) {
+    if (!messagesSessionKey) {
       prevMsgCountRef.current = 0;
       lastAutoScrollSessionRef.current = messagesSessionKey;
       if (settledMessagesSessionKey !== messagesSessionKey) {
+        setSettledMessagesSessionKey(messagesSessionKey);
+      }
+      return;
+    }
+
+    if (messages.length === 0) {
+      prevMsgCountRef.current = 0;
+      lastAutoScrollSessionRef.current = messagesSessionKey;
+      if (hasWorkspaceSnapshot && settledMessagesSessionKey !== messagesSessionKey) {
         setSettledMessagesSessionKey(messagesSessionKey);
       }
       return;
@@ -201,7 +211,7 @@ export default function App() {
 
     prevMsgCountRef.current = messages.length;
     lastAutoScrollSessionRef.current = messagesSessionKey;
-  }, [messages.length, lastMessageId, messagesSessionKey, settledMessagesSessionKey]);
+  }, [hasWorkspaceSnapshot, messages.length, lastMessageId, messagesSessionKey, settledMessagesSessionKey]);
 
   // Track user scroll position to avoid overriding manual scroll.
   useEffect(() => {

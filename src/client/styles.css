@@ -457,7 +457,10 @@ button { cursor: pointer; }
 
 .chat-messages--settling {
   opacity: 0;
+  scrollbar-width: none;
 }
+
+.chat-messages--settling::-webkit-scrollbar { display: none; }
 
 .chat-empty {
   flex: 1;
