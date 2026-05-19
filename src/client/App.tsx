@@ -10,7 +10,7 @@ import { fetchChannels, saveChannelConfig, testChannel, requestWechatQRCode, pol
 import { createSession } from "./api/sessions.js";
 import { fetchSkills } from "./api/skills.js";
 import { sendSessionMessage } from "./api/messages.js";
-import { scheduleInitialMessageAutoScroll } from "./lib/initial-auto-scroll.js";
+import { createChatScrollController, type ChatScrollController } from "./lib/chat-scroll.js";
 import type { AgentType, ChatMessage, RunStats, SkillMeta } from "./api/types.js";
 import type { WorkspaceSnapshot } from "../shared/workspace.js";
 
@@ -31,9 +31,13 @@ export default function App() {
   const [drawerTab, setDrawerTab] = useState<DrawerTab>("skills");
   const [skillsQuery, setSkillsQuery] = useState("");
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const scrollControllerRef = useRef<ChatScrollController | null>(null);
+  scrollControllerRef.current ??= createChatScrollController({
+    getContainer: () => messagesContainerRef.current,
+  });
+  const scrollController = scrollControllerRef.current;
   const skillsSearchRef = useRef<HTMLInputElement>(null);
   const prevMsgCountRef = useRef(0);
-  const isNearBottomRef = useRef(true);
   const lastAutoScrollSessionRef = useRef<string | null>(null);
   const [settledMessagesSessionKey, setSettledMessagesSessionKey] = useState<string | null>(null);
   const streamingTextRef = useRef("");
@@ -90,19 +94,11 @@ export default function App() {
   const runStats = snapshot?.runStats ?? { durationSeconds: null, tokensUsed: null, tokensTotal: null };
 
   const scrollMessagesToBottom = (behavior: ScrollBehavior) => {
-    const container = messagesContainerRef.current;
-    if (!container) return;
-    isNearBottomRef.current = true;
-    if (behavior === "auto") {
-      container.scrollTop = container.scrollHeight;
-      return;
-    }
-    container.scrollTo({ top: container.scrollHeight, behavior });
+    scrollController.scrollToBottom(behavior);
   };
 
   const scrollMessagesToTop = () => {
-    isNearBottomRef.current = false;
-    messagesContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    scrollController.scrollToTop("smooth");
   };
 
   // SSE: capture text_delta for streaming + trigger workspace refresh
@@ -183,9 +179,7 @@ export default function App() {
     const shouldSnapToBottom = isInitialLoad || isNewSession || settledMessagesSessionKey !== messagesSessionKey;
 
     if (shouldSnapToBottom) {
-      const cleanup = scheduleInitialMessageAutoScroll({
-        scrollToBottom: () => scrollMessagesToBottom("auto"),
-        shouldAutoScroll: () => isNearBottomRef.current,
+      const cleanup = scrollController.scheduleInitialLoad({
         markSettled: () => setSettledMessagesSessionKey(messagesSessionKey),
         requestFrame: (callback) => window.requestAnimationFrame(callback),
         cancelFrame: (id) => window.cancelAnimationFrame(id),
@@ -205,20 +199,16 @@ export default function App() {
   useEffect(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
-    const onScroll = () => {
-      const threshold = 80;
-      isNearBottomRef.current =
-        container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
-    };
+    const onScroll = () => scrollController.updatePosition();
     container.addEventListener("scroll", onScroll, { passive: true });
     return () => container.removeEventListener("scroll", onScroll);
-  }, []);
+  }, [scrollController]);
 
   useEffect(() => {
-    if (streamingText && isNearBottomRef.current) {
-      scrollMessagesToBottom("smooth");
+    if (streamingText) {
+      scrollController.scrollToBottomIfPinned("smooth");
     }
-  }, [streamingText]);
+  }, [streamingText, scrollController]);
 
   // Clear streaming text when a NEW agent message appears (count increased since streaming started)
   const streamStartCountRef = useRef(0);
