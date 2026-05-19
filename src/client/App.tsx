@@ -31,6 +31,7 @@ export default function App() {
   const [drawerTab, setDrawerTab] = useState<DrawerTab>("skills");
   const [skillsQuery, setSkillsQuery] = useState("");
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const draftInputRef = useRef<HTMLTextAreaElement>(null);
   const scrollControllerRef = useRef<ChatScrollController | null>(null);
   scrollControllerRef.current ??= createChatScrollController({
     getContainer: () => messagesContainerRef.current,
@@ -99,6 +100,13 @@ export default function App() {
 
   const scrollMessagesToTop = () => {
     scrollController.scrollToTop("smooth");
+  };
+
+  const resizeDraftInput = () => {
+    const el = draftInputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 160) + "px";
   };
 
   // SSE: capture text_delta for streaming + trigger workspace refresh
@@ -232,6 +240,10 @@ export default function App() {
     }
   }, [drawerOpen, drawerTab]);
 
+  useLayoutEffect(() => {
+    resizeDraftInput();
+  }, [draft]);
+
   const openDrawer = (tab: DrawerTab) => {
     if (drawerOpen && drawerTab === tab) {
       setDrawerOpen(false);
@@ -278,6 +290,10 @@ export default function App() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && e.shiftKey) {
+      requestAnimationFrame(resizeDraftInput);
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -479,14 +495,10 @@ export default function App() {
             </div>
           </div>
           <textarea
+            ref={draftInputRef}
             className="chat-input"
             value={draft}
-            onChange={(e) => {
-              const el = e.currentTarget;
-              el.style.height = "auto";
-              el.style.height = Math.min(el.scrollHeight, 120) + "px";
-              setDraft(el.value);
-            }}
+            onChange={(e) => setDraft(e.currentTarget.value)}
             onKeyDown={handleKeyDown}
             placeholder="Type a message..."
             rows={1}

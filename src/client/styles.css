@@ -532,7 +532,7 @@ button { cursor: pointer; }
 .chat-scroll-controls {
   position: absolute;
   right: 18px;
-  bottom: 88px;
+  bottom: 132px;
   z-index: 20;
   display: grid;
   gap: 6px;
@@ -582,7 +582,10 @@ button { cursor: pointer; }
 
 .chat-bar {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "tools tools"
+    "input send";
   gap: 8px;
   align-items: end;
   border-top: 1px solid var(--color-border);
@@ -593,7 +596,13 @@ button { cursor: pointer; }
   margin: 0 auto;
 }
 
-.chat-bar-left { display: flex; gap: 4px; padding-bottom: 4px; }
+.chat-bar-left {
+  grid-area: tools;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-bottom: 0;
+}
 
 .bar-btn {
   display: inline-flex;
@@ -642,9 +651,11 @@ button { cursor: pointer; }
 }
 
 .chat-input {
+  grid-area: input;
   width: 100%;
   min-height: 56px;
   max-height: 160px;
+  min-width: 0;
   resize: none;
   border: 1px solid var(--color-border);
   border-radius: 10px;
@@ -665,6 +676,7 @@ button { cursor: pointer; }
 }
 
 .send-btn {
+  grid-area: send;
   display: grid;
   width: 56px;
   height: 56px;
@@ -858,10 +870,6 @@ button { cursor: pointer; }
   }
 
   .chat-bar {
-    grid-template-columns: 1fr auto;
-    grid-template-areas:
-      "tools tools"
-      "input send";
     gap: 8px;
     max-width: none;
     padding: 8px 10px;
@@ -869,12 +877,12 @@ button { cursor: pointer; }
 
   .chat-scroll-controls {
     right: 10px;
-    bottom: 124px;
+    bottom: 132px;
   }
 
   .chat-bar-left {
-    grid-area: tools;
     gap: 6px;
+    flex-wrap: nowrap;
     overflow-x: auto;
     padding-bottom: 0;
     scrollbar-width: none;
@@ -882,12 +890,4 @@ button { cursor: pointer; }
 
   .chat-bar-left::-webkit-scrollbar { display: none; }
 
-  .chat-input {
-    grid-area: input;
-    min-width: 0;
-  }
-
-  .send-btn {
-    grid-area: send;
-  }
 }

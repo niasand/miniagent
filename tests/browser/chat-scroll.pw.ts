@@ -37,6 +37,37 @@ test("clicking back to top after refresh is not overridden by initial auto-scrol
   expect(afterDelayedAutoScroll.distanceFromBottom).toBeGreaterThan(200);
 });
 
+test("composer input sits below the toolbar and grows on Shift+Enter", async ({ page }) => {
+  await page.addInitScript((id) => {
+    localStorage.setItem("sessionId", id);
+  }, sessionId);
+
+  await mockWorkspaceApis(page, createScrollableSnapshot());
+
+  await page.goto("/");
+
+  const toolbar = page.locator(".chat-bar-left");
+  const input = page.locator(".chat-input");
+
+  await expect(toolbar).toBeVisible();
+  await expect(input).toBeVisible();
+
+  const toolbarBox = await toolbar.boundingBox();
+  const inputBox = await input.boundingBox();
+  expect(toolbarBox).not.toBeNull();
+  expect(inputBox).not.toBeNull();
+  expect(inputBox!.y).toBeGreaterThan(toolbarBox!.y + toolbarBox!.height - 1);
+
+  const initialHeight = inputBox!.height;
+  await input.click();
+  await page.keyboard.type("first line");
+  await page.keyboard.press("Shift+Enter");
+  await page.keyboard.type("second line");
+
+  await expect(input).toHaveValue("first line\nsecond line");
+  await expect.poll(async () => (await input.boundingBox())?.height ?? 0).toBeGreaterThan(initialHeight + 4);
+});
+
 async function mockWorkspaceApis(page: Page, snapshot: WorkspaceSnapshot) {
   await page.route("**/api/workspace**", async (route) => {
     await route.fulfill({ json: snapshot });
