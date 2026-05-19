@@ -10,6 +10,7 @@ import { fetchChannels, saveChannelConfig, testChannel, requestWechatQRCode, pol
 import { createSession } from "./api/sessions.js";
 import { fetchSkills } from "./api/skills.js";
 import { sendSessionMessage } from "./api/messages.js";
+import { scheduleInitialMessageAutoScroll } from "./lib/initial-auto-scroll.js";
 import type { AgentType, ChatMessage, RunStats, SkillMeta } from "./api/types.js";
 import type { WorkspaceSnapshot } from "../shared/workspace.js";
 
@@ -182,21 +183,18 @@ export default function App() {
     const shouldSnapToBottom = isInitialLoad || isNewSession || settledMessagesSessionKey !== messagesSessionKey;
 
     if (shouldSnapToBottom) {
-      scrollMessagesToBottom("auto");
-      const frame = requestAnimationFrame(() => {
-        scrollMessagesToBottom("auto");
-        setSettledMessagesSessionKey(messagesSessionKey);
+      const cleanup = scheduleInitialMessageAutoScroll({
+        scrollToBottom: () => scrollMessagesToBottom("auto"),
+        shouldAutoScroll: () => isNearBottomRef.current,
+        markSettled: () => setSettledMessagesSessionKey(messagesSessionKey),
+        requestFrame: (callback) => window.requestAnimationFrame(callback),
+        cancelFrame: (id) => window.cancelAnimationFrame(id),
+        setTimer: (callback, delayMs) => window.setTimeout(callback, delayMs),
+        clearTimer: (id) => window.clearTimeout(id),
       });
-      const timer = window.setTimeout(() => {
-        scrollMessagesToBottom("auto");
-        setSettledMessagesSessionKey(messagesSessionKey);
-      }, 80);
       prevMsgCountRef.current = messages.length;
       lastAutoScrollSessionRef.current = messagesSessionKey;
-      return () => {
-        cancelAnimationFrame(frame);
-        window.clearTimeout(timer);
-      };
+      return cleanup;
     }
 
     prevMsgCountRef.current = messages.length;
