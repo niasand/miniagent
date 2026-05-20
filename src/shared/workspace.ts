@@ -3,6 +3,7 @@ export type WorkspaceAgentLabel = "Codex" | "Claude" | "Trae";
 export type WorkspaceRuntimeKind = "cli" | "acp";
 export type WorkspaceAgentHealthStatus = "unknown" | "healthy" | "missing" | "auth_required" | "failed";
 export type WorkspaceActorType = "web_user" | "feishu_user" | "qq_user" | "telegram_user" | "discord_user" | "system" | "agent";
+export type WorkspaceChannelType = "web" | "feishu" | "qq" | "telegram" | "discord" | "wechat" | "wecom" | "dingtalk" | null;
 
 export type WorkspaceSessionStatus = "running" | "compact" | "queued" | "idle" | "archived" | "failed";
 
@@ -14,7 +15,9 @@ export type WorkspaceSessionSummary = {
   agent: WorkspaceAgentLabel;
   initials: string;
   workspace: string;
+  channelType: WorkspaceChannelType;
   status: WorkspaceSessionStatus;
+  updatedAt: string;
   handoff?: string;
 };
 

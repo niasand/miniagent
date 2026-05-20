@@ -63,6 +63,13 @@ export class MessageStore {
     return rows.map(mapMessageRow);
   }
 
+  getFirstUserBySession(sessionId: string): MessageRecord | null {
+    const row = this.db.prepare(
+      "SELECT * FROM messages WHERE session_id = ? AND role = 'user' ORDER BY created_at ASC, id ASC LIMIT 1"
+    ).get(sessionId) as MessageRow | undefined;
+    return row ? mapMessageRow(row) : null;
+  }
+
   getLatestBySession(sessionId: string, limit = 50): MessageRecord[] {
     const total = (this.db.prepare("SELECT COUNT(*) as c FROM messages WHERE session_id = ?").get(sessionId) as { c: number }).c;
     const offset = Math.max(0, total - limit);

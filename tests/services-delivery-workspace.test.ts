@@ -198,8 +198,8 @@ describe("WorkspaceService", () => {
   });
 
   it("returns session list with correct mapping", () => {
-    sessions.createSession({ title: "Session A", agentType: "claude", workspacePath: "/tmp" });
-    sessions.createSession({ title: "Session B", agentType: "codex", workspacePath: "/tmp" });
+    sessions.createSession({ name: "Session A", title: "Session A", agentType: "claude", workspacePath: "/tmp" });
+    sessions.createSession({ name: "Session B", title: "Session B", agentType: "codex", workspacePath: "/tmp" });
 
     const service = new WorkspaceService(db);
     const snapshot = service.getSnapshot();
@@ -210,6 +210,24 @@ describe("WorkspaceService", () => {
     expect(snapshot.sessions[0].agent).toBe("Codex");
     expect(snapshot.sessions[1].agent).toBe("Claude");
     expect(snapshot.sessions[0].initials).toBe("CO");
+    expect(snapshot.sessions[0].channelType).toBeNull();
+    expect(snapshot.sessions[0].updatedAt).toBeTruthy();
+  });
+
+  it("uses persisted session name before title and message fallbacks", () => {
+    const session = sessions.createSession({
+      name: "Manual name",
+      title: "Claude session",
+      agentType: "claude",
+      workspacePath: "/tmp",
+    });
+    const event = events.append({ sessionId: session.id, type: "msg" });
+    messages.insert({ sessionId: session.id, role: "user", content: "First message", sourceEventId: event.id });
+
+    const service = new WorkspaceService(db);
+    const snapshot = service.getSnapshot();
+
+    expect(snapshot.sessions[0].name).toBe("Manual name");
   });
 
   it("uses the first user message as the name for default agent titles", () => {

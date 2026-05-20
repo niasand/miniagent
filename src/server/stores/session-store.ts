@@ -15,6 +15,7 @@ export type RuntimeKind = "cli" | "acp";
 
 export type SessionRecord = {
   id: string;
+  name: string;
   title: string;
   agentType: string;
   workspacePath: string;
@@ -77,6 +78,7 @@ export type AgentRunRecord = {
 
 export type CreateSessionInput = {
   id?: string;
+  name?: string;
   title: string;
   agentType: string;
   workspacePath: string;
@@ -133,7 +135,7 @@ export type RuntimeProtocolStateUpdate = {
 
 // Internal row types
 type SessionRow = {
-  id: string; title: string; agent_type: string; workspace_path: string;
+  id: string; name: string; title: string; agent_type: string; workspace_path: string;
   status: SessionStatus; channel_type: string | null; channel_ref: string | null;
   default_params_json: string; active_run_id: string | null;
   current_context_pack_id: string | null; source_session_id: string | null;
@@ -173,13 +175,14 @@ export class SessionStore {
   createSession(input: CreateSessionInput): SessionRecord {
     const timestamp = nowIso();
     const row = this.db.prepare(
-      `INSERT INTO sessions (id, title, agent_type, workspace_path, status, channel_type, channel_ref,
+      `INSERT INTO sessions (id, name, title, agent_type, workspace_path, status, channel_type, channel_ref,
         default_params_json, source_session_id, source_context_pack_id, created_at, updated_at)
-       VALUES (@id, @title, @agentType, @workspacePath, 'idle', @channelType, @channelRef,
+       VALUES (@id, @name, @title, @agentType, @workspacePath, 'idle', @channelType, @channelRef,
         @defaultParamsJson, @sourceSessionId, @sourceContextPackId, @createdAt, @updatedAt)
        RETURNING *`
     ).get({
       id: input.id ?? createId("ses"),
+      name: normalizeSessionName(input.name ?? ""),
       title: input.title,
       agentType: input.agentType,
       workspacePath: input.workspacePath,
@@ -197,6 +200,29 @@ export class SessionStore {
   getSession(id: string): SessionRecord | null {
     const row = this.db.prepare("SELECT * FROM sessions WHERE id = ?").get(id) as SessionRow | undefined;
     return row ? mapSessionRow(row) : null;
+  }
+
+  updateSessionName(sessionId: string, name: string): SessionRecord {
+    const cleanName = normalizeSessionName(name);
+    if (!cleanName) throw new Error("Session name is required");
+
+    const now = nowIso();
+    const result = this.db.prepare(
+      "UPDATE sessions SET name = @name, updated_at = @updatedAt WHERE id = @sessionId"
+    ).run({ sessionId, name: cleanName, updatedAt: now });
+    if (result.changes === 0) throw new Error(`Session not found: ${sessionId}`);
+    return this.requireSession(sessionId);
+  }
+
+  setSessionNameIfEmpty(sessionId: string, name: string): SessionRecord {
+    const cleanName = normalizeSessionName(name);
+    if (!cleanName) return this.requireSession(sessionId);
+
+    const now = nowIso();
+    this.db.prepare(
+      "UPDATE sessions SET name = @name, updated_at = @updatedAt WHERE id = @sessionId AND trim(name) = ''"
+    ).run({ sessionId, name: cleanName, updatedAt: now });
+    return this.requireSession(sessionId);
   }
 
   listSessions(limit = 50): SessionRecord[] {
@@ -505,7 +531,7 @@ function mapRunStatusToSessionStatus(status: FinishRunInput["status"]): SessionS
 
 function mapSessionRow(row: SessionRow): SessionRecord {
   return {
-    id: row.id, title: row.title, agentType: row.agent_type,
+    id: row.id, name: row.name ?? "", title: row.title, agentType: row.agent_type,
     workspacePath: row.workspace_path, status: row.status,
     channelType: row.channel_type, channelRef: row.channel_ref,
     defaultParams: parseJson(row.default_params_json),
@@ -516,6 +542,10 @@ function mapSessionRow(row: SessionRow): SessionRecord {
     createdAt: row.created_at, updatedAt: row.updated_at,
     archivedAt: row.archived_at,
   };
+}
+
+function normalizeSessionName(value: string): string {
+  return value.trim().replace(/\s+/g, " ");
 }
 
 function mapTaskRow(row: TaskRow): TaskRecord {

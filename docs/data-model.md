@@ -84,6 +84,7 @@ Long-lived conversation container.
 | Column | Type | Notes |
 | --- | --- | --- |
 | `id` | TEXT PK | Session ID |
+| `name` | TEXT | User-facing label shown in History |
 | `title` | TEXT | Human label |
 | `agent_type` | TEXT | FK-like reference to `agent_profiles.id` |
 | `workspace_path` | TEXT | Must pass `WorkspacePolicy` |

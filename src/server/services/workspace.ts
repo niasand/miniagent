@@ -29,13 +29,15 @@ export class WorkspaceService {
 
     const sessionSummaries: WorkspaceSessionSummary[] = sessions.map((s) => ({
       id: s.id,
-      name: getSessionName(s.title, s.agentType, firstUserMessages.get(s.id)),
+      name: getSessionName(s.name, s.title, s.agentType, firstUserMessages.get(s.id)),
       title: s.title,
       agentType: s.agentType as any,
       agent: (s.agentType.charAt(0).toUpperCase() + s.agentType.slice(1)) as any,
       initials: s.agentType.slice(0, 2).toUpperCase(),
       workspace: s.workspacePath,
+      channelType: s.channelType as any,
       status: this.mapSessionStatus(s.status),
+      updatedAt: s.updatedAt,
       handoff: undefined,
     }));
 
@@ -150,10 +152,12 @@ export class WorkspaceService {
   }
 }
 
-function getSessionName(title: string, agentType: string, firstUserMessage?: string): string {
+function getSessionName(persistedName: string, title: string, agentType: string, firstUserMessage?: string): string {
+  const cleanPersistedName = normalizeLabel(persistedName);
   const cleanTitle = normalizeLabel(title);
   const cleanMessage = normalizeLabel(firstUserMessage ?? "");
 
+  if (cleanPersistedName) return cleanPersistedName;
   if (cleanTitle && cleanTitle !== `${getAgentLabel(agentType)} session`) {
     return cleanTitle;
   }

@@ -194,10 +194,9 @@ button { cursor: pointer; }
   justify-content: space-between;
   gap: 8px;
   width: 100%;
-  border: 0;
   border-radius: 8px;
   background: transparent;
-  padding: 8px 10px;
+  padding: 6px 8px 6px 10px;
   color: var(--color-foreground);
   font-size: 13px;
   text-align: left;
@@ -211,12 +210,79 @@ button { cursor: pointer; }
   color: var(--color-primary);
 }
 
+.session-select {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+}
+
 .session-title {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
+}
+
+.session-meta {
+  display: flex;
+  min-width: 0;
+  gap: 6px;
+  overflow: hidden;
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.session-action,
+.session-edit-btn {
+  display: grid;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-muted-foreground);
+}
+
+.session-action:hover,
+.session-edit-btn:hover {
+  background: color-mix(in srgb, var(--color-muted) 80%, transparent);
+  color: var(--color-foreground);
+}
+
+.session-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.session-name-input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  background: var(--color-background);
+  padding: 0 9px;
+  color: var(--color-foreground);
+  font-size: 13px;
+  outline: none;
+}
+
+.session-name-input:focus {
+  border-color: var(--color-ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-ring) 16%, transparent);
 }
 
 .session-status {

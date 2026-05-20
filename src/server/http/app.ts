@@ -189,9 +189,11 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
 
     const defaultAgent = new AgentDefaultStore(db).resolve({ workspacePath: effectiveWorkspacePath });
     const agentType = (requestedAgentType as string) ?? defaultAgent?.agentType ?? "claude";
+    const trimmedTitle = typeof title === "string" ? title.trim() : "";
 
     const session = sessionStore.createSession({
-      title: (typeof title === "string" ? title.trim() : "") || `${displayAgent(agentType)} session`,
+      name: trimmedTitle,
+      title: trimmedTitle || `${displayAgent(agentType)} session`,
       agentType,
       workspacePath: effectiveWorkspacePath,
       channelType: "web",
@@ -205,6 +207,36 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
       },
       201,
     );
+  });
+
+  app.patch("/api/sessions/:sessionId", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return c.json({ error: "Request body must be valid JSON" }, 400);
+    }
+    const value = body as Record<string, unknown>;
+    const name = value.name;
+    if (typeof name !== "string") {
+      return c.json({ error: "name must be a string" }, 400);
+    }
+    if (name.trim().length === 0) {
+      return c.json({ error: "name is required" }, 400);
+    }
+
+    try {
+      const session = sessionStore.updateSessionName(c.req.param("sessionId"), name);
+      const workspaceService = new WorkspaceService(db, runtimeSupervisor);
+      return c.json({
+        sessionId: session.id,
+        workspace: workspaceService.getSnapshot(session.id),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Session update failed";
+      if (message.startsWith("Session not found")) {
+        return c.json({ error: message }, 404);
+      }
+      return c.json({ error: message }, 500);
+    }
   });
 
   // ── Messages ──

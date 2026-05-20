@@ -150,15 +150,54 @@ test("history shows the session name and truncates long labels", async ({ page }
   const snapshot = createScrollableSnapshot();
   snapshot.sessions[0].name = longName;
   snapshot.sessions[0].title = "Claude session";
+  snapshot.sessions.push({
+    ...snapshot.sessions[0],
+    id: "ses_other",
+    name: "Deploy checklist",
+    title: "Deploy checklist",
+  });
   await mockWorkspaceApis(page, snapshot);
 
   await page.goto("/");
   await page.locator(".chat-bar").getByRole("button", { name: "History" }).click();
+  const search = page.getByPlaceholder("Search history...");
+  await expect(search).toBeFocused();
 
-  const title = page.locator(".session-title");
+  const title = page.locator(".session-title").first();
   await expect(title).toHaveText(longName);
   await expect(page.locator(".drawer-list")).not.toContainText("Claude session");
+  await expect(page.locator(".session-meta").first()).toContainText("Web");
+  await expect.poll(() => page.locator(".session-meta").first().textContent()).not.toBe("Web");
   await expect.poll(() => title.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+
+  await search.fill("next three");
+  await expect(page.locator(".session-item")).toHaveCount(1);
+  await expect(title).toHaveText(longName);
+});
+
+test("history renames sessions inline", async ({ page }) => {
+  await page.addInitScript((id) => {
+    localStorage.setItem("sessionId", id);
+  }, sessionId);
+
+  const snapshot = createScrollableSnapshot();
+  await page.route(`**/api/sessions/${sessionId}`, async (route) => {
+    const body = route.request().postDataJSON() as { name?: string };
+    snapshot.sessions[0].name = body.name ?? snapshot.sessions[0].name;
+    await route.fulfill({ json: { sessionId, workspace: snapshot } });
+  });
+  await mockWorkspaceApis(page, snapshot);
+
+  await page.goto("/");
+  await page.locator(".chat-bar").getByRole("button", { name: "History" }).click();
+  await page.getByRole("button", { name: "Rename Browser scroll regression" }).click();
+
+  const input = page.locator(".session-name-input");
+  await expect(input).toBeFocused();
+  await input.fill("Renamed session");
+  await input.press("Enter");
+
+  await expect(page.locator(".session-title")).toHaveText("Renamed session");
 });
 
 async function mockWorkspaceApis(page: Page, snapshot: WorkspaceSnapshot) {
@@ -204,7 +243,9 @@ function createScrollableSnapshot(): WorkspaceSnapshot {
         agent: "Claude",
         initials: "CL",
         workspace: "/tmp/miniagent",
+        channelType: "web",
         status: "idle",
+        updatedAt: "2026-05-19T01:00:00.000Z",
       },
     ],
     messages: Array.from({ length: 18 }, (_, index) => ({

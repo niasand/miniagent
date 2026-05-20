@@ -1,13 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import QRCode from "qrcode";
-import { ArrowDown, ArrowUp, ChevronDown, Clock, Search, SendHorizontal, Settings, Sparkles, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronDown, Clock, Pencil, Search, SendHorizontal, Settings, Sparkles, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import "highlight.js/styles/atom-one-dark.css";
 import { fetchChannels, saveChannelConfig, testChannel, requestWechatQRCode, pollWechatQRStatus, type ChannelInfo } from "./api/channels.js";
-import { createSession } from "./api/sessions.js";
+import { createSession, updateSessionName } from "./api/sessions.js";
 import { fetchSkills } from "./api/skills.js";
 import { sendSessionMessage } from "./api/messages.js";
 import { createChatScrollController, type ChatScrollController } from "./lib/chat-scroll.js";
@@ -30,6 +30,9 @@ export default function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerTab, setDrawerTab] = useState<DrawerTab>("skills");
   const [skillsQuery, setSkillsQuery] = useState("");
+  const [sessionsQuery, setSessionsQuery] = useState("");
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editingSessionName, setEditingSessionName] = useState("");
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const draftInputRef = useRef<HTMLTextAreaElement>(null);
   const scrollControllerRef = useRef<ChatScrollController | null>(null);
@@ -38,6 +41,7 @@ export default function App() {
   });
   const scrollController = scrollControllerRef.current;
   const skillsSearchRef = useRef<HTMLInputElement>(null);
+  const sessionsSearchRef = useRef<HTMLInputElement>(null);
   const prevMsgCountRef = useRef(0);
   const lastAutoScrollSessionRef = useRef<string | null>(null);
   const [settledMessagesSessionKey, setSettledMessagesSessionKey] = useState<string | null>(null);
@@ -79,6 +83,10 @@ export default function App() {
     },
     refetchInterval: 3_000,
   });
+  const sessions = snapshot?.sessions ?? [];
+  const filteredSessions = sessionsQuery.trim()
+    ? sessions.filter((s) => s.name.toLowerCase().includes(sessionsQuery.trim().toLowerCase()))
+    : sessions;
 
   // Sync sessionId from server when we had none (server picks most recent session)
   useEffect(() => {
@@ -251,11 +259,14 @@ export default function App() {
     }
   }, [messages]);
 
-  // Focus search on drawer open + skills tab
+  // Focus search on drawer open + search-backed tabs
   useEffect(() => {
     if (drawerOpen && drawerTab === "skills") {
       setSkillsQuery("");
       requestAnimationFrame(() => skillsSearchRef.current?.focus());
+    }
+    if (drawerOpen && drawerTab === "sessions") {
+      requestAnimationFrame(() => sessionsSearchRef.current?.focus());
     }
   }, [drawerOpen, drawerTab]);
 
@@ -297,6 +308,15 @@ export default function App() {
     },
   });
 
+  const renameSession = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => updateSessionName(id, name),
+    onSuccess: () => {
+      setEditingSessionId(null);
+      setEditingSessionName("");
+      queryClient.invalidateQueries({ queryKey: ["workspace"] });
+    },
+  });
+
   const handleSend = () => {
     const text = draft.trim();
     if (!text || sendMessage.isPending) return;
@@ -306,6 +326,17 @@ export default function App() {
   const handleSkillSelect = (skill: SkillMeta) => {
     setDraft(`/${skill.name} `);
     setDrawerOpen(false);
+  };
+
+  const startSessionRename = (id: string, name: string) => {
+    setEditingSessionId(id);
+    setEditingSessionName(name);
+  };
+
+  const submitSessionRename = (id: string) => {
+    const nextName = editingSessionName.trim();
+    if (!nextName || renameSession.isPending) return;
+    renameSession.mutate({ id, name: nextName });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -390,30 +421,103 @@ export default function App() {
 
         {/* Sessions tab */}
         {drawerTab === "sessions" && (
-          <div className="drawer-list">
-            {(snapshot?.sessions ?? []).length === 0 && (
-              <div className="drawer-empty">No sessions yet</div>
-            )}
-            {(snapshot?.sessions ?? []).map((s) => {
-              const sessionName = s.name || s.title || "Untitled";
-              return (
-                <button
-                  key={s.id}
-                  className={`session-item ${s.id === sessionId ? "session-item--active" : ""}`}
-                  onClick={() => {
-                    setSessionId(s.id);
-                    localStorage.setItem("sessionId", s.id);
-                    queryClient.invalidateQueries({ queryKey: ["workspace", s.id] });
-                  }}
-                >
-                  <span className="session-title" title={sessionName}>{sessionName}</span>
-                  <span className={`session-status session-status--${s.status}`}>
-                    <span className="session-dot" />
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          <>
+            <div className="drawer-search">
+              <Search className="h-4 w-4 drawer-search-icon" />
+              <input
+                ref={sessionsSearchRef}
+                className="drawer-search-input"
+                value={sessionsQuery}
+                onChange={(e) => setSessionsQuery(e.currentTarget.value)}
+                placeholder="Search history..."
+              />
+            </div>
+            <div className="drawer-list">
+              {sessions.length === 0 && (
+                <div className="drawer-empty">No sessions yet</div>
+              )}
+              {sessions.length > 0 && filteredSessions.length === 0 && (
+                <div className="drawer-empty">No matching sessions</div>
+              )}
+              {filteredSessions.map((s) => {
+                const sessionName = s.name || s.title || "Untitled";
+                const isEditing = editingSessionId === s.id;
+                return (
+                  <div
+                    key={s.id}
+                    className={`session-item ${s.id === sessionId ? "session-item--active" : ""}`}
+                  >
+                    {isEditing ? (
+                      <form
+                        className="session-edit"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          submitSessionRename(s.id);
+                        }}
+                      >
+                        <input
+                          className="session-name-input"
+                          value={editingSessionName}
+                          onChange={(e) => setEditingSessionName(e.currentTarget.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Escape") {
+                              setEditingSessionId(null);
+                              setEditingSessionName("");
+                            }
+                          }}
+                          aria-label="Session name"
+                          autoFocus
+                        />
+                        <button className="session-edit-btn" type="submit" title="Save" aria-label="Save session name">
+                          <Check className="h-4 w-4" />
+                        </button>
+                        <button
+                          className="session-edit-btn"
+                          type="button"
+                          title="Cancel"
+                          aria-label="Cancel rename"
+                          onClick={() => {
+                            setEditingSessionId(null);
+                            setEditingSessionName("");
+                          }}
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </form>
+                    ) : (
+                      <>
+                        <button
+                          className="session-select"
+                          onClick={() => {
+                            setSessionId(s.id);
+                            localStorage.setItem("sessionId", s.id);
+                            queryClient.invalidateQueries({ queryKey: ["workspace", s.id] });
+                          }}
+                        >
+                          <span className="session-title" title={sessionName}>{sessionName}</span>
+                          <span className="session-meta">
+                            <span>{formatSessionChannel(s.channelType)}</span>
+                            <span>{formatSessionUpdatedAt(s.updatedAt)}</span>
+                          </span>
+                        </button>
+                        <button
+                          className="session-action"
+                          title="Rename"
+                          aria-label={`Rename ${sessionName}`}
+                          onClick={() => startSessionRename(s.id, sessionName)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <span className={`session-status session-status--${s.status}`}>
+                          <span className="session-dot" />
+                        </span>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
       {drawerOpen && <div className="drawer-backdrop" onClick={() => setDrawerOpen(false)} />}
@@ -551,6 +655,22 @@ function formatMessageTime(value?: string): string {
     minute: "2-digit",
     hour12: false,
   }).format(date);
+}
+
+function formatSessionUpdatedAt(value?: string): string {
+  return formatMessageTime(value);
+}
+
+function formatSessionChannel(channelType: WorkspaceSnapshot["sessions"][number]["channelType"]): string {
+  if (channelType === "feishu") return "Feishu";
+  if (channelType === "qq") return "QQ";
+  if (channelType === "telegram") return "Telegram";
+  if (channelType === "discord") return "Discord";
+  if (channelType === "wechat") return "WeChat";
+  if (channelType === "wecom") return "WeCom";
+  if (channelType === "dingtalk") return "DingTalk";
+  if (channelType === "web") return "Web";
+  return "Local";
 }
 
 const CHANNEL_FIELDS: Record<string, Array<{ key: string; label: string }>> = {

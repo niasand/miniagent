@@ -37,6 +37,21 @@ describe("InboundService", () => {
     expect(result.taskId).toBeDefined();
   });
 
+  it("persists the first user message as an empty session name", () => {
+    const inbound = makeInbound("web");
+    const result = inbound.receiveMessage({
+      messageId: "msg_1",
+      chatId: "web-chat",
+      userId: "web_user",
+      text: "  Summarize\n\nthis repo  ",
+      chatType: "private",
+    });
+    const sessions = new SessionStore(db, new EventStore(db));
+    const session = sessions.getSession(result.session.id);
+
+    expect(session?.name).toBe("Summarize this repo");
+  });
+
   it("reuses session for same chat", () => {
     const inbound = makeInbound("telegram");
 

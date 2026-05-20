@@ -56,6 +56,14 @@ function putJson(path: string, body: unknown) {
   });
 }
 
+function patchJson(path: string, body: unknown) {
+  return request(path, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 // ── Health ──
 
 describe("GET /", () => {
@@ -143,8 +151,27 @@ describe("POST /api/sessions", () => {
     const res = await postJson("/api/sessions", { title: "Custom", agentType: "claude" });
     expect(res.status).toBe(201);
     const data = await res.json();
+    expect(data.workspace.sessions[0].name).toBe("Custom");
     expect(data.workspace.sessions[0].title).toBe("Custom");
     expect(data.workspace.sessions[0].agentType).toBe("claude");
+  });
+
+  it("renames a session", async () => {
+    const { sessionId } = (await (await postJson("/api/sessions", {})).json()) as any;
+    const res = await patchJson(`/api/sessions/${sessionId}`, { name: "Investigate sync issue" });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.workspace.sessions[0].name).toBe("Investigate sync issue");
+
+    const store = new SessionStore(db, new EventStore(db));
+    expect(store.getSession(sessionId)?.name).toBe("Investigate sync issue");
+  });
+
+  it("rejects invalid session names", async () => {
+    const { sessionId } = (await (await postJson("/api/sessions", {})).json()) as any;
+    expect((await patchJson(`/api/sessions/${sessionId}`, { name: "" })).status).toBe(400);
+    expect((await patchJson(`/api/sessions/${sessionId}`, { name: 123 })).status).toBe(400);
+    expect((await patchJson("/api/sessions/ses_missing", { name: "Missing" })).status).toBe(404);
   });
 
   it("rejects invalid agentType", async () => {

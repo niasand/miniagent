@@ -1,4 +1,5 @@
 import type { AgentType } from "./types.js";
+import type { WorkspaceSnapshot } from "../../shared/workspace.js";
 
 export type CreateSessionRequest = {
   agentType?: AgentType;
@@ -8,6 +9,11 @@ export type CreateSessionRequest = {
 
 export type CreateSessionResponse = {
   sessionId: string;
+};
+
+export type UpdateSessionNameResponse = {
+  sessionId: string;
+  workspace: WorkspaceSnapshot;
 };
 
 export async function createSession(request: CreateSessionRequest): Promise<CreateSessionResponse> {
@@ -21,4 +27,17 @@ export async function createSession(request: CreateSessionRequest): Promise<Crea
     throw new Error(body?.error ?? `Create session API failed: ${response.status}`);
   }
   return (await response.json()) as CreateSessionResponse;
+}
+
+export async function updateSessionName(sessionId: string, name: string): Promise<UpdateSessionNameResponse> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "PATCH",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `Update session API failed: ${response.status}`);
+  }
+  return (await response.json()) as UpdateSessionNameResponse;
 }

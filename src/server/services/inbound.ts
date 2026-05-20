@@ -96,6 +96,7 @@ export class InboundService {
       metadata: { userId: msg.userId, sourceType, messageId: msg.messageId },
       sourceEventId: event.id,
     });
+    this.persistInitialSessionName(session.id);
 
     this.auditLogs.insert({
       actorType,
@@ -134,6 +135,7 @@ export class InboundService {
       metadata: { userId: msg.userId, sourceType, messageId: msg.messageId },
       sourceEventId: event.id,
     });
+    this.persistInitialSessionName(session.id);
 
     // Enqueue outbox for non-web channels (web uses SSE directly)
     if (this.channelType !== "web") {
@@ -242,4 +244,16 @@ export class InboundService {
       idempotencyKey: `reply:${session.id}:${Date.now()}`,
     });
   }
+
+  private persistInitialSessionName(sessionId: string): void {
+    const firstUserMessage = this.messages.getFirstUserBySession(sessionId);
+    if (!firstUserMessage) return;
+    this.sessions.setSessionNameIfEmpty(sessionId, summarizeSessionName(firstUserMessage.content));
+  }
+}
+
+function summarizeSessionName(text: string): string {
+  const normalized = text.trim().replace(/\s+/g, " ");
+  if (normalized.length <= 160) return normalized;
+  return `${normalized.slice(0, 157)}...`;
 }
