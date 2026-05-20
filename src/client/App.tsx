@@ -394,22 +394,25 @@ export default function App() {
             {(snapshot?.sessions ?? []).length === 0 && (
               <div className="drawer-empty">No sessions yet</div>
             )}
-            {(snapshot?.sessions ?? []).map((s) => (
-              <button
-                key={s.id}
-                className={`session-item ${s.id === sessionId ? "session-item--active" : ""}`}
-                onClick={() => {
-                  setSessionId(s.id);
-                  localStorage.setItem("sessionId", s.id);
-                  queryClient.invalidateQueries({ queryKey: ["workspace", s.id] });
-                }}
-              >
-                <span className="session-title">{s.title || "Untitled"}</span>
-                <span className={`session-status session-status--${s.status}`}>
-                  <span className="session-dot" />
-                </span>
-              </button>
-            ))}
+            {(snapshot?.sessions ?? []).map((s) => {
+              const sessionName = s.name || s.title || "Untitled";
+              return (
+                <button
+                  key={s.id}
+                  className={`session-item ${s.id === sessionId ? "session-item--active" : ""}`}
+                  onClick={() => {
+                    setSessionId(s.id);
+                    localStorage.setItem("sessionId", s.id);
+                    queryClient.invalidateQueries({ queryKey: ["workspace", s.id] });
+                  }}
+                >
+                  <span className="session-title" title={sessionName}>{sessionName}</span>
+                  <span className={`session-status session-status--${s.status}`}>
+                    <span className="session-dot" />
+                  </span>
+                </button>
+              );
+            })}
           </div>
         )}
       </div>

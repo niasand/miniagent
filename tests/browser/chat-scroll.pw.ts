@@ -141,6 +141,26 @@ test("composer input sits below the toolbar and grows on Shift+Enter", async ({ 
   await expect.poll(async () => (await input.boundingBox())?.height ?? 0).toBeGreaterThan(initialHeight + 4);
 });
 
+test("history shows the session name and truncates long labels", async ({ page }) => {
+  await page.addInitScript((id) => {
+    localStorage.setItem("sessionId", id);
+  }, sessionId);
+
+  const longName = "Please summarize this repository and identify the next three highest impact implementation tasks";
+  const snapshot = createScrollableSnapshot();
+  snapshot.sessions[0].name = longName;
+  snapshot.sessions[0].title = "Claude session";
+  await mockWorkspaceApis(page, snapshot);
+
+  await page.goto("/");
+  await page.locator(".chat-bar").getByRole("button", { name: "History" }).click();
+
+  const title = page.locator(".session-title");
+  await expect(title).toHaveText(longName);
+  await expect(page.locator(".drawer-list")).not.toContainText("Claude session");
+  await expect.poll(() => title.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+});
+
 async function mockWorkspaceApis(page: Page, snapshot: WorkspaceSnapshot) {
   await page.route("**/api/workspace**", async (route) => {
     await route.fulfill({ json: snapshot });
@@ -178,6 +198,7 @@ function createScrollableSnapshot(): WorkspaceSnapshot {
     sessions: [
       {
         id: sessionId,
+        name: "Browser scroll regression",
         title: "Browser scroll regression",
         agentType: "claude",
         agent: "Claude",

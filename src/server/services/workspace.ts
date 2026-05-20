@@ -25,9 +25,11 @@ export class WorkspaceService {
   getSnapshot(selectedSessionId?: string | null): WorkspaceSnapshot {
     const sessions = this.sessions.listSessions();
     const sessionId = selectedSessionId ?? sessions[0]?.id ?? null;
+    const firstUserMessages = this.getFirstUserMessages(sessions.map((session) => session.id));
 
     const sessionSummaries: WorkspaceSessionSummary[] = sessions.map((s) => ({
       id: s.id,
+      name: getSessionName(s.title, s.agentType, firstUserMessages.get(s.id)),
       title: s.title,
       agentType: s.agentType as any,
       agent: (s.agentType.charAt(0).toUpperCase() + s.agentType.slice(1)) as any,
@@ -116,6 +118,24 @@ export class WorkspaceService {
     return rows[0] ?? null;
   }
 
+  private getFirstUserMessages(sessionIds: string[]): Map<string, string> {
+    if (sessionIds.length === 0) return new Map();
+
+    const placeholders = sessionIds.map(() => "?").join(",");
+    const rows = this.db.prepare(
+      `SELECT session_id, content
+       FROM (
+         SELECT session_id, content,
+           row_number() OVER (PARTITION BY session_id ORDER BY created_at ASC, id ASC) AS row_num
+         FROM messages
+         WHERE role = 'user' AND session_id IN (${placeholders})
+       )
+       WHERE row_num = 1`
+    ).all(...sessionIds) as Array<{ session_id: string; content: string }>;
+
+    return new Map(rows.map((row) => [row.session_id, row.content]));
+  }
+
   private mapSessionStatus(status: string): any {
     if (status === "idle") return "idle";
     if (status === "running") return "running";
@@ -128,4 +148,23 @@ export class WorkspaceService {
     if (role === "user" || role === "system" || role === "tool") return role;
     return "system";
   }
+}
+
+function getSessionName(title: string, agentType: string, firstUserMessage?: string): string {
+  const cleanTitle = normalizeLabel(title);
+  const cleanMessage = normalizeLabel(firstUserMessage ?? "");
+
+  if (cleanTitle && cleanTitle !== `${getAgentLabel(agentType)} session`) {
+    return cleanTitle;
+  }
+
+  return cleanMessage || cleanTitle || "Untitled";
+}
+
+function getAgentLabel(agentType: string): string {
+  return agentType.charAt(0).toUpperCase() + agentType.slice(1);
+}
+
+function normalizeLabel(value: string): string {
+  return value.trim().replace(/\s+/g, " ");
 }

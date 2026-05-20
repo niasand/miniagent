@@ -206,9 +206,27 @@ describe("WorkspaceService", () => {
 
     expect(snapshot.sessions).toHaveLength(2);
     expect(snapshot.sessions[0].title).toBe("Session B"); // Most recent first
+    expect(snapshot.sessions[0].name).toBe("Session B");
     expect(snapshot.sessions[0].agent).toBe("Codex");
     expect(snapshot.sessions[1].agent).toBe("Claude");
     expect(snapshot.sessions[0].initials).toBe("CO");
+  });
+
+  it("uses the first user message as the name for default agent titles", () => {
+    const session = sessions.createSession({ title: "Claude session", agentType: "claude", workspacePath: "/tmp" });
+    const event = events.append({ sessionId: session.id, type: "msg" });
+    messages.insert({
+      sessionId: session.id,
+      role: "user",
+      content: "  Please summarize\n\nthis repository  ",
+      sourceEventId: event.id,
+    });
+
+    const service = new WorkspaceService(db);
+    const snapshot = service.getSnapshot();
+
+    expect(snapshot.sessions[0].title).toBe("Claude session");
+    expect(snapshot.sessions[0].name).toBe("Please summarize this repository");
   });
 
   it("returns messages for selected session", () => {

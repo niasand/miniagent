@@ -8,6 +8,7 @@ export type WorkspaceSessionStatus = "running" | "compact" | "queued" | "idle" |
 
 export type WorkspaceSessionSummary = {
   id: string;
+  name: string;
   title: string;
   agentType: WorkspaceAgentType;
   agent: WorkspaceAgentLabel;
