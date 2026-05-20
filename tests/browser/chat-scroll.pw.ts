@@ -173,6 +173,7 @@ test("history shows the session name and truncates long labels", async ({ page }
   await search.fill("next three");
   await expect(page.locator(".session-item")).toHaveCount(1);
   await expect(title).toHaveText(longName);
+  await expect(page.locator(".session-highlight")).toHaveText("next three");
 });
 
 test("history renames sessions inline", async ({ page }) => {
@@ -198,6 +199,29 @@ test("history renames sessions inline", async ({ page }) => {
   await input.press("Enter");
 
   await expect(page.locator(".session-title")).toHaveText("Renamed session");
+});
+
+test("history shows rename errors inline", async ({ page }) => {
+  await page.addInitScript((id) => {
+    localStorage.setItem("sessionId", id);
+  }, sessionId);
+
+  const snapshot = createScrollableSnapshot();
+  await page.route(`**/api/sessions/${sessionId}`, async (route) => {
+    await route.fulfill({ status: 500, json: { error: "Cannot rename session" } });
+  });
+  await mockWorkspaceApis(page, snapshot);
+
+  await page.goto("/");
+  await page.locator(".chat-bar").getByRole("button", { name: "History" }).click();
+  await page.getByRole("button", { name: "Rename Browser scroll regression" }).click();
+
+  const input = page.locator(".session-name-input");
+  await input.fill("Broken name");
+  await input.press("Enter");
+
+  await expect(page.locator(".session-edit-error")).toHaveText("Cannot rename session");
+  await expect(input).toHaveAttribute("aria-invalid", "true");
 });
 
 async function mockWorkspaceApis(page: Page, snapshot: WorkspaceSnapshot) {

@@ -260,11 +260,22 @@ button { cursor: pointer; }
 }
 
 .session-edit {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+.session-edit-row {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
   min-width: 0;
+}
+
+.session-edit-btn:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 .session-name-input {
@@ -283,6 +294,27 @@ button { cursor: pointer; }
 .session-name-input:focus {
   border-color: var(--color-ring);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-ring) 16%, transparent);
+}
+
+.session-name-input[aria-invalid="true"] {
+  border-color: #ef4444;
+}
+
+.session-edit-error {
+  min-width: 0;
+  overflow: hidden;
+  color: #dc2626;
+  font-size: 11px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-highlight {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--color-primary) 22%, transparent);
+  color: inherit;
+  padding: 0 1px;
 }
 
 .session-status {

@@ -33,6 +33,7 @@ export default function App() {
   const [sessionsQuery, setSessionsQuery] = useState("");
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingSessionName, setEditingSessionName] = useState("");
+  const [renameSessionError, setRenameSessionError] = useState<string | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const draftInputRef = useRef<HTMLTextAreaElement>(null);
   const scrollControllerRef = useRef<ChatScrollController | null>(null);
@@ -310,10 +311,17 @@ export default function App() {
 
   const renameSession = useMutation({
     mutationFn: ({ id, name }: { id: string; name: string }) => updateSessionName(id, name),
+    onMutate: () => {
+      setRenameSessionError(null);
+    },
     onSuccess: () => {
       setEditingSessionId(null);
       setEditingSessionName("");
+      setRenameSessionError(null);
       queryClient.invalidateQueries({ queryKey: ["workspace"] });
+    },
+    onError: (error) => {
+      setRenameSessionError(error instanceof Error ? error.message : "Rename failed");
     },
   });
 
@@ -331,11 +339,16 @@ export default function App() {
   const startSessionRename = (id: string, name: string) => {
     setEditingSessionId(id);
     setEditingSessionName(name);
+    setRenameSessionError(null);
   };
 
   const submitSessionRename = (id: string) => {
     const nextName = editingSessionName.trim();
-    if (!nextName || renameSession.isPending) return;
+    if (renameSession.isPending) return;
+    if (!nextName) {
+      setRenameSessionError("Name is required");
+      return;
+    }
     renameSession.mutate({ id, name: nextName });
   };
 
@@ -455,34 +468,48 @@ export default function App() {
                           submitSessionRename(s.id);
                         }}
                       >
-                        <input
-                          className="session-name-input"
-                          value={editingSessionName}
-                          onChange={(e) => setEditingSessionName(e.currentTarget.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Escape") {
+                        <div className="session-edit-row">
+                          <input
+                            className="session-name-input"
+                            value={editingSessionName}
+                            onChange={(e) => {
+                              setEditingSessionName(e.currentTarget.value);
+                              setRenameSessionError(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Escape") {
+                                setEditingSessionId(null);
+                                setEditingSessionName("");
+                                setRenameSessionError(null);
+                              }
+                            }}
+                            aria-label="Session name"
+                            aria-invalid={renameSessionError ? "true" : "false"}
+                            aria-describedby={renameSessionError ? `session-rename-error-${s.id}` : undefined}
+                            autoFocus
+                          />
+                          <button className="session-edit-btn" type="submit" title="Save" aria-label="Save session name" disabled={renameSession.isPending}>
+                            <Check className="h-4 w-4" />
+                          </button>
+                          <button
+                            className="session-edit-btn"
+                            type="button"
+                            title="Cancel"
+                            aria-label="Cancel rename"
+                            onClick={() => {
                               setEditingSessionId(null);
                               setEditingSessionName("");
-                            }
-                          }}
-                          aria-label="Session name"
-                          autoFocus
-                        />
-                        <button className="session-edit-btn" type="submit" title="Save" aria-label="Save session name">
-                          <Check className="h-4 w-4" />
-                        </button>
-                        <button
-                          className="session-edit-btn"
-                          type="button"
-                          title="Cancel"
-                          aria-label="Cancel rename"
-                          onClick={() => {
-                            setEditingSessionId(null);
-                            setEditingSessionName("");
-                          }}
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
+                              setRenameSessionError(null);
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                        {renameSessionError && (
+                          <div id={`session-rename-error-${s.id}`} className="session-edit-error" role="alert">
+                            {renameSessionError}
+                          </div>
+                        )}
                       </form>
                     ) : (
                       <>
@@ -494,7 +521,7 @@ export default function App() {
                             queryClient.invalidateQueries({ queryKey: ["workspace", s.id] });
                           }}
                         >
-                          <span className="session-title" title={sessionName}>{sessionName}</span>
+                          <span className="session-title" title={sessionName}>{renderHighlightedSessionName(sessionName, sessionsQuery)}</span>
                           <span className="session-meta">
                             <span>{formatSessionChannel(s.channelType)}</span>
                             <span>{formatSessionUpdatedAt(s.updatedAt)}</span>
@@ -671,6 +698,32 @@ function formatSessionChannel(channelType: WorkspaceSnapshot["sessions"][number]
   if (channelType === "dingtalk") return "DingTalk";
   if (channelType === "web") return "Web";
   return "Local";
+}
+
+function renderHighlightedSessionName(text: string, query: string) {
+  const needle = query.trim();
+  if (!needle) return text;
+
+  const lowerText = text.toLowerCase();
+  const lowerNeedle = needle.toLowerCase();
+  const parts = [];
+  let cursor = 0;
+  let matchIndex = lowerText.indexOf(lowerNeedle);
+
+  while (matchIndex !== -1) {
+    if (matchIndex > cursor) parts.push(text.slice(cursor, matchIndex));
+    const end = matchIndex + needle.length;
+    parts.push(
+      <mark key={`${matchIndex}-${end}`} className="session-highlight">
+        {text.slice(matchIndex, end)}
+      </mark>,
+    );
+    cursor = end;
+    matchIndex = lowerText.indexOf(lowerNeedle, cursor);
+  }
+
+  if (cursor < text.length) parts.push(text.slice(cursor));
+  return parts.length > 0 ? parts : text;
 }
 
 const CHANNEL_FIELDS: Record<string, Array<{ key: string; label: string }>> = {
