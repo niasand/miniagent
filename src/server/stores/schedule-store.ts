@@ -1,7 +1,7 @@
 import type { SqliteDatabase } from "../db/migrate.js";
 import { createId } from "../../shared/ids.js";
 import { parseJson, stringifyJson, type JsonValue } from "../../shared/json.js";
-import { nowIso, addMillisecondsIso } from "../../shared/time.js";
+import { nowIso, addMillisecondsIso, formatUtc8 } from "../../shared/time.js";
 
 export type ScheduleKind = "once" | "cron";
 export type ScheduleStatus = "active" | "paused" | "cancelled";
@@ -38,16 +38,21 @@ export class ScheduleStore {
     runAt?: string | null; timezone?: string; payload?: JsonValue;
   }): ScheduleRecord {
     const now = nowIso();
+    const cronExpr = input.cronExpr?.trim() || null;
+    const runAt = input.runAt?.trim() || null;
+    const nextRunAt = input.kind === "once"
+      ? normalizeRunAt(runAt)
+      : computeNextCronRun(requireCronExpr(cronExpr), now);
     const row = this.db.prepare(
       `INSERT INTO schedules (id, session_id, status, kind, cron_expr, run_at, timezone, payload_json, next_run_at, created_at, updated_at)
        VALUES (@id, @sessionId, 'active', @kind, @cronExpr, @runAt, @timezone, @payloadJson, @nextRunAt, @createdAt, @updatedAt)
        RETURNING *`
     ).get({
       id: createId("sch"), sessionId: input.sessionId, kind: input.kind,
-      cronExpr: input.cronExpr ?? null, runAt: input.runAt ?? null,
+      cronExpr, runAt,
       timezone: input.timezone ?? "Asia/Shanghai",
       payloadJson: stringifyJson(input.payload ?? {}),
-      nextRunAt: input.kind === "once" ? (input.runAt ?? null) : null,
+      nextRunAt,
       createdAt: now, updatedAt: now,
     }) as ScheduleRow;
     return mapRow(row);
@@ -60,7 +65,18 @@ export class ScheduleStore {
 
   updateStatus(scheduleId: string, status: ScheduleStatus): ScheduleRecord | null {
     const now = nowIso();
-    this.db.prepare("UPDATE schedules SET status = @status, updated_at = @updatedAt WHERE id = @id").run({ id: scheduleId, status, updatedAt: now });
+    const existing = this.get(scheduleId);
+    const nextRunAt = status === "active" && existing?.kind === "cron" && existing.cronExpr
+      ? computeNextCronRun(existing.cronExpr, now)
+      : existing?.nextRunAt ?? null;
+    this.db.prepare(
+      "UPDATE schedules SET status = @status, next_run_at = @nextRunAt, locked_by = NULL, locked_at = NULL, lease_expires_at = NULL, updated_at = @updatedAt WHERE id = @id"
+    ).run({ id: scheduleId, status, nextRunAt, updatedAt: now });
+    const row = this.db.prepare("SELECT * FROM schedules WHERE id = ?").get(scheduleId) as ScheduleRow | undefined;
+    return row ? mapRow(row) : null;
+  }
+
+  get(scheduleId: string): ScheduleRecord | null {
     const row = this.db.prepare("SELECT * FROM schedules WHERE id = ?").get(scheduleId) as ScheduleRow | undefined;
     return row ? mapRow(row) : null;
   }
@@ -90,10 +106,35 @@ export class ScheduleStore {
     if (schedule.kind === "once") {
       this.db.prepare("UPDATE schedules SET status = 'cancelled', last_run_at = @lastRunAt, next_run_at = NULL, updated_at = @updatedAt WHERE id = @id").run({ id: scheduleId, lastRunAt: now, updatedAt: now });
     } else {
-      // For cron: advance next_run_at (simplified — just mark last_run_at)
-      this.db.prepare("UPDATE schedules SET last_run_at = @lastRunAt, locked_by = NULL, locked_at = NULL, lease_expires_at = NULL, updated_at = @updatedAt WHERE id = @id").run({ id: scheduleId, lastRunAt: now, updatedAt: now });
+      const nextRunAt = schedule.cron_expr ? computeNextCronRun(schedule.cron_expr, now) : null;
+      this.db.prepare(
+        "UPDATE schedules SET last_run_at = @lastRunAt, next_run_at = @nextRunAt, locked_by = NULL, locked_at = NULL, lease_expires_at = NULL, updated_at = @updatedAt WHERE id = @id"
+      ).run({ id: scheduleId, lastRunAt: now, nextRunAt, updatedAt: now });
     }
   }
+}
+
+export function computeNextCronRun(cronExpr: string, afterIso = nowIso()): string {
+  const schedule = parseCron(cronExpr);
+  const after = new Date(afterIso);
+  if (Number.isNaN(after.getTime())) throw new Error("Invalid base time");
+  const startMs = Math.floor(after.getTime() / 60_000) * 60_000 + 60_000;
+  const maxMinutes = 366 * 24 * 60;
+
+  for (let i = 0; i < maxMinutes; i++) {
+    const candidate = new Date(startMs + i * 60_000);
+    const parts = getUtc8Parts(candidate);
+    if (
+      schedule.minutes.has(parts.minute) &&
+      schedule.hours.has(parts.hour) &&
+      schedule.months.has(parts.month) &&
+      matchesDay(schedule, parts.day, parts.dayOfWeek)
+    ) {
+      return formatUtc8(candidate);
+    }
+  }
+
+  throw new Error("Could not compute next cron run within one year");
 }
 
 function mapRow(row: ScheduleRow): ScheduleRecord {
@@ -103,5 +144,104 @@ function mapRow(row: ScheduleRow): ScheduleRecord {
     timezone: row.timezone, payload: parseJson(row.payload_json),
     nextRunAt: row.next_run_at, lastRunAt: row.last_run_at,
     createdAt: row.created_at, updatedAt: row.updated_at,
+  };
+}
+
+type ParsedCron = {
+  minutes: Set<number>;
+  hours: Set<number>;
+  daysOfMonth: Set<number>;
+  months: Set<number>;
+  daysOfWeek: Set<number>;
+  anyDayOfMonth: boolean;
+  anyDayOfWeek: boolean;
+};
+
+function requireCronExpr(cronExpr: string | null): string {
+  if (!cronExpr) throw new Error("cronExpr is required for cron schedules");
+  return cronExpr;
+}
+
+function normalizeRunAt(runAt: string | null): string {
+  if (!runAt) throw new Error("runAt is required for once schedules");
+  const date = new Date(runAt);
+  if (Number.isNaN(date.getTime())) throw new Error("runAt must be a valid date");
+  return formatUtc8(date);
+}
+
+function parseCron(expr: string): ParsedCron {
+  const fields = expr.trim().split(/\s+/);
+  if (fields.length !== 5) throw new Error("cronExpr must have five fields");
+  const daysOfMonth = parseCronField(fields[2], 1, 31, "day of month");
+  const daysOfWeek = parseCronField(fields[4], 0, 7, "day of week");
+  return {
+    minutes: parseCronField(fields[0], 0, 59, "minute"),
+    hours: parseCronField(fields[1], 0, 23, "hour"),
+    daysOfMonth,
+    months: parseCronField(fields[3], 1, 12, "month"),
+    daysOfWeek: new Set([...daysOfWeek].map((value) => value === 7 ? 0 : value)),
+    anyDayOfMonth: fields[2] === "*",
+    anyDayOfWeek: fields[4] === "*",
+  };
+}
+
+function parseCronField(field: string, min: number, max: number, label: string): Set<number> {
+  const values = new Set<number>();
+  for (const part of field.split(",")) {
+    const [rangePart, stepPart] = part.split("/");
+    if (part.split("/").length > 2) throw new Error(`Invalid cron ${label} field`);
+    const step = stepPart === undefined ? 1 : Number(stepPart);
+    if (!Number.isInteger(step) || step <= 0) throw new Error(`Invalid cron ${label} step`);
+    const [start, end] = parseCronRange(rangePart, min, max, label);
+    for (let value = start; value <= end; value += step) {
+      values.add(value);
+    }
+  }
+  if (values.size === 0) throw new Error(`Invalid cron ${label} field`);
+  return values;
+}
+
+function parseCronRange(range: string, min: number, max: number, label: string): [number, number] {
+  if (range === "*") return [min, max];
+  const bounds = range.split("-");
+  if (bounds.length === 1) {
+    const value = parseCronNumber(bounds[0], min, max, label);
+    return [value, value];
+  }
+  if (bounds.length === 2) {
+    const start = parseCronNumber(bounds[0], min, max, label);
+    const end = parseCronNumber(bounds[1], min, max, label);
+    if (start > end) throw new Error(`Invalid cron ${label} range`);
+    return [start, end];
+  }
+  throw new Error(`Invalid cron ${label} range`);
+}
+
+function parseCronNumber(raw: string, min: number, max: number, label: string): number {
+  if (!/^\d+$/.test(raw)) throw new Error(`Invalid cron ${label} value`);
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new Error(`Invalid cron ${label} value`);
+  }
+  return value;
+}
+
+function matchesDay(schedule: ParsedCron, day: number, dayOfWeek: number): boolean {
+  const domMatches = schedule.daysOfMonth.has(day);
+  const dowMatches = schedule.daysOfWeek.has(dayOfWeek);
+  if (schedule.anyDayOfMonth && schedule.anyDayOfWeek) return true;
+  if (schedule.anyDayOfMonth) return dowMatches;
+  if (schedule.anyDayOfWeek) return domMatches;
+  return domMatches || dowMatches;
+}
+
+function getUtc8Parts(date: Date) {
+  const shifted = new Date(date.getTime() + 8 * 60 * 60 * 1000);
+  return {
+    minute: shifted.getUTCMinutes(),
+    hour: shifted.getUTCHours(),
+    day: shifted.getUTCDate(),
+    month: shifted.getUTCMonth() + 1,
+    dayOfWeek: shifted.getUTCDay(),
   };
 }

@@ -224,6 +224,54 @@ test("history shows rename errors inline", async ({ page }) => {
   await expect(input).toHaveAttribute("aria-invalid", "true");
 });
 
+test("schedules drawer creates and pauses a scheduled message", async ({ page }) => {
+  await page.addInitScript((id) => {
+    localStorage.setItem("sessionId", id);
+  }, sessionId);
+
+  const schedules: Array<Record<string, unknown>> = [];
+  await page.route((url) => url.pathname === "/api/schedules" || url.pathname.startsWith("/api/schedules/"), async (route) => {
+    const url = new URL(route.request().url());
+    if (route.request().method() === "GET") {
+      await route.fulfill({ json: { schedules } });
+      return;
+    }
+    if (route.request().method() === "POST" && url.pathname === "/api/schedules") {
+      const body = route.request().postDataJSON() as { sessionId: string; kind: string; runAt?: string; cronExpr?: string };
+      schedules.push({
+        id: "sch_test",
+        sessionId: body.sessionId,
+        status: "active",
+        kind: body.kind,
+        cronExpr: body.cronExpr ?? null,
+        runAt: body.runAt ?? null,
+        timezone: "Asia/Shanghai",
+        nextRunAt: "2026-05-19T02:00:00.000Z",
+        lastRunAt: null,
+      });
+      await route.fulfill({ status: 201, json: { schedule: schedules[0] } });
+      return;
+    }
+    if (route.request().method() === "POST" && url.pathname === "/api/schedules/sch_test/pause") {
+      schedules[0].status = "paused";
+      await route.fulfill({ json: { schedule: schedules[0] } });
+      return;
+    }
+    await route.fulfill({ status: 404, json: { error: "not found" } });
+  });
+  await mockWorkspaceApis(page, createScrollableSnapshot());
+
+  await page.goto("/");
+  await page.locator(".chat-bar").getByRole("button", { name: "Schedules" }).click();
+  await page.getByPlaceholder("Message to send...").fill("Send a scheduled summary");
+  await page.getByRole("button", { name: "Create" }).click();
+
+  await expect(page.locator(".schedule-item")).toHaveCount(1);
+  await expect(page.locator(".schedule-status")).toHaveText("active");
+  await page.getByRole("button", { name: "Pause schedule" }).click();
+  await expect(page.locator(".schedule-status")).toHaveText("paused");
+});
+
 async function mockWorkspaceApis(page: Page, snapshot: WorkspaceSnapshot) {
   await page.route("**/api/workspace**", async (route) => {
     await route.fulfill({ json: snapshot });

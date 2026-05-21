@@ -8,6 +8,7 @@ import { ChannelRegistry } from "../channels/registry.js";
 import { RuntimeService } from "../runtime/service.js";
 import { DeliveryWorker } from "../services/delivery.js";
 import { InboundService } from "../services/inbound.js";
+import { SchedulerService } from "../services/scheduler.js";
 import { OutboxStore } from "../stores/outbox-store.js";
 
 const port = Number(process.env.MINIAGENT_API_PORT ?? 7273);
@@ -55,6 +56,15 @@ const deliveryTimer = setInterval(() => {
     console.error("[Delivery] tick failed:", err);
   });
 }, 2000);
+
+setInterval(() => {
+  try {
+    const schedulerService = new SchedulerService(db, runtimeService);
+    schedulerService.runDue();
+  } catch (err) {
+    console.error("[Scheduler] tick failed:", err);
+  }
+}, 30_000);
 
 const app = createApp(db, {
   workspacePolicy,

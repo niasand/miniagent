@@ -5,7 +5,7 @@ import { EventStore } from "../src/server/stores/event-store.js";
 import { SessionStore } from "../src/server/stores/session-store.js";
 import { MessageStore } from "../src/server/stores/message-store.js";
 import { OutboxStore } from "../src/server/stores/outbox-store.js";
-import { ScheduleStore } from "../src/server/stores/schedule-store.js";
+import { ScheduleStore, computeNextCronRun } from "../src/server/stores/schedule-store.js";
 import { PermissionRequestStore } from "../src/server/stores/permission-request-store.js";
 import { ContextBudgetStore } from "../src/server/stores/context-budget-store.js";
 
@@ -264,6 +264,11 @@ describe("OutboxStore", () => {
 });
 
 describe("ScheduleStore", () => {
+  it("computes the next cron run in UTC+8 wall time", () => {
+    const next = computeNextCronRun("0 9 * * 1-5", "2026-05-21T08:59:00.000+08:00");
+    expect(next).toBe("2026-05-21T09:00:00.000+08:00");
+  });
+
   it("creates and lists schedules", () => {
     const schedule = schedules.create({
       sessionId: "ses_1",
@@ -272,6 +277,7 @@ describe("ScheduleStore", () => {
     });
     expect(schedule.id).toMatch(/^sch_/);
     expect(schedule.status).toBe("active");
+    expect(schedule.nextRunAt).toBeTruthy();
 
     const list = schedules.listBySession("ses_1");
     expect(list).toHaveLength(1);
@@ -281,6 +287,18 @@ describe("ScheduleStore", () => {
     schedules.create({ sessionId: "ses_1", kind: "once", runAt: new Date(Date.now() - 1000).toISOString() });
     const due = schedules.claimDue();
     expect(due.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("advances cron schedules after a run", () => {
+    const schedule = schedules.create({ sessionId: "ses_1", kind: "cron", cronExpr: "* * * * *" });
+    expect(schedule.nextRunAt).toBeTruthy();
+    db.prepare("UPDATE schedules SET next_run_at = ? WHERE id = ?").run(new Date(Date.now() - 60_000).toISOString(), schedule.id);
+    schedules.markRunAndAdvance(schedule.id);
+
+    const [updated] = schedules.listBySession("ses_1");
+    expect(updated.status).toBe("active");
+    expect(updated.lastRunAt).toBeTruthy();
+    expect(updated.nextRunAt).toBeTruthy();
   });
 });
 

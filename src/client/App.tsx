@@ -1,25 +1,26 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import QRCode from "qrcode";
-import { ArrowDown, ArrowUp, Check, ChevronDown, Clock, Pencil, Search, SendHorizontal, Settings, Sparkles, X } from "lucide-react";
+import { ArrowDown, ArrowUp, CalendarClock, Check, ChevronDown, Clock, Pause, Pencil, Play, Search, SendHorizontal, Settings, Sparkles, Trash2, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import "highlight.js/styles/atom-one-dark.css";
 import { fetchChannels, saveChannelConfig, testChannel, requestWechatQRCode, pollWechatQRStatus, type ChannelInfo } from "./api/channels.js";
+import { createSchedule, fetchSchedules, updateScheduleStatus } from "./api/schedules.js";
 import { createSession, updateSessionName } from "./api/sessions.js";
 import { fetchSkills } from "./api/skills.js";
 import { sendSessionMessage } from "./api/messages.js";
 import { createChatScrollController, type ChatScrollController } from "./lib/chat-scroll.js";
 import type { AgentType, ChatMessage, RunStats, SkillMeta } from "./api/types.js";
-import type { WorkspaceSnapshot } from "../shared/workspace.js";
+import type { WorkspaceScheduleKind, WorkspaceSnapshot } from "../shared/workspace.js";
 
 const AGENT_OPTIONS: Array<{ value: AgentType; label: string }> = [
   { value: "codex", label: "Codex" },
   { value: "claude", label: "Claude" },
 ];
 
-type DrawerTab = "skills" | "channels" | "sessions";
+type DrawerTab = "skills" | "channels" | "sessions" | "schedules";
 
 export default function App() {
   const queryClient = useQueryClient();
@@ -34,6 +35,11 @@ export default function App() {
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingSessionName, setEditingSessionName] = useState("");
   const [renameSessionError, setRenameSessionError] = useState<string | null>(null);
+  const [scheduleKind, setScheduleKind] = useState<WorkspaceScheduleKind>("once");
+  const [scheduleRunAt, setScheduleRunAt] = useState(() => defaultRunAtInput());
+  const [scheduleCronExpr, setScheduleCronExpr] = useState("0 9 * * 1-5");
+  const [scheduleText, setScheduleText] = useState("");
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const draftInputRef = useRef<HTMLTextAreaElement>(null);
   const scrollControllerRef = useRef<ChatScrollController | null>(null);
@@ -85,9 +91,19 @@ export default function App() {
     refetchInterval: 3_000,
   });
   const sessions = snapshot?.sessions ?? [];
+  const selectedSessionId = sessionId ?? snapshot?.selectedSessionId ?? null;
+  const selectedSessionName = sessions.find((s) => s.id === selectedSessionId)?.name ?? "Current session";
   const filteredSessions = sessionsQuery.trim()
     ? sessions.filter((s) => s.name.toLowerCase().includes(sessionsQuery.trim().toLowerCase()))
     : sessions;
+
+  const { data: schedulesData } = useQuery({
+    queryKey: ["schedules", selectedSessionId],
+    queryFn: () => selectedSessionId ? fetchSchedules(selectedSessionId) : Promise.resolve({ schedules: [] }),
+    enabled: drawerTab === "schedules",
+    refetchInterval: drawerOpen && drawerTab === "schedules" ? 10_000 : false,
+  });
+  const schedules = schedulesData?.schedules ?? [];
 
   // Sync sessionId from server when we had none (server picks most recent session)
   useEffect(() => {
@@ -325,6 +341,44 @@ export default function App() {
     },
   });
 
+  const createScheduleMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedSessionId) throw new Error("No session selected");
+      const text = scheduleText.trim();
+      if (!text) throw new Error("Message is required");
+      if (scheduleKind === "once" && !scheduleRunAt) throw new Error("Run time is required");
+      if (scheduleKind === "cron" && !scheduleCronExpr.trim()) throw new Error("Cron expression is required");
+      return createSchedule({
+        sessionId: selectedSessionId,
+        kind: scheduleKind,
+        runAt: scheduleKind === "once" ? new Date(scheduleRunAt).toISOString() : null,
+        cronExpr: scheduleKind === "cron" ? scheduleCronExpr.trim() : null,
+        timezone: "Asia/Shanghai",
+        payload: { text },
+        actorType: "web_user",
+      });
+    },
+    onMutate: () => {
+      setScheduleError(null);
+    },
+    onSuccess: () => {
+      setScheduleText("");
+      setScheduleRunAt(defaultRunAtInput());
+      queryClient.invalidateQueries({ queryKey: ["schedules", selectedSessionId] });
+    },
+    onError: (error) => {
+      setScheduleError(error instanceof Error ? error.message : "Create schedule failed");
+    },
+  });
+
+  const updateScheduleMutation = useMutation({
+    mutationFn: ({ id, action }: { id: string; action: "pause" | "resume" | "cancel" }) =>
+      updateScheduleStatus(id, action),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["schedules", selectedSessionId] });
+    },
+  });
+
   const handleSend = () => {
     const text = draft.trim();
     if (!text || sendMessage.isPending) return;
@@ -334,6 +388,11 @@ export default function App() {
   const handleSkillSelect = (skill: SkillMeta) => {
     setDraft(`/${skill.name} `);
     setDrawerOpen(false);
+  };
+
+  const handleCreateSchedule = () => {
+    if (createScheduleMutation.isPending) return;
+    createScheduleMutation.mutate();
   };
 
   const startSessionRename = (id: string, name: string) => {
@@ -388,6 +447,12 @@ export default function App() {
             onClick={() => setDrawerTab("sessions")}
           >
             <Clock className="h-3.5 w-3.5" /> History
+          </button>
+          <button
+            className={`drawer-tab ${drawerTab === "schedules" ? "active" : ""}`}
+            onClick={() => setDrawerTab("schedules")}
+          >
+            <CalendarClock className="h-3.5 w-3.5" /> Schedules
           </button>
           <button className="drawer-close" onClick={() => setDrawerOpen(false)}>
             <X className="h-4 w-4" />
@@ -546,6 +611,93 @@ export default function App() {
             </div>
           </>
         )}
+
+        {drawerTab === "schedules" && (
+          <div className="schedule-panel">
+            <div className="schedule-session" title={selectedSessionName}>{selectedSessionName}</div>
+            <div className="schedule-form">
+              <div className="segmented-control" role="group" aria-label="Schedule kind">
+                <button
+                  className={`segmented-btn ${scheduleKind === "once" ? "active" : ""}`}
+                  onClick={() => setScheduleKind("once")}
+                >
+                  Once
+                </button>
+                <button
+                  className={`segmented-btn ${scheduleKind === "cron" ? "active" : ""}`}
+                  onClick={() => setScheduleKind("cron")}
+                >
+                  Cron
+                </button>
+              </div>
+              {scheduleKind === "once" ? (
+                <input
+                  className="schedule-input"
+                  type="datetime-local"
+                  value={scheduleRunAt}
+                  onChange={(e) => setScheduleRunAt(e.currentTarget.value)}
+                  aria-label="Run at"
+                />
+              ) : (
+                <input
+                  className="schedule-input"
+                  value={scheduleCronExpr}
+                  onChange={(e) => setScheduleCronExpr(e.currentTarget.value)}
+                  placeholder="0 9 * * 1-5"
+                  aria-label="Cron expression"
+                />
+              )}
+              <textarea
+                className="schedule-textarea"
+                value={scheduleText}
+                onChange={(e) => {
+                  setScheduleText(e.currentTarget.value);
+                  setScheduleError(null);
+                }}
+                placeholder="Message to send..."
+                rows={3}
+              />
+              {scheduleError && <div className="schedule-error" role="alert">{scheduleError}</div>}
+              <button className="schedule-create-btn" onClick={handleCreateSchedule} disabled={!selectedSessionId || createScheduleMutation.isPending}>
+                <CalendarClock className="h-4 w-4" />
+                Create
+              </button>
+            </div>
+            <div className="drawer-list schedule-list">
+              {schedules.length === 0 && <div className="drawer-empty">No schedules yet</div>}
+              {schedules.map((schedule) => (
+                <div key={schedule.id} className="schedule-item">
+                  <div className="schedule-item-main">
+                    <div className="schedule-item-title">
+                      <span className={`schedule-status schedule-status--${schedule.status}`}>{schedule.status}</span>
+                      <span>{schedule.kind === "once" ? "Once" : schedule.cronExpr}</span>
+                    </div>
+                    <div className="schedule-item-meta">
+                      <span>{schedule.nextRunAt ? `Next ${formatMessageTime(schedule.nextRunAt)}` : "No next run"}</span>
+                      {schedule.lastRunAt && <span>Last {formatMessageTime(schedule.lastRunAt)}</span>}
+                    </div>
+                  </div>
+                  <div className="schedule-actions">
+                    {schedule.status === "active" ? (
+                      <button className="session-action" title="Pause" aria-label="Pause schedule" onClick={() => updateScheduleMutation.mutate({ id: schedule.id, action: "pause" })}>
+                        <Pause className="h-3.5 w-3.5" />
+                      </button>
+                    ) : schedule.status === "paused" ? (
+                      <button className="session-action" title="Resume" aria-label="Resume schedule" onClick={() => updateScheduleMutation.mutate({ id: schedule.id, action: "resume" })}>
+                        <Play className="h-3.5 w-3.5" />
+                      </button>
+                    ) : null}
+                    {schedule.status !== "cancelled" && (
+                      <button className="session-action" title="Cancel" aria-label="Cancel schedule" onClick={() => updateScheduleMutation.mutate({ id: schedule.id, action: "cancel" })}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
       {drawerOpen && <div className="drawer-backdrop" onClick={() => setDrawerOpen(false)} />}
 
@@ -627,6 +779,10 @@ export default function App() {
               <Clock className="h-4 w-4" />
               <span className="bar-btn-label">History</span>
             </button>
+            <button className={`bar-btn ${drawerOpen && drawerTab === "schedules" ? "bar-btn--active" : ""}`} onClick={() => openDrawer("schedules")} title="Schedules">
+              <CalendarClock className="h-4 w-4" />
+              <span className="bar-btn-label">Schedules</span>
+            </button>
             <div className="dropdown-wrapper">
               <button className="bar-btn" onClick={() => setAgentMenuOpen(!agentMenuOpen)} title="Switch agent">
                 <span className="bar-btn-label">{currentAgent.label}</span>
@@ -698,6 +854,12 @@ function formatSessionChannel(channelType: WorkspaceSnapshot["sessions"][number]
   if (channelType === "dingtalk") return "DingTalk";
   if (channelType === "web") return "Web";
   return "Local";
+}
+
+function defaultRunAtInput(): string {
+  const date = new Date(Date.now() + 60 * 60 * 1000);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function renderHighlightedSessionName(text: string, query: string) {

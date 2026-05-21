@@ -11,7 +11,7 @@ export function addMillisecondsIso(baseIso: string, milliseconds: number): strin
   return d.toISOString();
 }
 
-function formatUtc8(d: Date): string {
+export function formatUtc8(d: Date): string {
   const shifted = new Date(d.getTime() + UTC8_OFFSET_MS);
   return shifted.toISOString().replace("Z", "+08:00");
 }

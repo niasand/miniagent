@@ -799,6 +799,10 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
     if (kind !== "once" && kind !== "cron") {
       return c.json({ error: "kind must be once or cron" }, 400);
     }
+    const payload = value.payload;
+    if (payload !== undefined && (payload === null || typeof payload !== "object" || Array.isArray(payload))) {
+      return c.json({ error: "payload must be an object" }, 400);
+    }
 
     try {
       const schedulerService = new SchedulerService(db, runtimeService);
@@ -808,7 +812,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
         cronExpr: typeof value.cronExpr === "string" ? value.cronExpr : null,
         runAt: typeof value.runAt === "string" ? value.runAt : null,
         timezone: typeof value.timezone === "string" ? value.timezone : undefined,
-        payload: value.payload as JsonValue | undefined,
+        payload: payload as JsonValue | undefined,
         actorType: typeof value.actorType === "string" ? value.actorType : "web_user",
         actorRef: typeof value.actorRef === "string" ? value.actorRef : undefined,
       });
@@ -817,6 +821,14 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
       const message = error instanceof Error ? error.message : "Create schedule failed";
       if (message.startsWith("Session not found")) {
         return c.json({ error: message }, 404);
+      }
+      if (
+        message.startsWith("cronExpr") ||
+        message.startsWith("runAt") ||
+        message.startsWith("Invalid cron") ||
+        message.startsWith("Could not compute")
+      ) {
+        return c.json({ error: message }, 400);
       }
       return c.json({ error: message }, 500);
     }
@@ -828,22 +840,10 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
       const { triggered } = schedulerService.runDue();
 
       const workspaceService = new WorkspaceService(db, runtimeSupervisor);
-      // Best-effort: pick first triggered schedule's session
-      let selectedSessionId: string | null = null;
-      if (triggered.length > 0) {
-        const scheduleStore = new ScheduleStore(db);
-        // Try to find any schedule to get its sessionId
-        for (const t of triggered) {
-          const schedules = scheduleStore.listBySession(t.scheduleId);
-          if (schedules.length > 0) {
-            selectedSessionId = schedules[0].sessionId;
-            break;
-          }
-        }
-      }
+      const selectedSessionId = triggered[0]?.schedule.sessionId ?? null;
 
       return c.json({
-        triggered: triggered.map((t) => ({ schedule: { id: t.scheduleId }, taskId: t.taskId })),
+        triggered,
         workspace: workspaceService.getSnapshot(selectedSessionId),
       });
     } catch (error) {

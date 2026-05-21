@@ -483,6 +483,7 @@ describe("POST /api/schedules", () => {
     expect(data.schedule.id).toMatch(/^sch_/);
     expect(data.schedule.kind).toBe("cron");
     expect(data.schedule.cronExpr).toBe("0 9 * * 1-5");
+    expect(data.schedule.nextRunAt).toBeTruthy();
   });
 
   it("creates a once schedule", async () => {
@@ -508,9 +509,17 @@ describe("POST /api/schedules", () => {
     expect(res.status).toBe(400);
   });
 
-  it("creates schedule even with unknown session (no FK)", async () => {
+  it("rejects unknown session", async () => {
     const res = await postJson("/api/schedules", { sessionId: "ses_nonexistent", kind: "cron" });
-    expect(res.status).toBe(201); // No FK constraint — schedule is created
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects invalid schedule details", async () => {
+    const { sessionId } = (await (await postJson("/api/sessions", {})).json()) as any;
+    expect((await postJson("/api/schedules", { sessionId, kind: "cron", cronExpr: "bad" })).status).toBe(400);
+    expect((await postJson("/api/schedules", { sessionId, kind: "cron", cronExpr: "0,,5 * * * *" })).status).toBe(400);
+    expect((await postJson("/api/schedules", { sessionId, kind: "once" })).status).toBe(400);
+    expect((await postJson("/api/schedules", { sessionId, kind: "once", runAt: "nope" })).status).toBe(400);
   });
 });
 
@@ -530,6 +539,8 @@ describe("POST /api/schedules/due/run", () => {
     expect(data.triggered).toBeInstanceOf(Array);
     expect(data.triggered.length).toBeGreaterThanOrEqual(1);
     expect(data.triggered[0].taskId).toMatch(/^tsk_/);
+    expect(data.triggered[0].schedule.sessionId).toBe(sessionId);
+    expect(data.triggered[0].schedule.status).toBe("cancelled");
   });
 });
 
