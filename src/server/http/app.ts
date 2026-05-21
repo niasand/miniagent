@@ -16,7 +16,7 @@ import { AgentDefaultStore } from "../stores/agent-default-store.js";
 import { AuditLogStore, type AuditActorType } from "../stores/audit-log-store.js";
 import { EventStore } from "../stores/event-store.js";
 import { SessionStore } from "../stores/session-store.js";
-import { ScheduleStore } from "../stores/schedule-store.js";
+import { computeNextCronRun, normalizeScheduleTimezone } from "../stores/schedule-store.js";
 import { PermissionRequestStore } from "../stores/permission-request-store.js";
 import { OutboxStore } from "../stores/outbox-store.js";
 import { RuntimeAdapterRegistry } from "../runtime/registry.js";
@@ -24,11 +24,13 @@ import { RuntimeSupervisor } from "../runtime/supervisor.js";
 import { RuntimeService } from "../runtime/service.js";
 import { WorkspacePolicy, WorkspacePolicyError } from "../security/workspace-policy.js";
 import { ChannelRegistry } from "../channels/registry.js";
-import type { WorkspaceSchedule } from "../../shared/workspace.js";
+import type { WorkspaceSchedule, WorkspaceScheduleRun } from "../../shared/workspace.js";
 import type { ScheduleRecord } from "../stores/schedule-store.js";
+import type { ScheduleRunRecord } from "../stores/schedule-run-store.js";
 import type { AgentDefaultRecord } from "../stores/agent-default-store.js";
 import type { PermissionRequestRecord } from "../stores/permission-request-store.js";
 import type { JsonValue } from "../../shared/json.js";
+import { formatUtc8 } from "../../shared/time.js";
 
 export type AppOptions = {
   workspacePolicy: WorkspacePolicy;
@@ -825,6 +827,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
       if (
         message.startsWith("cronExpr") ||
         message.startsWith("runAt") ||
+        message.startsWith("timezone") ||
         message.startsWith("Invalid cron") ||
         message.startsWith("Could not compute")
       ) {
@@ -832,6 +835,43 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
       }
       return c.json({ error: message }, 500);
     }
+  });
+
+  app.post("/api/schedules/preview", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return c.json({ error: "Request body must be valid JSON" }, 400);
+    }
+    const value = body as Record<string, unknown>;
+    const kind = value.kind;
+    if (kind !== "once" && kind !== "cron") {
+      return c.json({ error: "kind must be once or cron" }, 400);
+    }
+
+    const timezone = typeof value.timezone === "string" ? value.timezone : "Asia/Shanghai";
+    try {
+      const cleanTimezone = normalizeScheduleTimezone(timezone);
+      if (kind === "cron") {
+        const cronExpr = typeof value.cronExpr === "string" ? value.cronExpr : "";
+        const nextRunAt = computeNextCronRun(cronExpr, undefined, cleanTimezone);
+        return c.json({ nextRunAt, timezone: cleanTimezone });
+      }
+
+      const runAt = typeof value.runAt === "string" ? value.runAt : "";
+      const date = new Date(runAt);
+      if (Number.isNaN(date.getTime())) throw new Error("runAt must be a valid date");
+      return c.json({ nextRunAt: formatUtc8(date), timezone: cleanTimezone });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Preview schedule failed";
+      return c.json({ error: message }, 400);
+    }
+  });
+
+  app.get("/api/schedules/:scheduleId/runs", (c) => {
+    const scheduleId = c.req.param("scheduleId");
+    const schedulerService = new SchedulerService(db, runtimeService);
+    const runs = schedulerService.listRuns(scheduleId);
+    return c.json({ runs: runs.map(mapScheduleRun) });
   });
 
   app.post("/api/schedules/due/run", async (c) => {
@@ -843,7 +883,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
       const selectedSessionId = triggered[0]?.schedule.sessionId ?? null;
 
       return c.json({
-        triggered,
+        triggered: triggered.map((t) => ({ schedule: mapSchedule(t.schedule), taskId: t.taskId })),
         workspace: workspaceService.getSnapshot(selectedSessionId),
       });
     } catch (error) {
@@ -898,6 +938,19 @@ function mapSchedule(record: ScheduleRecord): WorkspaceSchedule {
     timezone: record.timezone,
     nextRunAt: record.nextRunAt,
     lastRunAt: record.lastRunAt,
+  };
+}
+
+function mapScheduleRun(record: ScheduleRunRecord): WorkspaceScheduleRun {
+  return {
+    id: record.id,
+    scheduleId: record.scheduleId,
+    sessionId: record.sessionId,
+    taskId: record.taskId,
+    scheduledFor: record.scheduledFor,
+    status: (record.taskStatus ?? record.status) as WorkspaceScheduleRun["status"],
+    error: record.error,
+    createdAt: record.createdAt,
   };
 }
 

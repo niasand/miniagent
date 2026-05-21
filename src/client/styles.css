@@ -415,6 +415,23 @@ button { cursor: pointer; }
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-ring) 16%, transparent);
 }
 
+.schedule-preview {
+  overflow: hidden;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface));
+  padding: 6px 8px;
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-preview--error {
+  background: color-mix(in srgb, #ef4444 9%, var(--color-surface));
+  color: #dc2626;
+}
+
 .schedule-error {
   overflow: hidden;
   color: #dc2626;
@@ -447,8 +464,7 @@ button { cursor: pointer; }
 }
 
 .schedule-item {
-  display: flex;
-  align-items: center;
+  display: grid;
   gap: 8px;
   border-radius: 8px;
   padding: 8px 8px 8px 10px;
@@ -456,6 +472,13 @@ button { cursor: pointer; }
 
 .schedule-item:hover {
   background: var(--color-muted);
+}
+
+.schedule-item-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .schedule-item-main {
@@ -510,10 +533,54 @@ button { cursor: pointer; }
   color: #64748b;
 }
 
+.schedule-status--running,
+.schedule-status--scheduled,
+.schedule-status--queued {
+  background: color-mix(in srgb, #3b82f6 13%, var(--color-surface));
+  color: #1d4ed8;
+}
+
+.schedule-status--succeeded {
+  background: color-mix(in srgb, #22c55e 14%, var(--color-surface));
+  color: #15803d;
+}
+
+.schedule-status--failed {
+  background: color-mix(in srgb, #ef4444 12%, var(--color-surface));
+  color: #dc2626;
+}
+
 .schedule-actions {
   display: inline-flex;
   flex-shrink: 0;
   gap: 2px;
+}
+
+.schedule-run-list {
+  display: grid;
+  gap: 4px;
+  border-left: 1px solid var(--color-border);
+  margin-left: 10px;
+  padding-left: 9px;
+}
+
+.schedule-run-empty,
+.schedule-run-item {
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+}
+
+.schedule-run-item {
+  display: flex;
+  min-width: 0;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.schedule-run-item span:not(.schedule-status) {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Channel cards */

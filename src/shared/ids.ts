@@ -13,6 +13,7 @@ export type EntityPrefix =
   | "run"
   | "sch"
   | "ses"
+  | "shr"
   | "tsk";
 
 export function createId(prefix?: EntityPrefix): string {

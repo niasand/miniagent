@@ -477,12 +477,14 @@ describe("POST /api/schedules", () => {
       sessionId,
       kind: "cron",
       cronExpr: "0 9 * * 1-5",
+      timezone: "UTC",
     });
     expect(res.status).toBe(201);
     const data = await res.json();
     expect(data.schedule.id).toMatch(/^sch_/);
     expect(data.schedule.kind).toBe("cron");
     expect(data.schedule.cronExpr).toBe("0 9 * * 1-5");
+    expect(data.schedule.timezone).toBe("UTC");
     expect(data.schedule.nextRunAt).toBeTruthy();
   });
 
@@ -518,8 +520,39 @@ describe("POST /api/schedules", () => {
     const { sessionId } = (await (await postJson("/api/sessions", {})).json()) as any;
     expect((await postJson("/api/schedules", { sessionId, kind: "cron", cronExpr: "bad" })).status).toBe(400);
     expect((await postJson("/api/schedules", { sessionId, kind: "cron", cronExpr: "0,,5 * * * *" })).status).toBe(400);
+    expect((await postJson("/api/schedules", { sessionId, kind: "cron", cronExpr: "* * * * *", timezone: "Mars/Base" })).status).toBe(400);
     expect((await postJson("/api/schedules", { sessionId, kind: "once" })).status).toBe(400);
     expect((await postJson("/api/schedules", { sessionId, kind: "once", runAt: "nope" })).status).toBe(400);
+  });
+});
+
+describe("POST /api/schedules/preview", () => {
+  it("returns the next cron run for the selected timezone", async () => {
+    const res = await postJson("/api/schedules/preview", {
+      kind: "cron",
+      cronExpr: "0 9 * * 1-5",
+      timezone: "UTC",
+    });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.nextRunAt).toBeTruthy();
+    expect(data.timezone).toBe("UTC");
+  });
+
+  it("rejects invalid cron preview input", async () => {
+    const res = await postJson("/api/schedules/preview", {
+      kind: "cron",
+      cronExpr: "bad",
+      timezone: "Mars/Base",
+    });
+    expect(res.status).toBe(400);
+
+    const onceRes = await postJson("/api/schedules/preview", {
+      kind: "once",
+      runAt: new Date(Date.now() + 3600_000).toISOString(),
+      timezone: "Mars/Base",
+    });
+    expect(onceRes.status).toBe(400);
   });
 });
 
@@ -527,11 +560,12 @@ describe("POST /api/schedules/due/run", () => {
   it("runs due schedules", async () => {
     const { sessionId } = (await (await postJson("/api/sessions", {})).json()) as any;
     // Create a schedule that's already due
-    await postJson("/api/schedules", {
+    const created = await postJson("/api/schedules", {
       sessionId,
       kind: "once",
       runAt: new Date(Date.now() - 1000).toISOString(),
     });
+    const { schedule } = await created.json() as any;
 
     const res = await postJson("/api/schedules/due/run", {});
     expect(res.status).toBe(200);
@@ -541,6 +575,13 @@ describe("POST /api/schedules/due/run", () => {
     expect(data.triggered[0].taskId).toMatch(/^tsk_/);
     expect(data.triggered[0].schedule.sessionId).toBe(sessionId);
     expect(data.triggered[0].schedule.status).toBe("cancelled");
+
+    const runsRes = await request(`/api/schedules/${schedule.id}/runs`);
+    expect(runsRes.status).toBe(200);
+    const runsData = await runsRes.json();
+    expect(runsData.runs).toHaveLength(1);
+    expect(runsData.runs[0].taskId).toBe(data.triggered[0].taskId);
+    expect(runsData.runs[0].status).toBe("running");
   });
 });
 

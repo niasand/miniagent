@@ -232,12 +232,29 @@ test("schedules drawer creates and pauses a scheduled message", async ({ page })
   const schedules: Array<Record<string, unknown>> = [];
   await page.route((url) => url.pathname === "/api/schedules" || url.pathname.startsWith("/api/schedules/"), async (route) => {
     const url = new URL(route.request().url());
+    if (route.request().method() === "POST" && url.pathname === "/api/schedules/preview") {
+      await route.fulfill({ json: { nextRunAt: "2026-05-19T09:00:00.000+08:00", timezone: route.request().postDataJSON().timezone } });
+      return;
+    }
+    if (route.request().method() === "GET" && url.pathname === "/api/schedules/sch_test/runs") {
+      await route.fulfill({ json: { runs: [{
+        id: "shr_test",
+        scheduleId: "sch_test",
+        sessionId,
+        taskId: "tsk_test",
+        scheduledFor: "2026-05-19T09:00:00.000+08:00",
+        status: "queued",
+        error: null,
+        createdAt: "2026-05-19T09:00:01.000+08:00",
+      }] } });
+      return;
+    }
     if (route.request().method() === "GET") {
       await route.fulfill({ json: { schedules } });
       return;
     }
     if (route.request().method() === "POST" && url.pathname === "/api/schedules") {
-      const body = route.request().postDataJSON() as { sessionId: string; kind: string; runAt?: string; cronExpr?: string };
+      const body = route.request().postDataJSON() as { sessionId: string; kind: string; runAt?: string; cronExpr?: string; timezone?: string };
       schedules.push({
         id: "sch_test",
         sessionId: body.sessionId,
@@ -245,7 +262,7 @@ test("schedules drawer creates and pauses a scheduled message", async ({ page })
         kind: body.kind,
         cronExpr: body.cronExpr ?? null,
         runAt: body.runAt ?? null,
-        timezone: "Asia/Shanghai",
+        timezone: body.timezone ?? "Asia/Shanghai",
         nextRunAt: "2026-05-19T02:00:00.000Z",
         lastRunAt: null,
       });
@@ -263,13 +280,19 @@ test("schedules drawer creates and pauses a scheduled message", async ({ page })
 
   await page.goto("/");
   await page.locator(".chat-bar").getByRole("button", { name: "Schedules" }).click();
+  await page.getByRole("button", { name: "Cron" }).click();
+  await expect(page.locator(".schedule-preview")).toContainText("Next");
+  await page.getByLabel("Timezone").selectOption("UTC");
   await page.getByPlaceholder("Message to send...").fill("Send a scheduled summary");
   await page.getByRole("button", { name: "Create" }).click();
 
   await expect(page.locator(".schedule-item")).toHaveCount(1);
-  await expect(page.locator(".schedule-status")).toHaveText("active");
+  await expect(page.locator(".schedule-item-title .schedule-status")).toHaveText("active");
+  await expect(page.locator(".schedule-item-meta")).toContainText("UTC");
+  await page.getByRole("button", { name: "Run history" }).click();
+  await expect(page.locator(".schedule-run-item")).toContainText("queued");
   await page.getByRole("button", { name: "Pause schedule" }).click();
-  await expect(page.locator(".schedule-status")).toHaveText("paused");
+  await expect(page.locator(".schedule-item-title .schedule-status")).toHaveText("paused");
 });
 
 async function mockWorkspaceApis(page: Page, snapshot: WorkspaceSnapshot) {

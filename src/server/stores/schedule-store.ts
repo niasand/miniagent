@@ -29,6 +29,7 @@ type ScheduleRow = {
 };
 
 const CLAIM_LEASE_MS = 30_000;
+const DEFAULT_TIMEZONE = "Asia/Shanghai";
 
 export class ScheduleStore {
   constructor(private readonly db: SqliteDatabase) {}
@@ -40,9 +41,10 @@ export class ScheduleStore {
     const now = nowIso();
     const cronExpr = input.cronExpr?.trim() || null;
     const runAt = input.runAt?.trim() || null;
+    const timezone = normalizeScheduleTimezone(input.timezone);
     const nextRunAt = input.kind === "once"
       ? normalizeRunAt(runAt)
-      : computeNextCronRun(requireCronExpr(cronExpr), now);
+      : computeNextCronRun(requireCronExpr(cronExpr), now, timezone);
     const row = this.db.prepare(
       `INSERT INTO schedules (id, session_id, status, kind, cron_expr, run_at, timezone, payload_json, next_run_at, created_at, updated_at)
        VALUES (@id, @sessionId, 'active', @kind, @cronExpr, @runAt, @timezone, @payloadJson, @nextRunAt, @createdAt, @updatedAt)
@@ -50,7 +52,7 @@ export class ScheduleStore {
     ).get({
       id: createId("sch"), sessionId: input.sessionId, kind: input.kind,
       cronExpr, runAt,
-      timezone: input.timezone ?? "Asia/Shanghai",
+      timezone,
       payloadJson: stringifyJson(input.payload ?? {}),
       nextRunAt,
       createdAt: now, updatedAt: now,
@@ -67,7 +69,7 @@ export class ScheduleStore {
     const now = nowIso();
     const existing = this.get(scheduleId);
     const nextRunAt = status === "active" && existing?.kind === "cron" && existing.cronExpr
-      ? computeNextCronRun(existing.cronExpr, now)
+      ? computeNextCronRun(existing.cronExpr, now, existing.timezone)
       : existing?.nextRunAt ?? null;
     this.db.prepare(
       "UPDATE schedules SET status = @status, next_run_at = @nextRunAt, locked_by = NULL, locked_at = NULL, lease_expires_at = NULL, updated_at = @updatedAt WHERE id = @id"
@@ -106,7 +108,7 @@ export class ScheduleStore {
     if (schedule.kind === "once") {
       this.db.prepare("UPDATE schedules SET status = 'cancelled', last_run_at = @lastRunAt, next_run_at = NULL, updated_at = @updatedAt WHERE id = @id").run({ id: scheduleId, lastRunAt: now, updatedAt: now });
     } else {
-      const nextRunAt = schedule.cron_expr ? computeNextCronRun(schedule.cron_expr, now) : null;
+      const nextRunAt = schedule.cron_expr ? computeNextCronRun(schedule.cron_expr, now, schedule.timezone) : null;
       this.db.prepare(
         "UPDATE schedules SET last_run_at = @lastRunAt, next_run_at = @nextRunAt, locked_by = NULL, locked_at = NULL, lease_expires_at = NULL, updated_at = @updatedAt WHERE id = @id"
       ).run({ id: scheduleId, lastRunAt: now, nextRunAt, updatedAt: now });
@@ -114,16 +116,18 @@ export class ScheduleStore {
   }
 }
 
-export function computeNextCronRun(cronExpr: string, afterIso = nowIso()): string {
+export function computeNextCronRun(cronExpr: string, afterIso = nowIso(), timezone = DEFAULT_TIMEZONE): string {
   const schedule = parseCron(cronExpr);
+  const cleanTimezone = normalizeScheduleTimezone(timezone);
   const after = new Date(afterIso);
   if (Number.isNaN(after.getTime())) throw new Error("Invalid base time");
   const startMs = Math.floor(after.getTime() / 60_000) * 60_000 + 60_000;
   const maxMinutes = 366 * 24 * 60;
+  const getParts = createTimezonePartsGetter(cleanTimezone);
 
   for (let i = 0; i < maxMinutes; i++) {
     const candidate = new Date(startMs + i * 60_000);
-    const parts = getUtc8Parts(candidate);
+    const parts = getParts(candidate);
     if (
       schedule.minutes.has(parts.minute) &&
       schedule.hours.has(parts.hour) &&
@@ -167,6 +171,16 @@ function normalizeRunAt(runAt: string | null): string {
   const date = new Date(runAt);
   if (Number.isNaN(date.getTime())) throw new Error("runAt must be a valid date");
   return formatUtc8(date);
+}
+
+export function normalizeScheduleTimezone(timezone?: string | null): string {
+  const value = timezone?.trim() || DEFAULT_TIMEZONE;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value }).format(new Date());
+  } catch {
+    throw new Error("timezone must be a valid IANA time zone");
+  }
+  return value;
 }
 
 function parseCron(expr: string): ParsedCron {
@@ -235,13 +249,29 @@ function matchesDay(schedule: ParsedCron, day: number, dayOfWeek: number): boole
   return domMatches || dowMatches;
 }
 
-function getUtc8Parts(date: Date) {
-  const shifted = new Date(date.getTime() + 8 * 60 * 60 * 1000);
-  return {
-    minute: shifted.getUTCMinutes(),
-    hour: shifted.getUTCHours(),
-    day: shifted.getUTCDate(),
-    month: shifted.getUTCMonth() + 1,
-    dayOfWeek: shifted.getUTCDay(),
+function createTimezonePartsGetter(timezone: string) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hourCycle: "h23",
+    weekday: "short",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+  });
+  return (date: Date) => {
+    const parts = Object.fromEntries(
+      formatter.formatToParts(date).map((part) => [part.type, part.value]),
+    );
+    const dayOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(parts.weekday ?? "");
+    if (dayOfWeek < 0) throw new Error("Invalid timezone weekday");
+
+    return {
+      minute: Number(parts.minute),
+      hour: Number(parts.hour),
+      day: Number(parts.day),
+      month: Number(parts.month),
+      dayOfWeek,
+    };
   };
 }

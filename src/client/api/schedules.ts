@@ -1,7 +1,10 @@
 import type {
   CreateScheduleRequest,
   CreateScheduleResponse,
+  ListScheduleRunsResponse,
   ListSchedulesResponse,
+  PreviewScheduleRequest,
+  PreviewScheduleResponse,
   UpdateScheduleResponse,
 } from "../../shared/workspace.js";
 
@@ -27,6 +30,30 @@ export async function createSchedule(request: CreateScheduleRequest): Promise<Cr
     throw new Error(body?.error ?? `Create schedule API failed: ${response.status}`);
   }
   return (await response.json()) as CreateScheduleResponse;
+}
+
+export async function previewSchedule(request: PreviewScheduleRequest): Promise<PreviewScheduleResponse> {
+  const response = await fetch("/api/schedules/preview", {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `Preview schedule API failed: ${response.status}`);
+  }
+  return (await response.json()) as PreviewScheduleResponse;
+}
+
+export async function fetchScheduleRuns(scheduleId: string): Promise<ListScheduleRunsResponse> {
+  const response = await fetch(`/api/schedules/${encodeURIComponent(scheduleId)}/runs`, {
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `List schedule runs API failed: ${response.status}`);
+  }
+  return (await response.json()) as ListScheduleRunsResponse;
 }
 
 export async function updateScheduleStatus(

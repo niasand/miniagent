@@ -264,9 +264,12 @@ describe("OutboxStore", () => {
 });
 
 describe("ScheduleStore", () => {
-  it("computes the next cron run in UTC+8 wall time", () => {
+  it("computes the next cron run in the selected timezone", () => {
     const next = computeNextCronRun("0 9 * * 1-5", "2026-05-21T08:59:00.000+08:00");
     expect(next).toBe("2026-05-21T09:00:00.000+08:00");
+
+    const utcNext = computeNextCronRun("0 9 * * 1-5", "2026-05-21T08:59:00.000+08:00", "UTC");
+    expect(utcNext).toBe("2026-05-21T17:00:00.000+08:00");
   });
 
   it("creates and lists schedules", () => {
@@ -274,9 +277,11 @@ describe("ScheduleStore", () => {
       sessionId: "ses_1",
       kind: "cron",
       cronExpr: "*/5 * * * *",
+      timezone: "UTC",
     });
     expect(schedule.id).toMatch(/^sch_/);
     expect(schedule.status).toBe("active");
+    expect(schedule.timezone).toBe("UTC");
     expect(schedule.nextRunAt).toBeTruthy();
 
     const list = schedules.listBySession("ses_1");

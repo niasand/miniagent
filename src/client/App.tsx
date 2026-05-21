@@ -7,7 +7,7 @@ import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import "highlight.js/styles/atom-one-dark.css";
 import { fetchChannels, saveChannelConfig, testChannel, requestWechatQRCode, pollWechatQRStatus, type ChannelInfo } from "./api/channels.js";
-import { createSchedule, fetchSchedules, updateScheduleStatus } from "./api/schedules.js";
+import { createSchedule, fetchScheduleRuns, fetchSchedules, previewSchedule, updateScheduleStatus } from "./api/schedules.js";
 import { createSession, updateSessionName } from "./api/sessions.js";
 import { fetchSkills } from "./api/skills.js";
 import { sendSessionMessage } from "./api/messages.js";
@@ -18,6 +18,14 @@ import type { WorkspaceScheduleKind, WorkspaceSnapshot } from "../shared/workspa
 const AGENT_OPTIONS: Array<{ value: AgentType; label: string }> = [
   { value: "codex", label: "Codex" },
   { value: "claude", label: "Claude" },
+];
+
+const SCHEDULE_TIMEZONES = [
+  "Asia/Shanghai",
+  "UTC",
+  "America/Los_Angeles",
+  "America/New_York",
+  "Europe/London",
 ];
 
 type DrawerTab = "skills" | "channels" | "sessions" | "schedules";
@@ -38,8 +46,10 @@ export default function App() {
   const [scheduleKind, setScheduleKind] = useState<WorkspaceScheduleKind>("once");
   const [scheduleRunAt, setScheduleRunAt] = useState(() => defaultRunAtInput());
   const [scheduleCronExpr, setScheduleCronExpr] = useState("0 9 * * 1-5");
+  const [scheduleTimezone, setScheduleTimezone] = useState("Asia/Shanghai");
   const [scheduleText, setScheduleText] = useState("");
   const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [expandedScheduleId, setExpandedScheduleId] = useState<string | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const draftInputRef = useRef<HTMLTextAreaElement>(null);
   const scrollControllerRef = useRef<ChatScrollController | null>(null);
@@ -104,6 +114,24 @@ export default function App() {
     refetchInterval: drawerOpen && drawerTab === "schedules" ? 10_000 : false,
   });
   const schedules = schedulesData?.schedules ?? [];
+  const { data: schedulePreview, error: schedulePreviewError } = useQuery({
+    queryKey: ["schedule-preview", scheduleKind, scheduleCronExpr, scheduleRunAt, scheduleTimezone],
+    queryFn: () => previewSchedule({
+      kind: scheduleKind,
+      cronExpr: scheduleKind === "cron" ? scheduleCronExpr.trim() : null,
+      runAt: scheduleKind === "once" ? new Date(scheduleRunAt).toISOString() : null,
+      timezone: scheduleTimezone,
+    }),
+    enabled: drawerOpen && drawerTab === "schedules" && scheduleKind === "cron" && scheduleCronExpr.trim().length > 0,
+    retry: false,
+    staleTime: 5_000,
+  });
+  const { data: scheduleRunsData } = useQuery({
+    queryKey: ["schedule-runs", expandedScheduleId],
+    queryFn: () => expandedScheduleId ? fetchScheduleRuns(expandedScheduleId) : Promise.resolve({ runs: [] }),
+    enabled: drawerOpen && drawerTab === "schedules" && Boolean(expandedScheduleId),
+    refetchInterval: drawerOpen && drawerTab === "schedules" && expandedScheduleId ? 10_000 : false,
+  });
 
   // Sync sessionId from server when we had none (server picks most recent session)
   useEffect(() => {
@@ -353,7 +381,7 @@ export default function App() {
         kind: scheduleKind,
         runAt: scheduleKind === "once" ? new Date(scheduleRunAt).toISOString() : null,
         cronExpr: scheduleKind === "cron" ? scheduleCronExpr.trim() : null,
-        timezone: "Asia/Shanghai",
+        timezone: scheduleTimezone,
         payload: { text },
         actorType: "web_user",
       });
@@ -376,6 +404,7 @@ export default function App() {
       updateScheduleStatus(id, action),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["schedules", selectedSessionId] });
+      queryClient.invalidateQueries({ queryKey: ["schedule-runs", expandedScheduleId] });
     },
   });
 
@@ -647,6 +676,25 @@ export default function App() {
                   aria-label="Cron expression"
                 />
               )}
+              <select
+                className="schedule-input"
+                value={scheduleTimezone}
+                onChange={(e) => setScheduleTimezone(e.currentTarget.value)}
+                aria-label="Timezone"
+              >
+                {SCHEDULE_TIMEZONES.map((timezone) => (
+                  <option key={timezone} value={timezone}>{timezone}</option>
+                ))}
+              </select>
+              {scheduleKind === "cron" && (
+                <div className={`schedule-preview ${schedulePreviewError ? "schedule-preview--error" : ""}`}>
+                  {schedulePreviewError instanceof Error
+                    ? schedulePreviewError.message
+                    : schedulePreview
+                      ? `Next ${formatZonedTime(schedulePreview.nextRunAt, scheduleTimezone)}`
+                      : "Checking next run..."}
+                </div>
+              )}
               <textarea
                 className="schedule-textarea"
                 value={scheduleText}
@@ -667,32 +715,56 @@ export default function App() {
               {schedules.length === 0 && <div className="drawer-empty">No schedules yet</div>}
               {schedules.map((schedule) => (
                 <div key={schedule.id} className="schedule-item">
-                  <div className="schedule-item-main">
-                    <div className="schedule-item-title">
-                      <span className={`schedule-status schedule-status--${schedule.status}`}>{schedule.status}</span>
-                      <span>{schedule.kind === "once" ? "Once" : schedule.cronExpr}</span>
+                  <div className="schedule-item-row">
+                    <div className="schedule-item-main">
+                      <div className="schedule-item-title">
+                        <span className={`schedule-status schedule-status--${schedule.status}`}>{schedule.status}</span>
+                        <span>{schedule.kind === "once" ? "Once" : schedule.cronExpr}</span>
+                      </div>
+                      <div className="schedule-item-meta">
+                        <span>{schedule.nextRunAt ? `Next ${formatZonedTime(schedule.nextRunAt, schedule.timezone)}` : "No next run"}</span>
+                        <span>{schedule.timezone}</span>
+                        {schedule.lastRunAt && <span>Last {formatZonedTime(schedule.lastRunAt, schedule.timezone)}</span>}
+                      </div>
                     </div>
-                    <div className="schedule-item-meta">
-                      <span>{schedule.nextRunAt ? `Next ${formatMessageTime(schedule.nextRunAt)}` : "No next run"}</span>
-                      {schedule.lastRunAt && <span>Last {formatMessageTime(schedule.lastRunAt)}</span>}
+                    <div className="schedule-actions">
+                      <button
+                        className="session-action"
+                        title="Run history"
+                        aria-label="Run history"
+                        onClick={() => setExpandedScheduleId((current) => current === schedule.id ? null : schedule.id)}
+                      >
+                        <Clock className="h-3.5 w-3.5" />
+                      </button>
+                      {schedule.status === "active" ? (
+                        <button className="session-action" title="Pause" aria-label="Pause schedule" onClick={() => updateScheduleMutation.mutate({ id: schedule.id, action: "pause" })}>
+                          <Pause className="h-3.5 w-3.5" />
+                        </button>
+                      ) : schedule.status === "paused" ? (
+                        <button className="session-action" title="Resume" aria-label="Resume schedule" onClick={() => updateScheduleMutation.mutate({ id: schedule.id, action: "resume" })}>
+                          <Play className="h-3.5 w-3.5" />
+                        </button>
+                      ) : null}
+                      {schedule.status !== "cancelled" && (
+                        <button className="session-action" title="Cancel" aria-label="Cancel schedule" onClick={() => updateScheduleMutation.mutate({ id: schedule.id, action: "cancel" })}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
-                  <div className="schedule-actions">
-                    {schedule.status === "active" ? (
-                      <button className="session-action" title="Pause" aria-label="Pause schedule" onClick={() => updateScheduleMutation.mutate({ id: schedule.id, action: "pause" })}>
-                        <Pause className="h-3.5 w-3.5" />
-                      </button>
-                    ) : schedule.status === "paused" ? (
-                      <button className="session-action" title="Resume" aria-label="Resume schedule" onClick={() => updateScheduleMutation.mutate({ id: schedule.id, action: "resume" })}>
-                        <Play className="h-3.5 w-3.5" />
-                      </button>
-                    ) : null}
-                    {schedule.status !== "cancelled" && (
-                      <button className="session-action" title="Cancel" aria-label="Cancel schedule" onClick={() => updateScheduleMutation.mutate({ id: schedule.id, action: "cancel" })}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
+                  {expandedScheduleId === schedule.id && (
+                    <div className="schedule-run-list">
+                      {(scheduleRunsData?.runs ?? []).length === 0 && <div className="schedule-run-empty">No runs yet</div>}
+                      {(scheduleRunsData?.runs ?? []).map((run) => (
+                        <div key={run.id} className="schedule-run-item">
+                          <span className={`schedule-status schedule-status--${run.status}`}>{run.status}</span>
+                          <span>{formatZonedTime(run.scheduledFor ?? run.createdAt, schedule.timezone)}</span>
+                          {run.taskId && <span>{run.taskId}</span>}
+                          {run.error && <span title={run.error}>{run.error}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -837,6 +909,21 @@ function formatMessageTime(value?: string): string {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
+  }).format(date);
+}
+
+function formatZonedTime(value: string, timezone: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return new Intl.DateTimeFormat(undefined, {
+    timeZone: timezone,
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZoneName: "short",
   }).format(date);
 }
 

@@ -248,6 +248,26 @@ export type WorkspaceSchedule = {
   lastRunAt: string | null;
 };
 
+export type WorkspaceScheduleRun = {
+  id: string;
+  scheduleId: string;
+  sessionId: string;
+  taskId: string | null;
+  scheduledFor: string | null;
+  status: WorkspaceScheduleRunStatus;
+  error: string | null;
+  createdAt: string;
+};
+
+export type WorkspaceScheduleRunStatus =
+  | "scheduled"
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "paused";
+
 export type CreateScheduleRequest = {
   sessionId: string;
   kind: WorkspaceScheduleKind;
@@ -267,8 +287,24 @@ export type ListSchedulesResponse = {
   schedules: WorkspaceSchedule[];
 };
 
+export type ListScheduleRunsResponse = {
+  runs: WorkspaceScheduleRun[];
+};
+
 export type UpdateScheduleResponse = {
   schedule: WorkspaceSchedule;
+};
+
+export type PreviewScheduleRequest = {
+  kind: WorkspaceScheduleKind;
+  cronExpr?: string | null;
+  runAt?: string | null;
+  timezone?: string;
+};
+
+export type PreviewScheduleResponse = {
+  nextRunAt: string;
+  timezone: string;
 };
 
 export type RunDueSchedulesResponse = {

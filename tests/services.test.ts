@@ -132,6 +132,29 @@ describe("SchedulerService", () => {
     const resumed = scheduler.list(session.id);
     expect(resumed[0].status).toBe("active");
   });
+
+  it("records schedule run history", () => {
+    const events = new EventStore(db);
+    const sessions = new SessionStore(db, events);
+    const session = sessions.createSession({ title: "T", agentType: "claude", workspacePath: "/tmp" });
+
+    const scheduler = new SchedulerService(db);
+    const schedule = scheduler.create({
+      sessionId: session.id,
+      kind: "once",
+      runAt: new Date(Date.now() - 1000).toISOString(),
+      payload: { text: "scheduled" },
+    });
+
+    const result = scheduler.runDue();
+    expect(result.triggered).toHaveLength(1);
+
+    const runs = scheduler.listRuns(schedule.id);
+    expect(runs).toHaveLength(1);
+    expect(runs[0].taskId).toBe(result.triggered[0].taskId);
+    expect(runs[0].taskStatus).toBe("queued");
+    expect(runs[0].scheduledFor).toBe(schedule.nextRunAt);
+  });
 });
 
 describe("ContextService", () => {
