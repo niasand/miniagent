@@ -5,6 +5,7 @@ import type {
   ListSchedulesResponse,
   PreviewScheduleRequest,
   PreviewScheduleResponse,
+  UpdateScheduleRequest,
   UpdateScheduleResponse,
 } from "../../shared/workspace.js";
 
@@ -54,6 +55,19 @@ export async function fetchScheduleRuns(scheduleId: string): Promise<ListSchedul
     throw new Error(body?.error ?? `List schedule runs API failed: ${response.status}`);
   }
   return (await response.json()) as ListScheduleRunsResponse;
+}
+
+export async function updateSchedule(scheduleId: string, request: UpdateScheduleRequest): Promise<UpdateScheduleResponse> {
+  const response = await fetch(`/api/schedules/${encodeURIComponent(scheduleId)}`, {
+    method: "PATCH",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `Update schedule API failed: ${response.status}`);
+  }
+  return (await response.json()) as UpdateScheduleResponse;
 }
 
 export async function updateScheduleStatus(

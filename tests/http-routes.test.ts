@@ -478,6 +478,7 @@ describe("POST /api/schedules", () => {
       kind: "cron",
       cronExpr: "0 9 * * 1-5",
       timezone: "UTC",
+      payload: { text: "Daily summary" },
     });
     expect(res.status).toBe(201);
     const data = await res.json();
@@ -485,6 +486,8 @@ describe("POST /api/schedules", () => {
     expect(data.schedule.kind).toBe("cron");
     expect(data.schedule.cronExpr).toBe("0 9 * * 1-5");
     expect(data.schedule.timezone).toBe("UTC");
+    expect(data.schedule.payloadText).toBe("Daily summary");
+    expect(data.schedule.payloadSummary).toBe("Daily summary");
     expect(data.schedule.nextRunAt).toBeTruthy();
   });
 
@@ -526,6 +529,51 @@ describe("POST /api/schedules", () => {
   });
 });
 
+describe("PATCH /api/schedules/:scheduleId", () => {
+  it("updates schedule details and payload", async () => {
+    const { sessionId } = (await (await postJson("/api/sessions", {})).json()) as any;
+    const { schedule } = await (await postJson("/api/schedules", {
+      sessionId,
+      kind: "cron",
+      cronExpr: "0 9 * * *",
+      timezone: "Asia/Shanghai",
+      payload: { text: "old message" },
+    })).json() as any;
+
+    const res = await patchJson(`/api/schedules/${schedule.id}`, {
+      kind: "cron",
+      cronExpr: "15 10 * * 1-5",
+      timezone: "UTC",
+      payload: { text: "updated message" },
+    });
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.schedule.cronExpr).toBe("15 10 * * 1-5");
+    expect(data.schedule.timezone).toBe("UTC");
+    expect(data.schedule.payloadText).toBe("updated message");
+    expect(data.schedule.payloadSummary).toBe("updated message");
+    expect(data.schedule.nextRunAt).toBeTruthy();
+  });
+
+  it("rejects updates to cancelled schedules", async () => {
+    const { sessionId } = (await (await postJson("/api/sessions", {})).json()) as any;
+    const { schedule } = await (await postJson("/api/schedules", {
+      sessionId,
+      kind: "once",
+      runAt: new Date(Date.now() + 3600_000).toISOString(),
+      payload: { text: "soon" },
+    })).json() as any;
+    await postJson(`/api/schedules/${schedule.id}/cancel`, {});
+
+    const res = await patchJson(`/api/schedules/${schedule.id}`, {
+      kind: "once",
+      runAt: new Date(Date.now() + 7200_000).toISOString(),
+      payload: { text: "later" },
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe("POST /api/schedules/preview", () => {
   it("returns the next cron run for the selected timezone", async () => {
     const res = await postJson("/api/schedules/preview", {
@@ -564,6 +612,7 @@ describe("POST /api/schedules/due/run", () => {
       sessionId,
       kind: "once",
       runAt: new Date(Date.now() - 1000).toISOString(),
+      payload: { text: "history payload summary" },
     });
     const { schedule } = await created.json() as any;
 
@@ -582,6 +631,7 @@ describe("POST /api/schedules/due/run", () => {
     expect(runsData.runs).toHaveLength(1);
     expect(runsData.runs[0].taskId).toBe(data.triggered[0].taskId);
     expect(runsData.runs[0].status).toBe("running");
+    expect(runsData.runs[0].payloadSummary).toBe("history payload summary");
   });
 });
 

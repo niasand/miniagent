@@ -154,6 +154,7 @@ describe("SchedulerService", () => {
     expect(runs[0].taskId).toBe(result.triggered[0].taskId);
     expect(runs[0].taskStatus).toBe("queued");
     expect(runs[0].scheduledFor).toBe(schedule.nextRunAt);
+    expect(runs[0].payloadSummary).toBe("scheduled");
   });
 });
 

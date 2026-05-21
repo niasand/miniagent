@@ -305,6 +305,27 @@ describe("ScheduleStore", () => {
     expect(updated.lastRunAt).toBeTruthy();
     expect(updated.nextRunAt).toBeTruthy();
   });
+
+  it("updates schedule details", () => {
+    const schedule = schedules.create({
+      sessionId: "ses_1",
+      kind: "cron",
+      cronExpr: "0 9 * * *",
+      payload: { text: "old" },
+    });
+
+    const updated = schedules.update(schedule.id, {
+      kind: "cron",
+      cronExpr: "15 10 * * 1-5",
+      timezone: "UTC",
+      payload: { text: "new" },
+    });
+
+    expect(updated?.cronExpr).toBe("15 10 * * 1-5");
+    expect(updated?.timezone).toBe("UTC");
+    expect(updated?.payload).toEqual({ text: "new" });
+    expect(updated?.nextRunAt).toBeTruthy();
+  });
 });
 
 describe("PermissionRequestStore", () => {

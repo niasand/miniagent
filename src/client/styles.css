@@ -508,6 +508,16 @@ button { cursor: pointer; }
   font-size: 11px;
 }
 
+.schedule-item-summary {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .schedule-status {
   flex-shrink: 0;
   border-radius: 999px;
@@ -554,6 +564,35 @@ button { cursor: pointer; }
   display: inline-flex;
   flex-shrink: 0;
   gap: 2px;
+}
+
+.schedule-edit-form {
+  display: grid;
+  gap: 8px;
+  border-left: 1px solid var(--color-border);
+  margin-left: 10px;
+  padding-left: 9px;
+}
+
+.schedule-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.schedule-secondary-btn {
+  height: 36px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-background);
+  padding: 0 12px;
+  color: var(--color-foreground);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.schedule-secondary-btn:hover {
+  background: var(--color-muted);
 }
 
 .schedule-run-list {

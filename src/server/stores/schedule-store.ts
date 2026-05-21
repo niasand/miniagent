@@ -21,6 +21,14 @@ export type ScheduleRecord = {
   updatedAt: string;
 };
 
+export type UpdateScheduleInput = {
+  kind?: ScheduleKind;
+  cronExpr?: string | null;
+  runAt?: string | null;
+  timezone?: string;
+  payload?: JsonValue;
+};
+
 type ScheduleRow = {
   id: string; session_id: string; status: string; kind: string;
   cron_expr: string | null; run_at: string | null; timezone: string;
@@ -76,6 +84,40 @@ export class ScheduleStore {
     ).run({ id: scheduleId, status, nextRunAt, updatedAt: now });
     const row = this.db.prepare("SELECT * FROM schedules WHERE id = ?").get(scheduleId) as ScheduleRow | undefined;
     return row ? mapRow(row) : null;
+  }
+
+  update(scheduleId: string, input: UpdateScheduleInput): ScheduleRecord | null {
+    const existing = this.get(scheduleId);
+    if (!existing) return null;
+    if (existing.status === "cancelled") throw new Error("Cannot edit cancelled schedule");
+
+    const now = nowIso();
+    const kind = input.kind ?? existing.kind;
+    const cronExpr = kind === "cron" ? (input.cronExpr ?? existing.cronExpr)?.trim() || null : null;
+    const runAt = kind === "once" ? (input.runAt ?? existing.runAt)?.trim() || null : null;
+    const timezone = normalizeScheduleTimezone(input.timezone ?? existing.timezone);
+    const payload = input.payload ?? existing.payload;
+    const nextRunAt = kind === "once"
+      ? normalizeRunAt(runAt)
+      : computeNextCronRun(requireCronExpr(cronExpr), now, timezone);
+
+    this.db.prepare(
+      `UPDATE schedules
+       SET kind = @kind, cron_expr = @cronExpr, run_at = @runAt, timezone = @timezone,
+           payload_json = @payloadJson, next_run_at = @nextRunAt,
+           locked_by = NULL, locked_at = NULL, lease_expires_at = NULL, updated_at = @updatedAt
+       WHERE id = @id`
+    ).run({
+      id: scheduleId,
+      kind,
+      cronExpr,
+      runAt,
+      timezone,
+      payloadJson: stringifyJson(payload),
+      nextRunAt,
+      updatedAt: now,
+    });
+    return this.get(scheduleId);
   }
 
   get(scheduleId: string): ScheduleRecord | null {
@@ -181,6 +223,24 @@ export function normalizeScheduleTimezone(timezone?: string | null): string {
     throw new Error("timezone must be a valid IANA time zone");
   }
   return value;
+}
+
+export function getSchedulePayloadText(payload: JsonValue): string | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const text = (payload as Record<string, unknown>).text;
+  return typeof text === "string" ? text : null;
+}
+
+export function summarizeSchedulePayload(payload: JsonValue, maxLength = 120): string | null {
+  const text = getSchedulePayloadText(payload)?.trim();
+  const raw = text || stringifyNonEmptyPayload(payload);
+  if (!raw) return null;
+  return raw.length > maxLength ? `${raw.slice(0, maxLength - 1)}…` : raw;
+}
+
+function stringifyNonEmptyPayload(payload: JsonValue): string | null {
+  if (!payload || (typeof payload === "object" && !Array.isArray(payload) && Object.keys(payload).length === 0)) return null;
+  return JSON.stringify(payload);
 }
 
 function parseCron(expr: string): ParsedCron {

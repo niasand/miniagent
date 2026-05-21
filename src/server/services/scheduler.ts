@@ -1,6 +1,6 @@
 import type { SqliteDatabase } from "../db/migrate.js";
 import { SessionStore, type SourceType } from "../stores/session-store.js";
-import { ScheduleStore, type ScheduleKind, type ScheduleRecord } from "../stores/schedule-store.js";
+import { ScheduleStore, summarizeSchedulePayload, type ScheduleKind, type ScheduleRecord, type UpdateScheduleInput } from "../stores/schedule-store.js";
 import { ScheduleRunStore, type ScheduleRunRecord } from "../stores/schedule-run-store.js";
 import { EventStore } from "../stores/event-store.js";
 import { AuditLogStore } from "../stores/audit-log-store.js";
@@ -49,6 +49,20 @@ export class SchedulerService {
     return this.scheduleRuns.listBySchedule(scheduleId);
   }
 
+  update(scheduleId: string, input: UpdateScheduleInput) {
+    const schedule = this.schedules.update(scheduleId, input);
+    if (!schedule) return null;
+    this.auditLogs.insert({
+      actorType: "web_user",
+      actorRef: null,
+      action: "schedule_updated",
+      resourceType: "schedule",
+      resourceId: schedule.id,
+      payload: { kind: schedule.kind, sessionId: schedule.sessionId },
+    });
+    return schedule;
+  }
+
   pause(scheduleId: string) {
     return this.schedules.updateStatus(scheduleId, "paused");
   }
@@ -81,6 +95,7 @@ export class SchedulerService {
           sessionId: schedule.sessionId,
           taskId: task.id,
           scheduledFor: schedule.nextRunAt,
+          payloadSummary: summarizeSchedulePayload(schedule.payload),
           status: "queued",
         });
 
@@ -92,6 +107,7 @@ export class SchedulerService {
           scheduleId: schedule.id,
           sessionId: schedule.sessionId,
           scheduledFor: schedule.nextRunAt,
+          payloadSummary: summarizeSchedulePayload(schedule.payload),
           status: "failed",
           error: err instanceof Error ? err.message : "Schedule run failed",
         });

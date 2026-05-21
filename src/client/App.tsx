@@ -7,13 +7,13 @@ import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import "highlight.js/styles/atom-one-dark.css";
 import { fetchChannels, saveChannelConfig, testChannel, requestWechatQRCode, pollWechatQRStatus, type ChannelInfo } from "./api/channels.js";
-import { createSchedule, fetchScheduleRuns, fetchSchedules, previewSchedule, updateScheduleStatus } from "./api/schedules.js";
+import { createSchedule, fetchScheduleRuns, fetchSchedules, previewSchedule, updateSchedule, updateScheduleStatus } from "./api/schedules.js";
 import { createSession, updateSessionName } from "./api/sessions.js";
 import { fetchSkills } from "./api/skills.js";
 import { sendSessionMessage } from "./api/messages.js";
 import { createChatScrollController, type ChatScrollController } from "./lib/chat-scroll.js";
 import type { AgentType, ChatMessage, RunStats, SkillMeta } from "./api/types.js";
-import type { WorkspaceScheduleKind, WorkspaceSnapshot } from "../shared/workspace.js";
+import type { WorkspaceSchedule, WorkspaceScheduleKind, WorkspaceSnapshot } from "../shared/workspace.js";
 
 const AGENT_OPTIONS: Array<{ value: AgentType; label: string }> = [
   { value: "codex", label: "Codex" },
@@ -50,6 +50,13 @@ export default function App() {
   const [scheduleText, setScheduleText] = useState("");
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [expandedScheduleId, setExpandedScheduleId] = useState<string | null>(null);
+  const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
+  const [editScheduleKind, setEditScheduleKind] = useState<WorkspaceScheduleKind>("once");
+  const [editScheduleRunAt, setEditScheduleRunAt] = useState("");
+  const [editScheduleCronExpr, setEditScheduleCronExpr] = useState("");
+  const [editScheduleTimezone, setEditScheduleTimezone] = useState("Asia/Shanghai");
+  const [editScheduleText, setEditScheduleText] = useState("");
+  const [editScheduleError, setEditScheduleError] = useState<string | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const draftInputRef = useRef<HTMLTextAreaElement>(null);
   const scrollControllerRef = useRef<ChatScrollController | null>(null);
@@ -408,6 +415,36 @@ export default function App() {
     },
   });
 
+  const editScheduleMutation = useMutation({
+    mutationFn: () => {
+      if (!editingScheduleId) throw new Error("No schedule selected");
+      const text = editScheduleText.trim();
+      if (!text) throw new Error("Message is required");
+      if (editScheduleKind === "once" && !editScheduleRunAt) throw new Error("Run time is required");
+      if (editScheduleKind === "cron" && !editScheduleCronExpr.trim()) throw new Error("Cron expression is required");
+      return updateSchedule(editingScheduleId, {
+        kind: editScheduleKind,
+        runAt: editScheduleKind === "once" ? new Date(editScheduleRunAt).toISOString() : null,
+        cronExpr: editScheduleKind === "cron" ? editScheduleCronExpr.trim() : null,
+        timezone: editScheduleTimezone,
+        payload: { text },
+        actorType: "web_user",
+      });
+    },
+    onMutate: () => {
+      setEditScheduleError(null);
+    },
+    onSuccess: () => {
+      setEditingScheduleId(null);
+      setEditScheduleError(null);
+      queryClient.invalidateQueries({ queryKey: ["schedules", selectedSessionId] });
+      queryClient.invalidateQueries({ queryKey: ["schedule-runs", expandedScheduleId] });
+    },
+    onError: (error) => {
+      setEditScheduleError(error instanceof Error ? error.message : "Update schedule failed");
+    },
+  });
+
   const handleSend = () => {
     const text = draft.trim();
     if (!text || sendMessage.isPending) return;
@@ -422,6 +459,21 @@ export default function App() {
   const handleCreateSchedule = () => {
     if (createScheduleMutation.isPending) return;
     createScheduleMutation.mutate();
+  };
+
+  const startScheduleEdit = (schedule: WorkspaceSchedule) => {
+    setEditingScheduleId(schedule.id);
+    setEditScheduleKind(schedule.kind);
+    setEditScheduleRunAt(toDateTimeInput(schedule.runAt ?? schedule.nextRunAt ?? undefined));
+    setEditScheduleCronExpr(schedule.cronExpr ?? "");
+    setEditScheduleTimezone(schedule.timezone);
+    setEditScheduleText(schedule.payloadText ?? "");
+    setEditScheduleError(null);
+  };
+
+  const submitScheduleEdit = () => {
+    if (editScheduleMutation.isPending) return;
+    editScheduleMutation.mutate();
   };
 
   const startSessionRename = (id: string, name: string) => {
@@ -726,8 +778,19 @@ export default function App() {
                         <span>{schedule.timezone}</span>
                         {schedule.lastRunAt && <span>Last {formatZonedTime(schedule.lastRunAt, schedule.timezone)}</span>}
                       </div>
+                      {schedule.payloadSummary && <div className="schedule-item-summary" title={schedule.payloadText ?? schedule.payloadSummary}>{schedule.payloadSummary}</div>}
                     </div>
                     <div className="schedule-actions">
+                      {schedule.status !== "cancelled" && (
+                        <button
+                          className="session-action"
+                          title="Edit"
+                          aria-label="Edit schedule"
+                          onClick={() => startScheduleEdit(schedule)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                       <button
                         className="session-action"
                         title="Run history"
@@ -752,6 +815,70 @@ export default function App() {
                       )}
                     </div>
                   </div>
+                  {editingScheduleId === schedule.id && (
+                    <div className="schedule-edit-form">
+                      <div className="segmented-control" role="group" aria-label="Edit schedule kind">
+                        <button
+                          className={`segmented-btn ${editScheduleKind === "once" ? "active" : ""}`}
+                          onClick={() => setEditScheduleKind("once")}
+                        >
+                          Once
+                        </button>
+                        <button
+                          className={`segmented-btn ${editScheduleKind === "cron" ? "active" : ""}`}
+                          onClick={() => setEditScheduleKind("cron")}
+                        >
+                          Cron
+                        </button>
+                      </div>
+                      {editScheduleKind === "once" ? (
+                        <input
+                          className="schedule-input"
+                          type="datetime-local"
+                          value={editScheduleRunAt}
+                          onChange={(e) => setEditScheduleRunAt(e.currentTarget.value)}
+                          aria-label="Edit run at"
+                        />
+                      ) : (
+                        <input
+                          className="schedule-input"
+                          value={editScheduleCronExpr}
+                          onChange={(e) => setEditScheduleCronExpr(e.currentTarget.value)}
+                          aria-label="Edit cron expression"
+                        />
+                      )}
+                      <select
+                        className="schedule-input"
+                        value={editScheduleTimezone}
+                        onChange={(e) => setEditScheduleTimezone(e.currentTarget.value)}
+                        aria-label="Edit timezone"
+                      >
+                        {SCHEDULE_TIMEZONES.map((timezone) => (
+                          <option key={timezone} value={timezone}>{timezone}</option>
+                        ))}
+                      </select>
+                      <textarea
+                        className="schedule-textarea"
+                        value={editScheduleText}
+                        onChange={(e) => {
+                          setEditScheduleText(e.currentTarget.value);
+                          setEditScheduleError(null);
+                        }}
+                        aria-label="Edit message"
+                        rows={3}
+                      />
+                      {editScheduleError && <div className="schedule-error" role="alert">{editScheduleError}</div>}
+                      <div className="schedule-edit-actions">
+                        <button className="schedule-secondary-btn" onClick={() => setEditingScheduleId(null)}>
+                          Cancel
+                        </button>
+                        <button className="schedule-create-btn" onClick={submitScheduleEdit} disabled={editScheduleMutation.isPending}>
+                          <Check className="h-4 w-4" />
+                          Save
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   {expandedScheduleId === schedule.id && (
                     <div className="schedule-run-list">
                       {(scheduleRunsData?.runs ?? []).length === 0 && <div className="schedule-run-empty">No runs yet</div>}
@@ -759,6 +886,7 @@ export default function App() {
                         <div key={run.id} className="schedule-run-item">
                           <span className={`schedule-status schedule-status--${run.status}`}>{run.status}</span>
                           <span>{formatZonedTime(run.scheduledFor ?? run.createdAt, schedule.timezone)}</span>
+                          {run.payloadSummary && <span title={run.payloadSummary}>{run.payloadSummary}</span>}
                           {run.taskId && <span>{run.taskId}</span>}
                           {run.error && <span title={run.error}>{run.error}</span>}
                         </div>
@@ -945,6 +1073,12 @@ function formatSessionChannel(channelType: WorkspaceSnapshot["sessions"][number]
 
 function defaultRunAtInput(): string {
   const date = new Date(Date.now() + 60 * 60 * 1000);
+  return toDateTimeInput(date);
+}
+
+function toDateTimeInput(value?: string | Date): string {
+  const date = value instanceof Date ? value : value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return defaultRunAtInput();
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }

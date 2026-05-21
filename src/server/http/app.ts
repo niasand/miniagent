@@ -16,7 +16,7 @@ import { AgentDefaultStore } from "../stores/agent-default-store.js";
 import { AuditLogStore, type AuditActorType } from "../stores/audit-log-store.js";
 import { EventStore } from "../stores/event-store.js";
 import { SessionStore } from "../stores/session-store.js";
-import { computeNextCronRun, normalizeScheduleTimezone } from "../stores/schedule-store.js";
+import { computeNextCronRun, getSchedulePayloadText, normalizeScheduleTimezone, summarizeSchedulePayload } from "../stores/schedule-store.js";
 import { PermissionRequestStore } from "../stores/permission-request-store.js";
 import { OutboxStore } from "../stores/outbox-store.js";
 import { RuntimeAdapterRegistry } from "../runtime/registry.js";
@@ -874,6 +874,48 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
     return c.json({ runs: runs.map(mapScheduleRun) });
   });
 
+  app.patch("/api/schedules/:scheduleId", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return c.json({ error: "Request body must be valid JSON" }, 400);
+    }
+    const value = body as Record<string, unknown>;
+    const kind = value.kind;
+    if (kind !== "once" && kind !== "cron") {
+      return c.json({ error: "kind must be once or cron" }, 400);
+    }
+    const payload = value.payload;
+    if (payload !== undefined && (payload === null || typeof payload !== "object" || Array.isArray(payload))) {
+      return c.json({ error: "payload must be an object" }, 400);
+    }
+
+    try {
+      const schedulerService = new SchedulerService(db, runtimeService);
+      const schedule = schedulerService.update(c.req.param("scheduleId"), {
+        kind,
+        cronExpr: typeof value.cronExpr === "string" ? value.cronExpr : null,
+        runAt: typeof value.runAt === "string" ? value.runAt : null,
+        timezone: typeof value.timezone === "string" ? value.timezone : undefined,
+        payload: payload as JsonValue | undefined,
+      });
+      if (!schedule) return c.json({ error: "Schedule not found" }, 404);
+      return c.json({ schedule: mapSchedule(schedule) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Update schedule failed";
+      if (
+        message.startsWith("Cannot edit") ||
+        message.startsWith("cronExpr") ||
+        message.startsWith("runAt") ||
+        message.startsWith("timezone") ||
+        message.startsWith("Invalid cron") ||
+        message.startsWith("Could not compute")
+      ) {
+        return c.json({ error: message }, 400);
+      }
+      return c.json({ error: message }, 500);
+    }
+  });
+
   app.post("/api/schedules/due/run", async (c) => {
     try {
       const schedulerService = new SchedulerService(db, runtimeService);
@@ -936,6 +978,8 @@ function mapSchedule(record: ScheduleRecord): WorkspaceSchedule {
     cronExpr: record.cronExpr,
     runAt: record.runAt,
     timezone: record.timezone,
+    payloadText: getSchedulePayloadText(record.payload),
+    payloadSummary: summarizeSchedulePayload(record.payload),
     nextRunAt: record.nextRunAt,
     lastRunAt: record.lastRunAt,
   };
@@ -948,6 +992,7 @@ function mapScheduleRun(record: ScheduleRunRecord): WorkspaceScheduleRun {
     sessionId: record.sessionId,
     taskId: record.taskId,
     scheduledFor: record.scheduledFor,
+    payloadSummary: record.payloadSummary,
     status: (record.taskStatus ?? record.status) as WorkspaceScheduleRun["status"],
     error: record.error,
     createdAt: record.createdAt,

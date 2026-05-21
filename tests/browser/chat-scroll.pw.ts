@@ -243,6 +243,7 @@ test("schedules drawer creates and pauses a scheduled message", async ({ page })
         sessionId,
         taskId: "tsk_test",
         scheduledFor: "2026-05-19T09:00:00.000+08:00",
+        payloadSummary: "Send a scheduled summary",
         status: "queued",
         error: null,
         createdAt: "2026-05-19T09:00:01.000+08:00",
@@ -263,10 +264,25 @@ test("schedules drawer creates and pauses a scheduled message", async ({ page })
         cronExpr: body.cronExpr ?? null,
         runAt: body.runAt ?? null,
         timezone: body.timezone ?? "Asia/Shanghai",
+        payloadText: "Send a scheduled summary",
+        payloadSummary: "Send a scheduled summary",
         nextRunAt: "2026-05-19T02:00:00.000Z",
         lastRunAt: null,
       });
       await route.fulfill({ status: 201, json: { schedule: schedules[0] } });
+      return;
+    }
+    if (route.request().method() === "PATCH" && url.pathname === "/api/schedules/sch_test") {
+      const body = route.request().postDataJSON() as { kind: string; cronExpr?: string; timezone?: string; payload?: { text?: string } };
+      schedules[0] = {
+        ...schedules[0],
+        kind: body.kind,
+        cronExpr: body.cronExpr ?? null,
+        timezone: body.timezone ?? schedules[0].timezone,
+        payloadText: body.payload?.text ?? null,
+        payloadSummary: body.payload?.text ?? null,
+      };
+      await route.fulfill({ json: { schedule: schedules[0] } });
       return;
     }
     if (route.request().method() === "POST" && url.pathname === "/api/schedules/sch_test/pause") {
@@ -289,8 +305,16 @@ test("schedules drawer creates and pauses a scheduled message", async ({ page })
   await expect(page.locator(".schedule-item")).toHaveCount(1);
   await expect(page.locator(".schedule-item-title .schedule-status")).toHaveText("active");
   await expect(page.locator(".schedule-item-meta")).toContainText("UTC");
+  await expect(page.locator(".schedule-item-summary")).toHaveText("Send a scheduled summary");
   await page.getByRole("button", { name: "Run history" }).click();
   await expect(page.locator(".schedule-run-item")).toContainText("queued");
+  await expect(page.locator(".schedule-run-item")).toContainText("Send a scheduled summary");
+  await page.getByRole("button", { name: "Edit schedule" }).click();
+  await page.getByLabel("Edit message").fill("Updated scheduled summary");
+  await page.getByLabel("Edit cron expression").fill("15 10 * * 1-5");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.locator(".schedule-item-title")).toContainText("15 10 * * 1-5");
+  await expect(page.locator(".schedule-item-summary")).toHaveText("Updated scheduled summary");
   await page.getByRole("button", { name: "Pause schedule" }).click();
   await expect(page.locator(".schedule-item-title .schedule-status")).toHaveText("paused");
 });

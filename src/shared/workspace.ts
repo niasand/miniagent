@@ -244,6 +244,8 @@ export type WorkspaceSchedule = {
   cronExpr: string | null;
   runAt: string | null;
   timezone: string;
+  payloadText: string | null;
+  payloadSummary: string | null;
   nextRunAt: string | null;
   lastRunAt: string | null;
 };
@@ -254,6 +256,7 @@ export type WorkspaceScheduleRun = {
   sessionId: string;
   taskId: string | null;
   scheduledFor: string | null;
+  payloadSummary: string | null;
   status: WorkspaceScheduleRunStatus;
   error: string | null;
   createdAt: string;
@@ -293,6 +296,16 @@ export type ListScheduleRunsResponse = {
 
 export type UpdateScheduleResponse = {
   schedule: WorkspaceSchedule;
+};
+
+export type UpdateScheduleRequest = {
+  kind: WorkspaceScheduleKind;
+  cronExpr?: string | null;
+  runAt?: string | null;
+  timezone?: string;
+  payload?: Record<string, unknown>;
+  actorType?: WorkspaceActorType;
+  actorRef?: string | null;
 };
 
 export type PreviewScheduleRequest = {
