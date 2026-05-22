@@ -81,53 +81,27 @@ export function TimezoneSelect({ value, onChange, label }: { value: string; onCh
 }
 
 export function ProviderSelect({ value, onChange }: { value: AgentType; onChange: (value: AgentType) => void }) {
-  const [open, setOpen] = useState(false);
-  const selected = AGENT_OPTIONS.find((option) => option.value === value) ?? AGENT_OPTIONS[0];
-
-  const closeWhenFocusLeaves = (event: React.FocusEvent<HTMLDivElement>) => {
-    const nextTarget = event.relatedTarget;
-    if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
-      setOpen(false);
-    }
-  };
-
   return (
-    <div className="provider-select" onBlur={closeWhenFocusLeaves}>
-      <button
-        type="button"
-        className={`provider-trigger ${open ? "provider-trigger--open" : ""}`}
-        aria-label="Provider"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-      >
-        <span>
-          <strong>{selected.label}</strong>
-          <small>{selected.value}</small>
-        </span>
-        <ChevronDown className="h-3.5 w-3.5" />
-      </button>
-      {open && (
-        <div className="provider-menu" role="listbox" aria-label="Provider">
-          {AGENT_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              role="option"
-              aria-selected={option.value === value}
-              className={`provider-option ${option.value === value ? "provider-option--selected" : ""}`}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => {
-                onChange(option.value);
-                setOpen(false);
-              }}
-            >
-              <span>{option.label}</span>
-              {option.value === value && <Check className="h-3.5 w-3.5" />}
-            </button>
-          ))}
-        </div>
-      )}
+    <div className="provider-select" role="radiogroup" aria-label="Provider">
+      {AGENT_OPTIONS.map((option) => {
+        const selected = option.value === value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            className={`provider-toggle ${selected ? "provider-toggle--selected" : ""}`}
+            onClick={() => onChange(option.value)}
+          >
+            <span className="provider-toggle-text">
+              <strong>{option.label}</strong>
+              <small>{option.value}</small>
+            </span>
+            {selected && <Check className="h-3.5 w-3.5" />}
+          </button>
+        );
+      })}
     </div>
   );
 }

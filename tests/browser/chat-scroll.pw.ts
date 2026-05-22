@@ -233,7 +233,8 @@ test("settings separates channel and provider details", async ({ page }) => {
 
   await page.locator(".side-pane").getByRole("button", { name: /Provider/ }).click();
   await expect(page.getByRole("heading", { name: "Provider 详情" })).toBeVisible();
-  await expect(page.locator(".detail-pane").getByRole("button", { name: "Provider" })).toContainText("Claude");
+  await expect(page.locator(".detail-pane").getByRole("radiogroup", { name: "Provider" })).toBeVisible();
+  await expect(page.locator(".detail-pane").getByRole("radio", { name: /Claude/ })).toHaveAttribute("aria-checked", "true");
 });
 
 test("settings hash survives reload and restores provider detail", async ({ page }) => {
@@ -262,14 +263,38 @@ test("provider selection persists across reload", async ({ page }) => {
   await mockWorkspaceApis(page, createScrollableSnapshot());
 
   await page.goto("/#settings/provider");
-  const providerTrigger = page.locator(".detail-pane").getByRole("button", { name: "Provider" });
-  await providerTrigger.click();
-  await page.getByRole("option", { name: /Codex/ }).click();
+  const codexOption = page.locator(".detail-pane").getByRole("radio", { name: /Codex/ });
+  const claudeOption = page.locator(".detail-pane").getByRole("radio", { name: /Claude/ });
+  await codexOption.click();
 
-  await expect(providerTrigger).toContainText("Codex");
+  await expect(codexOption).toHaveAttribute("aria-checked", "true");
+  await expect(claudeOption).toHaveAttribute("aria-checked", "false");
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Provider 详情" })).toBeVisible();
-  await expect(page.locator(".detail-pane").getByRole("button", { name: "Provider" })).toContainText("Codex");
+  await expect(page.locator(".detail-pane").getByRole("radio", { name: /Codex/ })).toHaveAttribute("aria-checked", "true");
+});
+
+test("provider selector is mutually exclusive", async ({ page }) => {
+  await page.addInitScript((id) => {
+    localStorage.setItem("sessionId", id);
+  }, sessionId);
+
+  await mockWorkspaceApis(page, createScrollableSnapshot());
+
+  await page.goto("/#settings/provider");
+  const claudeOption = page.locator(".detail-pane").getByRole("radio", { name: /Claude/ });
+  const codexOption = page.locator(".detail-pane").getByRole("radio", { name: /Codex/ });
+  const traeOption = page.locator(".detail-pane").getByRole("radio", { name: /Trae/ });
+
+  await expect(claudeOption).toHaveAttribute("aria-checked", "true");
+  await expect(codexOption).toHaveAttribute("aria-checked", "false");
+  await expect(traeOption).toHaveAttribute("aria-checked", "false");
+
+  await traeOption.click();
+
+  await expect(claudeOption).toHaveAttribute("aria-checked", "false");
+  await expect(codexOption).toHaveAttribute("aria-checked", "false");
+  await expect(traeOption).toHaveAttribute("aria-checked", "true");
 });
 
 test("tasks section creates, opens, and pauses a scheduled message", async ({ page }) => {

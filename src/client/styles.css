@@ -1163,11 +1163,12 @@ button { cursor: pointer; }
 .channel-form-save:disabled { opacity: 0.4; }
 
 .provider-select {
-  position: relative;
+  display: grid;
+  gap: 8px;
   max-width: 320px;
 }
 
-.provider-trigger {
+.provider-toggle {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1182,54 +1183,31 @@ button { cursor: pointer; }
   text-align: left;
 }
 
-.provider-trigger:hover,
-.provider-trigger--open {
+.provider-toggle:hover {
   border-color: color-mix(in srgb, var(--color-primary) 28%, var(--color-border));
   background: color-mix(in srgb, var(--color-muted) 45%, var(--color-background));
 }
 
-.provider-trigger span {
+.provider-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-primary) 72%, white);
+  outline-offset: 2px;
+}
+
+.provider-toggle--selected {
+  border-color: color-mix(in srgb, var(--color-primary) 40%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-background));
+  color: var(--color-primary);
+}
+
+.provider-toggle-text {
   display: grid;
   gap: 2px;
 }
 
-.provider-trigger small {
+.provider-toggle small {
   color: var(--color-muted-foreground);
   font-size: 11px;
   font-weight: 600;
-}
-
-.provider-menu {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 5px);
-  right: 0;
-  left: 0;
-  display: grid;
-  gap: 2px;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-surface);
-  padding: 4px;
-  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.14);
-}
-
-.provider-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  padding: 8px 9px;
-  color: var(--color-foreground);
-  text-align: left;
-}
-
-.provider-option:hover,
-.provider-option--selected {
-  background: color-mix(in srgb, var(--color-primary) 9%, var(--color-surface));
-  color: var(--color-primary);
 }
 
 /* ── Main content ── */
