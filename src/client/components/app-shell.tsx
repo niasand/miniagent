@@ -4,7 +4,7 @@ import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import type { AgentType, SkillMeta } from "../api/types.js";
 import type { ChannelInfo } from "../api/channels.js";
-import type { WorkspaceSchedule, WorkspaceScheduleKind, WorkspaceScheduleRun, WorkspaceSnapshot } from "../../shared/workspace.js";
+import type { WorkspaceAgentRuntime, WorkspaceSchedule, WorkspaceScheduleKind, WorkspaceScheduleRun, WorkspaceSnapshot } from "../../shared/workspace.js";
 import { ChannelCard } from "./channel-card.js";
 import { ProviderSelect, TimezoneSelect } from "./controls.js";
 
@@ -87,6 +87,9 @@ export function AppShell(props: {
   onChannelsSaved: () => void;
   agentType: AgentType;
   setAgentType: (value: AgentType) => void;
+  providerRuntimes: WorkspaceAgentRuntime[];
+  providerSavePending: boolean;
+  providerError: string | null;
   messages: WorkspaceSnapshot["messages"];
   messagesSettling: boolean;
   messagesContainerRef: React.RefObject<HTMLDivElement | null>;
@@ -573,7 +576,39 @@ export function AppShell(props: {
             ) : (
               <div className="detail-section">
                 <h2>Default provider</h2>
-                <ProviderSelect value={props.agentType} onChange={props.setAgentType} />
+                <ProviderSelect
+                  value={props.agentType}
+                  onChange={props.setAgentType}
+                  agents={props.providerRuntimes}
+                  saving={props.providerSavePending}
+                />
+                {props.providerError && <p className="provider-error" role="alert">{props.providerError}</p>}
+              </div>
+            )}
+            {props.settingsSection === "provider" && (
+              <div className="detail-section">
+                <h2>Provider capabilities</h2>
+                <div className="provider-capability-grid">
+                  {props.providerRuntimes.map((runtime) => (
+                    <div key={runtime.agentType} className={`provider-capability-card ${runtime.agentType === props.agentType ? "provider-capability-card--active" : ""}`}>
+                      <div className="provider-capability-header">
+                        <div>
+                          <strong>{runtime.label}</strong>
+                          <p>{runtime.command}</p>
+                        </div>
+                        <span className={`provider-status-badge provider-status-badge--${runtime.status}`}>{runtime.status}</span>
+                      </div>
+                      {runtime.message && <p className="provider-capability-message">{runtime.message}</p>}
+                      <div className="provider-capability-list">
+                        {Object.entries(runtime.capabilities).map(([name, enabled]) => (
+                          <span key={name} className={`provider-capability-pill ${enabled ? "provider-capability-pill--enabled" : "provider-capability-pill--disabled"}`}>
+                            {formatCapabilityName(name)}: {enabled ? "Yes" : "No"}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -596,4 +631,10 @@ function formatMessageTime(value?: string): string {
     minute: "2-digit",
     hour12: false,
   }).format(date);
+}
+
+function formatCapabilityName(value: string): string {
+  return value
+    .replace(/([A-Z])/g, " $1")
+    .replace(/^./, (char) => char.toUpperCase());
 }

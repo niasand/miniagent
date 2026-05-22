@@ -47,13 +47,13 @@ export class RuntimeAdapterRegistry {
 
   private registerAcpDrivers(): void {
     const acpBin = resolveAcpBin("claude-agent-acp");
-    const claudeDriver = new AcpRuntimeDriver({
+    this.drivers.set("claude:acp", new AcpRuntimeDriver({
       agentType: "claude",
       displayName: "Claude",
       command: acpBin,
-    });
-    this.drivers.set("claude:acp", claudeDriver);
-    // Future: codex, trae
+    }));
+    this.drivers.set("codex:acp", new AcpRuntimeDriver("codex"));
+    this.drivers.set("trae:acp", new AcpRuntimeDriver("trae"));
   }
 }
 

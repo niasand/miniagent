@@ -235,6 +235,8 @@ test("settings separates channel and provider details", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Provider 详情" })).toBeVisible();
   await expect(page.locator(".detail-pane").getByRole("radiogroup", { name: "Provider" })).toBeVisible();
   await expect(page.locator(".detail-pane").getByRole("radio", { name: /Claude/ })).toHaveAttribute("aria-checked", "true");
+  await expect(page.locator(".provider-capability-card")).toHaveCount(3);
+  await expect(page.locator(".provider-capability-card").filter({ hasText: "Trae" })).toContainText("traecli was not found on PATH");
 });
 
 test("settings hash survives reload and restores provider detail", async ({ page }) => {
@@ -290,11 +292,25 @@ test("provider selector is mutually exclusive", async ({ page }) => {
   await expect(codexOption).toHaveAttribute("aria-checked", "false");
   await expect(traeOption).toHaveAttribute("aria-checked", "false");
 
-  await traeOption.click();
+  await codexOption.click();
 
   await expect(claudeOption).toHaveAttribute("aria-checked", "false");
-  await expect(codexOption).toHaveAttribute("aria-checked", "false");
-  await expect(traeOption).toHaveAttribute("aria-checked", "true");
+  await expect(codexOption).toHaveAttribute("aria-checked", "true");
+  await expect(traeOption).toHaveAttribute("aria-checked", "false");
+});
+
+test("provider selector disables unavailable runtimes with a reason", async ({ page }) => {
+  await page.addInitScript((id) => {
+    localStorage.setItem("sessionId", id);
+  }, sessionId);
+
+  await mockWorkspaceApis(page, createScrollableSnapshot());
+
+  await page.goto("/#settings/provider");
+  const traeOption = page.locator(".detail-pane").getByRole("radio", { name: /Trae/ });
+  await expect(traeOption).toBeDisabled();
+  await expect(traeOption).toHaveAttribute("aria-disabled", "true");
+  await expect(page.locator(".provider-toggle-wrap").filter({ hasText: "Trae" })).toContainText("traecli was not found on PATH");
 });
 
 test("tasks section creates, opens, and pauses a scheduled message", async ({ page }) => {
@@ -401,8 +417,106 @@ test("tasks section creates, opens, and pauses a scheduled message", async ({ pa
 });
 
 async function mockWorkspaceApis(page: Page, snapshot: WorkspaceSnapshot) {
+  let defaultAgentType: "claude" | "codex" | "trae" = "claude";
+
   await page.route("**/api/workspace**", async (route) => {
     await route.fulfill({ json: snapshot });
+  });
+  await page.route("**/api/agents", async (route) => {
+    await route.fulfill({
+      json: {
+        agents: [
+          {
+            agentType: "claude",
+            runtimeKind: "acp",
+            label: "Claude",
+            status: "healthy",
+            command: "claude-agent-acp",
+            version: null,
+            message: null,
+            checkedAt: "2026-05-19T01:00:00.000Z",
+            capabilities: {
+              textStreaming: true,
+              structuredEvents: true,
+              nativeCompact: false,
+              resume: true,
+              sessionExport: false,
+              permissionPrompt: true,
+              imageInput: false,
+            },
+          },
+          {
+            agentType: "codex",
+            runtimeKind: "acp",
+            label: "Codex",
+            status: "healthy",
+            command: "codex",
+            version: null,
+            message: null,
+            checkedAt: "2026-05-19T01:00:00.000Z",
+            capabilities: {
+              textStreaming: true,
+              structuredEvents: true,
+              nativeCompact: false,
+              resume: true,
+              sessionExport: false,
+              permissionPrompt: true,
+              imageInput: false,
+            },
+          },
+          {
+            agentType: "trae",
+            runtimeKind: "acp",
+            label: "Trae",
+            status: "missing",
+            command: "traecli",
+            version: null,
+            message: "traecli was not found on PATH",
+            checkedAt: "2026-05-19T01:00:00.000Z",
+            capabilities: {
+              textStreaming: true,
+              structuredEvents: true,
+              nativeCompact: false,
+              resume: true,
+              sessionExport: false,
+              permissionPrompt: true,
+              imageInput: false,
+            },
+          },
+        ],
+      },
+    });
+  });
+  await page.route("**/api/agent-defaults/resolve", async (route) => {
+    await route.fulfill({
+      json: {
+        default: {
+          id: "agd_default",
+          scopeType: "system",
+          scopeRef: "default",
+          agentType: defaultAgentType,
+          params: {},
+          updatedAt: "2026-05-19T01:00:00.000Z",
+        },
+      },
+    });
+  });
+  await page.route("**/api/agent-defaults", async (route) => {
+    const body = route.request().postDataJSON() as { agentType: "claude" | "codex" | "trae" };
+    defaultAgentType = body.agentType;
+    await route.fulfill({
+      status: 201,
+      json: {
+        default: {
+          id: "agd_default",
+          scopeType: "system",
+          scopeRef: "default",
+          agentType: defaultAgentType,
+          params: {},
+          updatedAt: "2026-05-19T01:00:00.000Z",
+        },
+      },
+    });
   });
   await page.route("**/api/channels", async (route) => {
     await route.fulfill({ json: { channels: [] } });
