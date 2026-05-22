@@ -12,7 +12,7 @@ import { createSession, updateSessionName } from "./api/sessions.js";
 import { fetchSkills } from "./api/skills.js";
 import { sendSessionMessage } from "./api/messages.js";
 import { createChatScrollController, type ChatScrollController } from "./lib/chat-scroll.js";
-import type { AgentType, ChatMessage, RunStats, SkillMeta } from "./api/types.js";
+import type { AgentType, SkillMeta } from "./api/types.js";
 import type { WorkspaceSchedule, WorkspaceScheduleKind, WorkspaceScheduleRun, WorkspaceSnapshot } from "../shared/workspace.js";
 
 const AGENT_OPTIONS: Array<{ value: AgentType; label: string }> = [
@@ -28,16 +28,18 @@ const SCHEDULE_TIMEZONES = [
   "Europe/London",
 ];
 
-type DrawerTab = "skills" | "channels" | "sessions" | "schedules";
+type AppSection = "workspace" | "skills" | "tasks" | "settings";
+type SettingsSection = "channels" | "provider";
 
 export default function App() {
   const queryClient = useQueryClient();
   const [agentType, setAgentType] = useState<AgentType>("claude");
   const [sessionId, setSessionId] = useState<string | null>(() => localStorage.getItem("sessionId"));
   const [draft, setDraft] = useState("");
-  const [agentMenuOpen, setAgentMenuOpen] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerTab, setDrawerTab] = useState<DrawerTab>("skills");
+  const [activeSection, setActiveSection] = useState<AppSection>("workspace");
+  const [selectedSkillName, setSelectedSkillName] = useState<string | null>(null);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("channels");
+  const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null);
   const [skillsQuery, setSkillsQuery] = useState("");
   const [sessionsQuery, setSessionsQuery] = useState("");
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
@@ -49,7 +51,6 @@ export default function App() {
   const [scheduleTimezone, setScheduleTimezone] = useState("Asia/Shanghai");
   const [scheduleText, setScheduleText] = useState("");
   const [scheduleError, setScheduleError] = useState<string | null>(null);
-  const [expandedScheduleId, setExpandedScheduleId] = useState<string | null>(null);
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
   const [editScheduleKind, setEditScheduleKind] = useState<WorkspaceScheduleKind>("once");
   const [editScheduleRunAt, setEditScheduleRunAt] = useState("");
@@ -118,10 +119,14 @@ export default function App() {
   const { data: schedulesData } = useQuery({
     queryKey: ["schedules", selectedSessionId],
     queryFn: () => selectedSessionId ? fetchSchedules(selectedSessionId) : Promise.resolve({ schedules: [] }),
-    enabled: drawerTab === "schedules",
-    refetchInterval: drawerOpen && drawerTab === "schedules" ? 10_000 : false,
+    enabled: activeSection === "tasks",
+    refetchInterval: activeSection === "tasks" ? 10_000 : false,
   });
   const schedules = schedulesData?.schedules ?? [];
+  const selectedSchedule = selectedScheduleId ? schedules.find((schedule) => schedule.id === selectedScheduleId) ?? null : null;
+  const selectedSkill = selectedSkillName
+    ? skills.find((skill) => skill.name === selectedSkillName) ?? filteredSkills[0] ?? skills[0] ?? null
+    : filteredSkills[0] ?? skills[0] ?? null;
   const { data: schedulePreview, error: schedulePreviewError } = useQuery({
     queryKey: ["schedule-preview", scheduleKind, scheduleCronExpr, scheduleRunAt, scheduleTimezone],
     queryFn: () => previewSchedule({
@@ -130,7 +135,7 @@ export default function App() {
       runAt: scheduleKind === "once" ? new Date(scheduleRunAt).toISOString() : null,
       timezone: scheduleTimezone,
     }),
-    enabled: drawerOpen && drawerTab === "schedules" && scheduleKind === "cron" && scheduleCronExpr.trim().length > 0,
+    enabled: activeSection === "tasks" && !selectedSchedule && scheduleKind === "cron" && scheduleCronExpr.trim().length > 0,
     retry: false,
     staleTime: 5_000,
   });
@@ -142,15 +147,15 @@ export default function App() {
       runAt: editScheduleKind === "once" ? new Date(editScheduleRunAt).toISOString() : null,
       timezone: editScheduleTimezone,
     }),
-    enabled: drawerOpen && drawerTab === "schedules" && Boolean(editingScheduleId) && editScheduleKind === "cron" && editScheduleCronExpr.trim().length > 0,
+    enabled: activeSection === "tasks" && Boolean(editingScheduleId) && editScheduleKind === "cron" && editScheduleCronExpr.trim().length > 0,
     retry: false,
     staleTime: 5_000,
   });
   const { data: scheduleRunsData } = useQuery({
-    queryKey: ["schedule-runs", expandedScheduleId],
-    queryFn: () => expandedScheduleId ? fetchScheduleRuns(expandedScheduleId) : Promise.resolve({ runs: [] }),
-    enabled: drawerOpen && drawerTab === "schedules" && Boolean(expandedScheduleId),
-    refetchInterval: drawerOpen && drawerTab === "schedules" && expandedScheduleId ? 10_000 : false,
+    queryKey: ["schedule-runs", selectedScheduleId],
+    queryFn: () => selectedScheduleId ? fetchScheduleRuns(selectedScheduleId) : Promise.resolve({ runs: [] }),
+    enabled: activeSection === "tasks" && Boolean(selectedScheduleId),
+    refetchInterval: activeSection === "tasks" && selectedScheduleId ? 10_000 : false,
   });
 
   // Sync sessionId from server when we had none (server picks most recent session)
@@ -324,16 +329,15 @@ export default function App() {
     }
   }, [messages]);
 
-  // Focus search on drawer open + search-backed tabs
+  // Focus search on search-backed sections.
   useEffect(() => {
-    if (drawerOpen && drawerTab === "skills") {
-      setSkillsQuery("");
+    if (activeSection === "skills") {
       requestAnimationFrame(() => skillsSearchRef.current?.focus());
     }
-    if (drawerOpen && drawerTab === "sessions") {
+    if (activeSection === "workspace") {
       requestAnimationFrame(() => sessionsSearchRef.current?.focus());
     }
-  }, [drawerOpen, drawerTab]);
+  }, [activeSection]);
 
   useLayoutEffect(() => {
     resizeDraftInput();
@@ -362,15 +366,6 @@ export default function App() {
       window.clearTimeout(timerId);
     };
   }, [focusedScheduleTarget, lastMessageId, messages.length, messagesSessionKey]);
-
-  const openDrawer = (tab: DrawerTab) => {
-    if (drawerOpen && drawerTab === tab) {
-      setDrawerOpen(false);
-    } else {
-      setDrawerTab(tab);
-      setDrawerOpen(true);
-    }
-  };
 
   const sendMessage = useMutation({
     mutationFn: async (text: string) => {
@@ -433,9 +428,10 @@ export default function App() {
     onMutate: () => {
       setScheduleError(null);
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       setScheduleText("");
       setScheduleRunAt(defaultRunAtInput());
+      setSelectedScheduleId(data.schedule.id);
       queryClient.invalidateQueries({ queryKey: ["schedules", selectedSessionId] });
     },
     onError: (error) => {
@@ -448,7 +444,7 @@ export default function App() {
       updateScheduleStatus(id, action),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["schedules", selectedSessionId] });
-      queryClient.invalidateQueries({ queryKey: ["schedule-runs", expandedScheduleId] });
+      queryClient.invalidateQueries({ queryKey: ["schedule-runs", selectedScheduleId] });
     },
   });
 
@@ -475,7 +471,7 @@ export default function App() {
       setEditingScheduleId(null);
       setEditScheduleError(null);
       queryClient.invalidateQueries({ queryKey: ["schedules", selectedSessionId] });
-      queryClient.invalidateQueries({ queryKey: ["schedule-runs", expandedScheduleId] });
+      queryClient.invalidateQueries({ queryKey: ["schedule-runs", selectedScheduleId] });
     },
     onError: (error) => {
       setEditScheduleError(error instanceof Error ? error.message : "Update schedule failed");
@@ -489,8 +485,13 @@ export default function App() {
   };
 
   const handleSkillSelect = (skill: SkillMeta) => {
+    setSelectedSkillName(skill.name);
+  };
+
+  const useSkillInWorkspace = (skill: SkillMeta) => {
     setDraft(`/${skill.name} `);
-    setDrawerOpen(false);
+    setActiveSection("workspace");
+    requestAnimationFrame(() => draftInputRef.current?.focus());
   };
 
   const handleCreateSchedule = () => {
@@ -498,7 +499,14 @@ export default function App() {
     createScheduleMutation.mutate();
   };
 
+  const startNewSchedule = () => {
+    setSelectedScheduleId(null);
+    setEditingScheduleId(null);
+    setScheduleError(null);
+  };
+
   const startScheduleEdit = (schedule: WorkspaceSchedule) => {
+    setSelectedScheduleId(schedule.id);
     setEditingScheduleId(schedule.id);
     setEditScheduleKind(schedule.kind);
     setEditScheduleRunAt(toDateTimeInput(schedule.runAt ?? schedule.nextRunAt ?? undefined));
@@ -516,7 +524,7 @@ export default function App() {
   const openScheduleRun = (run: WorkspaceScheduleRun, focusOutput: boolean) => {
     setSessionId(run.sessionId);
     localStorage.setItem("sessionId", run.sessionId);
-    setDrawerOpen(false);
+    setActiveSection("workspace");
     setFocusedScheduleTarget(focusOutput && run.runId ? { sessionId: run.sessionId, runId: run.runId } : null);
     queryClient.invalidateQueries({ queryKey: ["workspace", run.sessionId] });
   };
@@ -548,125 +556,60 @@ export default function App() {
     }
   };
 
-  const currentAgent = AGENT_OPTIONS.find((a) => a.value === agentType)!;
-
   return (
     <main className="app-root">
-      {/* Left drawer */}
-      <div className={`drawer ${drawerOpen ? "open" : ""}`}>
-        {/* Tab header */}
-        <div className="drawer-tabs">
-          <button
-            className={`drawer-tab ${drawerTab === "skills" ? "active" : ""}`}
-            onClick={() => setDrawerTab("skills")}
-          >
-            <Sparkles className="h-3.5 w-3.5" /> Skills
-          </button>
-          <button
-            className={`drawer-tab ${drawerTab === "channels" ? "active" : ""}`}
-            onClick={() => setDrawerTab("channels")}
-          >
-            <Settings className="h-3.5 w-3.5" /> Channels
-          </button>
-          <button
-            className={`drawer-tab ${drawerTab === "sessions" ? "active" : ""}`}
-            onClick={() => setDrawerTab("sessions")}
-          >
-            <Clock className="h-3.5 w-3.5" /> History
-          </button>
-          <button
-            className={`drawer-tab ${drawerTab === "schedules" ? "active" : ""}`}
-            onClick={() => setDrawerTab("schedules")}
-          >
-            <CalendarClock className="h-3.5 w-3.5" /> Schedules
-          </button>
-          <button className="drawer-close" onClick={() => setDrawerOpen(false)}>
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+      <nav className="app-nav" aria-label="Primary">
+        <div className="app-brand">MiniAgent</div>
+        <button className={`nav-item ${activeSection === "workspace" ? "active" : ""}`} onClick={() => setActiveSection("workspace")}>
+          <Clock className="h-4 w-4" />
+          <span>工作台</span>
+        </button>
+        <button className={`nav-item ${activeSection === "skills" ? "active" : ""}`} onClick={() => setActiveSection("skills")}>
+          <Sparkles className="h-4 w-4" />
+          <span>Skill</span>
+        </button>
+        <button className={`nav-item ${activeSection === "tasks" ? "active" : ""}`} onClick={() => setActiveSection("tasks")}>
+          <CalendarClock className="h-4 w-4" />
+          <span>任务</span>
+        </button>
+        <button className={`nav-item ${activeSection === "settings" ? "active" : ""}`} onClick={() => setActiveSection("settings")}>
+          <Settings className="h-4 w-4" />
+          <span>设置</span>
+        </button>
+      </nav>
 
-        {/* Skills tab */}
-        {drawerTab === "skills" && (
+      <aside className="side-pane">
+        {activeSection === "workspace" && (
           <>
-            <div className="drawer-search">
-              <Search className="h-4 w-4 drawer-search-icon" />
-              <input
-                ref={skillsSearchRef}
-                className="drawer-search-input"
-                value={skillsQuery}
-                onChange={(e) => setSkillsQuery(e.currentTarget.value)}
-                placeholder="Search skills..."
-              />
+            <div className="side-header">
+              <span className="side-eyebrow">工作台</span>
+              <h2>Session 列表</h2>
             </div>
-            <div className="drawer-list">
-              {filteredSkills.length === 0 && (
-                <div className="drawer-empty">No matching skills</div>
-              )}
-              {filteredSkills.map((skill) => (
-                <button key={skill.name} className="drawer-item" onClick={() => handleSkillSelect(skill)}>
-                  <strong>{skill.name}</strong>
-                  {skill.description && (
-                    <span className="drawer-item-desc">{skill.description.slice(0, 30)}...</span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-
-        {/* Channels tab */}
-        {drawerTab === "channels" && (
-          <div className="drawer-list">
-            {channels.map((ch) => (
-              <ChannelCard key={ch.id} channel={ch} onSaved={() => queryClient.invalidateQueries({ queryKey: ["channels"] })} />
-            ))}
-          </div>
-        )}
-
-        {/* Sessions tab */}
-        {drawerTab === "sessions" && (
-          <>
-            <div className="drawer-search">
-              <Search className="h-4 w-4 drawer-search-icon" />
+            <div className="side-search">
+              <Search className="h-4 w-4 side-search-icon" />
               <input
                 ref={sessionsSearchRef}
-                className="drawer-search-input"
+                className="side-search-input"
                 value={sessionsQuery}
                 onChange={(e) => setSessionsQuery(e.currentTarget.value)}
                 placeholder="Search history..."
               />
             </div>
-            <div className="drawer-list">
-              {sessions.length === 0 && (
-                <div className="drawer-empty">No sessions yet</div>
-              )}
-              {sessions.length > 0 && filteredSessions.length === 0 && (
-                <div className="drawer-empty">No matching sessions</div>
-              )}
+            <div className="context-list">
+              {sessions.length === 0 && <div className="side-empty">No sessions yet</div>}
+              {sessions.length > 0 && filteredSessions.length === 0 && <div className="side-empty">No matching sessions</div>}
               {filteredSessions.map((s) => {
                 const sessionName = s.name || s.title || "Untitled";
                 const isEditing = editingSessionId === s.id;
                 return (
-                  <div
-                    key={s.id}
-                    className={`session-item ${s.id === sessionId ? "session-item--active" : ""}`}
-                  >
+                  <div key={s.id} className={`session-item ${s.id === sessionId ? "session-item--active" : ""}`}>
                     {isEditing ? (
-                      <form
-                        className="session-edit"
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          submitSessionRename(s.id);
-                        }}
-                      >
+                      <form className="session-edit" onSubmit={(e) => { e.preventDefault(); submitSessionRename(s.id); }}>
                         <div className="session-edit-row">
                           <input
                             className="session-name-input"
                             value={editingSessionName}
-                            onChange={(e) => {
-                              setEditingSessionName(e.currentTarget.value);
-                              setRenameSessionError(null);
-                            }}
+                            onChange={(e) => { setEditingSessionName(e.currentTarget.value); setRenameSessionError(null); }}
                             onKeyDown={(e) => {
                               if (e.key === "Escape") {
                                 setEditingSessionId(null);
@@ -719,12 +662,7 @@ export default function App() {
                             <span>{formatSessionUpdatedAt(s.updatedAt)}</span>
                           </span>
                         </button>
-                        <button
-                          className="session-action"
-                          title="Rename"
-                          aria-label={`Rename ${sessionName}`}
-                          onClick={() => startSessionRename(s.id, sessionName)}
-                        >
+                        <button className="session-action" title="Rename" aria-label={`Rename ${sessionName}`} onClick={() => startSessionRename(s.id, sessionName)}>
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
                         <span className={`session-status session-status--${s.status}`}>
@@ -739,160 +677,321 @@ export default function App() {
           </>
         )}
 
-        {drawerTab === "schedules" && (
-          <div className="schedule-panel">
-            <div className="schedule-session" title={selectedSessionName}>{selectedSessionName}</div>
-            <div className="schedule-form">
-              <div className="segmented-control" role="group" aria-label="Schedule kind">
-                <button
-                  className={`segmented-btn ${scheduleKind === "once" ? "active" : ""}`}
-                  onClick={() => setScheduleKind("once")}
-                >
-                  Once
-                </button>
-                <button
-                  className={`segmented-btn ${scheduleKind === "cron" ? "active" : ""}`}
-                  onClick={() => setScheduleKind("cron")}
-                >
-                  Cron
-                </button>
-              </div>
-              {scheduleKind === "once" ? (
-                <input
-                  className="schedule-input"
-                  type="datetime-local"
-                  value={scheduleRunAt}
-                  onChange={(e) => setScheduleRunAt(e.currentTarget.value)}
-                  aria-label="Run at"
-                />
-              ) : (
-                <input
-                  className="schedule-input"
-                  value={scheduleCronExpr}
-                  onChange={(e) => setScheduleCronExpr(e.currentTarget.value)}
-                  placeholder="0 9 * * 1-5"
-                  aria-label="Cron expression"
-                />
-              )}
-              <TimezoneSelect
-                value={scheduleTimezone}
-                onChange={setScheduleTimezone}
-                label="Timezone"
+        {activeSection === "skills" && (
+          <>
+            <div className="side-header">
+              <span className="side-eyebrow">Skill</span>
+              <h2>Skills 列表</h2>
+            </div>
+            <div className="side-search">
+              <Search className="h-4 w-4 side-search-icon" />
+              <input
+                ref={skillsSearchRef}
+                className="side-search-input"
+                value={skillsQuery}
+                onChange={(e) => setSkillsQuery(e.currentTarget.value)}
+                placeholder="Search skills..."
               />
-              {scheduleKind === "cron" && (
-                <div className={`schedule-preview ${schedulePreviewError ? "schedule-preview--error" : ""}`}>
-                  {schedulePreviewError instanceof Error
-                    ? schedulePreviewError.message
-                    : schedulePreview
-                      ? `Next ${formatZonedTime(schedulePreview.nextRunAt, scheduleTimezone)}`
-                      : "Checking next run..."}
-                </div>
-              )}
-              <textarea
-                className="schedule-textarea"
-                value={scheduleText}
-                onChange={(e) => {
-                  setScheduleText(e.currentTarget.value);
-                  setScheduleError(null);
-                }}
-                placeholder="Message to send..."
-                rows={3}
-              />
-              {scheduleError && <div className="schedule-error" role="alert">{scheduleError}</div>}
-              <button className="schedule-create-btn" onClick={handleCreateSchedule} disabled={!selectedSessionId || createScheduleMutation.isPending}>
-                <CalendarClock className="h-4 w-4" />
-                Create
+            </div>
+            <div className="context-list">
+              {filteredSkills.length === 0 && <div className="side-empty">No matching skills</div>}
+              {filteredSkills.map((skill) => (
+                <button
+                  key={skill.name}
+                  className={`context-item ${selectedSkill?.name === skill.name ? "context-item--active" : ""}`}
+                  onClick={() => handleSkillSelect(skill)}
+                >
+                  <strong>{skill.name}</strong>
+                  {skill.description && <span>{skill.description}</span>}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {activeSection === "tasks" && (
+          <>
+            <div className="side-header">
+              <span className="side-eyebrow">任务</span>
+              <h2>定时任务列表</h2>
+            </div>
+            <div className="context-list">
+              <button className={`context-item context-item--create ${!selectedSchedule ? "context-item--active" : ""}`} onClick={startNewSchedule}>
+                <strong>New schedule</strong>
+                <span title={selectedSessionName}>{selectedSessionName}</span>
+              </button>
+              {schedules.length === 0 && <div className="side-empty">No schedules yet</div>}
+              {schedules.map((schedule) => (
+                <button
+                  key={schedule.id}
+                  className={`schedule-item schedule-item--button ${selectedSchedule?.id === schedule.id ? "schedule-item--active" : ""}`}
+                  onClick={() => {
+                    setSelectedScheduleId(schedule.id);
+                    setEditingScheduleId(null);
+                  }}
+                >
+                  <span className="schedule-item-title">
+                    <span className={`schedule-status schedule-status--${schedule.status}`}>{schedule.status}</span>
+                    <span>{schedule.kind === "once" ? "Once" : schedule.cronExpr}</span>
+                  </span>
+                  <span className="schedule-item-meta">
+                    <span>{schedule.nextRunAt ? `Next ${formatZonedTime(schedule.nextRunAt, schedule.timezone)}` : "No next run"}</span>
+                    <span>{schedule.timezone}</span>
+                  </span>
+                  {schedule.payloadSummary && <span className="schedule-item-summary" title={schedule.payloadText ?? schedule.payloadSummary}>{schedule.payloadSummary}</span>}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {activeSection === "settings" && (
+          <>
+            <div className="side-header">
+              <span className="side-eyebrow">设置</span>
+              <h2>设置项</h2>
+            </div>
+            <div className="context-list">
+              <button
+                className={`context-item ${settingsSection === "channels" ? "context-item--active" : ""}`}
+                onClick={() => setSettingsSection("channels")}
+              >
+                <strong>消息通道</strong>
+                <span>Feishu, QQ, Telegram, WeChat</span>
+              </button>
+              <button
+                className={`context-item ${settingsSection === "provider" ? "context-item--active" : ""}`}
+                onClick={() => setSettingsSection("provider")}
+              >
+                <strong>Provider</strong>
+                <span>Default {agentType}</span>
               </button>
             </div>
-            <div className="drawer-list schedule-list">
-              {schedules.length === 0 && <div className="drawer-empty">No schedules yet</div>}
-              {schedules.map((schedule) => (
-                <div key={schedule.id} className="schedule-item">
-                  <div className="schedule-item-row">
-                    <div className="schedule-item-main">
-                      <div className="schedule-item-title">
-                        <span className={`schedule-status schedule-status--${schedule.status}`}>{schedule.status}</span>
-                        <span>{schedule.kind === "once" ? "Once" : schedule.cronExpr}</span>
-                      </div>
-                      <div className="schedule-item-meta">
-                        <span>{schedule.nextRunAt ? `Next ${formatZonedTime(schedule.nextRunAt, schedule.timezone)}` : "No next run"}</span>
-                        <span>{schedule.timezone}</span>
-                        {schedule.lastRunAt && <span>Last {formatZonedTime(schedule.lastRunAt, schedule.timezone)}</span>}
-                      </div>
-                      {schedule.payloadSummary && <div className="schedule-item-summary" title={schedule.payloadText ?? schedule.payloadSummary}>{schedule.payloadSummary}</div>}
+          </>
+        )}
+      </aside>
+
+      <section className={`detail-pane detail-pane--${activeSection}`}>
+        {activeSection === "workspace" && (
+          <div className="chat-main">
+            <div className={`chat-messages ${messagesSettling ? "chat-messages--settling" : ""}`} ref={messagesContainerRef}>
+              {messages.length === 0 && (
+                <div className="chat-empty">
+                  <Sparkles className="chat-empty-icon" />
+                  <p>Send a message to start</p>
+                </div>
+              )}
+              {messages.map((msg) => {
+                if (msg.role === "system" && msg.markdown.startsWith("Run succeeded")) {
+                  return (
+                    <div key={msg.id} className="chat-stat">
+                      {runStats.durationSeconds !== null && <span>{runStats.durationSeconds}s</span>}
+                      {runStats.tokensUsed !== null && <span>{runStats.tokensUsed.toLocaleString()} tokens</span>}
+                      <span>完成</span>
                     </div>
-                    <div className="schedule-actions">
-                      {schedule.status !== "cancelled" && (
-                        <button
-                          className="session-action"
-                          title="Edit"
-                          aria-label="Edit schedule"
-                          onClick={() => startScheduleEdit(schedule)}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
+                  );
+                }
+                if (msg.role === "system") return null;
+                const isFocusedRun = Boolean(focusedScheduleTarget?.runId && msg.runId === focusedScheduleTarget.runId);
+                return (
+                  <div
+                    key={msg.id}
+                    className={`chat-bubble ${msg.role} ${isFocusedRun ? "chat-bubble--focused-run" : ""}`}
+                    data-run-id={msg.runId ?? undefined}
+                  >
+                    <div className="chat-bubble-header">
+                      <strong>{msg.author}</strong>
+                      {msg.time && (
+                        <span className="chat-time" title={msg.createdAt ?? msg.time}>
+                          {formatMessageTime(msg.createdAt ?? msg.time)}
+                        </span>
                       )}
-                      <button
-                        className="session-action"
-                        title="Run history"
-                        aria-label="Run history"
-                        onClick={() => setExpandedScheduleId((current) => current === schedule.id ? null : schedule.id)}
-                      >
-                        <Clock className="h-3.5 w-3.5" />
-                      </button>
-                      {schedule.status === "active" ? (
-                        <button className="session-action" title="Pause" aria-label="Pause schedule" onClick={() => updateScheduleMutation.mutate({ id: schedule.id, action: "pause" })}>
-                          <Pause className="h-3.5 w-3.5" />
-                        </button>
-                      ) : schedule.status === "paused" ? (
-                        <button className="session-action" title="Resume" aria-label="Resume schedule" onClick={() => updateScheduleMutation.mutate({ id: schedule.id, action: "resume" })}>
-                          <Play className="h-3.5 w-3.5" />
-                        </button>
-                      ) : null}
-                      {schedule.status !== "cancelled" && (
-                        <button className="session-action" title="Cancel" aria-label="Cancel schedule" onClick={() => updateScheduleMutation.mutate({ id: schedule.id, action: "cancel" })}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      )}
+                    </div>
+                    <div className="prose-mini">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{msg.markdown}</ReactMarkdown>
                     </div>
                   </div>
-                  {editingScheduleId === schedule.id && (
-                    <div className="schedule-edit-form">
+                );
+              })}
+              {(sendMessage.isPending || isStreaming || streamingText) && messages[messages.length - 1]?.role !== "agent" && (
+                <div className="chat-bubble agent">
+                  <div className="chat-bubble-header"><strong>Agent</strong></div>
+                  {streamingText ? (
+                    <div className="prose-mini">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{streamingText}</ReactMarkdown>
+                    </div>
+                  ) : (
+                    <div className="chat-typing">
+                      <span className="typing-dots"><span/><span/><span/></span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {messages.length > 0 && (
+              <div className="chat-scroll-controls">
+                <button className="chat-scroll-btn" onClick={scrollMessagesToTop} title="Back to top" aria-label="Back to top">
+                  <ArrowUp className="h-4 w-4" />
+                </button>
+                <button className="chat-scroll-btn" onClick={() => scrollMessagesToBottom("smooth")} title="Back to bottom" aria-label="Back to bottom">
+                  <ArrowDown className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
+            <div className="chat-bar">
+              <textarea
+                ref={draftInputRef}
+                className="chat-input"
+                value={draft}
+                onChange={(e) => setDraft(e.currentTarget.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Type a message..."
+                rows={1}
+              />
+              <button className="send-btn" onClick={handleSend} disabled={sendMessage.isPending || !draft.trim()}>
+                <SendHorizontal className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {activeSection === "skills" && (
+          <div className="detail-scroll">
+            {selectedSkill ? (
+              <>
+                <div className="detail-header">
+                  <div>
+                    <span className="side-eyebrow">Skills 详情</span>
+                    <h1>{selectedSkill.name}</h1>
+                  </div>
+                  <button className="primary-action" onClick={() => useSkillInWorkspace(selectedSkill)}>
+                    <Sparkles className="h-4 w-4" />
+                    Use skill
+                  </button>
+                </div>
+                <div className="detail-section">
+                  <h2>Description</h2>
+                  <p>{selectedSkill.description || "No description provided."}</p>
+                </div>
+                <div className="detail-section">
+                  <h2>Invocation</h2>
+                  <code className="inline-code">/{selectedSkill.name}</code>
+                </div>
+              </>
+            ) : (
+              <div className="detail-empty">No skill selected</div>
+            )}
+          </div>
+        )}
+
+        {activeSection === "tasks" && (
+          <div className="detail-scroll">
+            {!selectedSchedule ? (
+              <>
+                <div className="detail-header">
+                  <div>
+                    <span className="side-eyebrow">定时任务详情</span>
+                    <h1>New schedule</h1>
+                  </div>
+                </div>
+                <div className="schedule-form schedule-form--detail">
+                  <div className="segmented-control" role="group" aria-label="Schedule kind">
+                    <button className={`segmented-btn ${scheduleKind === "once" ? "active" : ""}`} onClick={() => setScheduleKind("once")}>Once</button>
+                    <button className={`segmented-btn ${scheduleKind === "cron" ? "active" : ""}`} onClick={() => setScheduleKind("cron")}>Cron</button>
+                  </div>
+                  {scheduleKind === "once" ? (
+                    <input className="schedule-input" type="datetime-local" value={scheduleRunAt} onChange={(e) => setScheduleRunAt(e.currentTarget.value)} aria-label="Run at" />
+                  ) : (
+                    <input className="schedule-input" value={scheduleCronExpr} onChange={(e) => setScheduleCronExpr(e.currentTarget.value)} placeholder="0 9 * * 1-5" aria-label="Cron expression" />
+                  )}
+                  <TimezoneSelect value={scheduleTimezone} onChange={setScheduleTimezone} label="Timezone" />
+                  {scheduleKind === "cron" && (
+                    <div className={`schedule-preview ${schedulePreviewError ? "schedule-preview--error" : ""}`}>
+                      {schedulePreviewError instanceof Error
+                        ? schedulePreviewError.message
+                        : schedulePreview
+                          ? `Next ${formatZonedTime(schedulePreview.nextRunAt, scheduleTimezone)}`
+                          : "Checking next run..."}
+                    </div>
+                  )}
+                  <textarea
+                    className="schedule-textarea"
+                    value={scheduleText}
+                    onChange={(e) => {
+                      setScheduleText(e.currentTarget.value);
+                      setScheduleError(null);
+                    }}
+                    placeholder="Message to send..."
+                    rows={4}
+                  />
+                  {scheduleError && <div className="schedule-error" role="alert">{scheduleError}</div>}
+                  <button className="schedule-create-btn" onClick={handleCreateSchedule} disabled={!selectedSessionId || createScheduleMutation.isPending}>
+                    <CalendarClock className="h-4 w-4" />
+                    Create
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="detail-header">
+                  <div>
+                    <span className="side-eyebrow">定时任务详情</span>
+                    <h1>{selectedSchedule.kind === "once" ? "Once" : selectedSchedule.cronExpr}</h1>
+                  </div>
+                  <div className="detail-actions">
+                    {selectedSchedule.status !== "cancelled" && (
+                      <button className="secondary-action" onClick={() => startScheduleEdit(selectedSchedule)}>
+                        <Pencil className="h-4 w-4" />
+                        Edit
+                      </button>
+                    )}
+                    {selectedSchedule.status === "active" ? (
+                      <button className="secondary-action" onClick={() => updateScheduleMutation.mutate({ id: selectedSchedule.id, action: "pause" })}>
+                        <Pause className="h-4 w-4" />
+                        Pause
+                      </button>
+                    ) : selectedSchedule.status === "paused" ? (
+                      <button className="secondary-action" onClick={() => updateScheduleMutation.mutate({ id: selectedSchedule.id, action: "resume" })}>
+                        <Play className="h-4 w-4" />
+                        Resume
+                      </button>
+                    ) : null}
+                    {selectedSchedule.status !== "cancelled" && (
+                      <button className="secondary-action secondary-action--danger" onClick={() => updateScheduleMutation.mutate({ id: selectedSchedule.id, action: "cancel" })}>
+                        <Trash2 className="h-4 w-4" />
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="detail-section detail-grid">
+                  <div><span>Status</span><strong>{selectedSchedule.status}</strong></div>
+                  <div><span>Timezone</span><strong>{selectedSchedule.timezone}</strong></div>
+                  <div><span>Next run</span><strong>{selectedSchedule.nextRunAt ? formatZonedTime(selectedSchedule.nextRunAt, selectedSchedule.timezone) : "No next run"}</strong></div>
+                  <div><span>Session</span><strong>{selectedSessionName}</strong></div>
+                </div>
+                {selectedSchedule.payloadSummary && (
+                  <div className="detail-section">
+                    <h2>Message</h2>
+                    <p>{selectedSchedule.payloadText ?? selectedSchedule.payloadSummary}</p>
+                  </div>
+                )}
+                {editingScheduleId === selectedSchedule.id && (
+                  <div className="detail-section">
+                    <h2>Edit schedule</h2>
+                    <div className="schedule-edit-form schedule-edit-form--detail">
                       <div className="segmented-control" role="group" aria-label="Edit schedule kind">
-                        <button
-                          className={`segmented-btn ${editScheduleKind === "once" ? "active" : ""}`}
-                          onClick={() => setEditScheduleKind("once")}
-                        >
-                          Once
-                        </button>
-                        <button
-                          className={`segmented-btn ${editScheduleKind === "cron" ? "active" : ""}`}
-                          onClick={() => setEditScheduleKind("cron")}
-                        >
-                          Cron
-                        </button>
+                        <button className={`segmented-btn ${editScheduleKind === "once" ? "active" : ""}`} onClick={() => setEditScheduleKind("once")}>Once</button>
+                        <button className={`segmented-btn ${editScheduleKind === "cron" ? "active" : ""}`} onClick={() => setEditScheduleKind("cron")}>Cron</button>
                       </div>
                       {editScheduleKind === "once" ? (
-                        <input
-                          className="schedule-input"
-                          type="datetime-local"
-                          value={editScheduleRunAt}
-                          onChange={(e) => setEditScheduleRunAt(e.currentTarget.value)}
-                          aria-label="Edit run at"
-                        />
+                        <input className="schedule-input" type="datetime-local" value={editScheduleRunAt} onChange={(e) => setEditScheduleRunAt(e.currentTarget.value)} aria-label="Edit run at" />
                       ) : (
-                        <input
-                          className="schedule-input"
-                          value={editScheduleCronExpr}
-                          onChange={(e) => setEditScheduleCronExpr(e.currentTarget.value)}
-                          aria-label="Edit cron expression"
-                        />
+                        <input className="schedule-input" value={editScheduleCronExpr} onChange={(e) => setEditScheduleCronExpr(e.currentTarget.value)} aria-label="Edit cron expression" />
                       )}
-                      <TimezoneSelect
-                        value={editScheduleTimezone}
-                        onChange={setEditScheduleTimezone}
-                        label="Edit timezone"
-                      />
+                      <TimezoneSelect value={editScheduleTimezone} onChange={setEditScheduleTimezone} label="Edit timezone" />
                       {editScheduleKind === "cron" && (
                         <div className={`schedule-preview ${editSchedulePreviewError ? "schedule-preview--error" : ""}`}>
                           {editSchedulePreviewError instanceof Error
@@ -902,196 +1001,78 @@ export default function App() {
                               : "Checking next run..."}
                         </div>
                       )}
-                      <textarea
-                        className="schedule-textarea"
-                        value={editScheduleText}
-                        onChange={(e) => {
-                          setEditScheduleText(e.currentTarget.value);
-                          setEditScheduleError(null);
-                        }}
-                        aria-label="Edit message"
-                        rows={3}
-                      />
+                      <textarea className="schedule-textarea" value={editScheduleText} onChange={(e) => { setEditScheduleText(e.currentTarget.value); setEditScheduleError(null); }} aria-label="Edit message" rows={4} />
                       {editScheduleError && <div className="schedule-error" role="alert">{editScheduleError}</div>}
                       <div className="schedule-edit-actions">
-                        <button className="schedule-secondary-btn" onClick={() => setEditingScheduleId(null)}>
-                          Cancel
-                        </button>
+                        <button className="schedule-secondary-btn" onClick={() => setEditingScheduleId(null)}>Cancel</button>
                         <button className="schedule-create-btn" onClick={submitScheduleEdit} disabled={editScheduleMutation.isPending}>
                           <Check className="h-4 w-4" />
                           Save
                         </button>
                       </div>
                     </div>
-                  )}
-                  {expandedScheduleId === schedule.id && (
-                    <div className="schedule-run-list">
-                      {(scheduleRunsData?.runs ?? []).length === 0 && <div className="schedule-run-empty">No runs yet</div>}
-                      {(scheduleRunsData?.runs ?? []).map((run) => (
-                        <div key={run.id} className="schedule-run-item">
-                          <div className="schedule-run-main">
-                            <span className={`schedule-status schedule-status--${run.status}`}>{run.status}</span>
-                            <span>{formatZonedTime(run.scheduledFor ?? run.createdAt, schedule.timezone)}</span>
-                            {run.payloadSummary && <span title={run.payloadSummary}>{run.payloadSummary}</span>}
-                            {run.taskId && <span title={run.taskId}>{run.taskId}</span>}
-                            {run.error && <span title={run.error}>{run.error}</span>}
-                          </div>
-                          <div className="schedule-run-actions">
-                            <button
-                              className="schedule-run-action"
-                              title="Open session"
-                              aria-label={`Open session for ${run.taskId ?? run.id}`}
-                              onClick={() => openScheduleRun(run, false)}
-                            >
-                              <ExternalLink className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              className="schedule-run-action"
-                              title={run.runId ? "Open task output" : "Task output not available yet"}
-                              aria-label={run.runId ? `Open task output ${run.taskId ?? run.id}` : `Task output unavailable ${run.taskId ?? run.id}`}
-                              disabled={!run.runId}
-                              onClick={() => openScheduleRun(run, true)}
-                            >
-                              <Target className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
+                  </div>
+                )}
+                <div className="detail-section">
+                  <h2>Run history</h2>
+                  <div className="schedule-run-list schedule-run-list--detail">
+                    {(scheduleRunsData?.runs ?? []).length === 0 && <div className="schedule-run-empty">No runs yet</div>}
+                    {(scheduleRunsData?.runs ?? []).map((run) => (
+                      <div key={run.id} className="schedule-run-item">
+                        <div className="schedule-run-main">
+                          <span className={`schedule-status schedule-status--${run.status}`}>{run.status}</span>
+                          <span>{formatZonedTime(run.scheduledFor ?? run.createdAt, selectedSchedule.timezone)}</span>
+                          {run.payloadSummary && <span title={run.payloadSummary}>{run.payloadSummary}</span>}
+                          {run.taskId && <span title={run.taskId}>{run.taskId}</span>}
+                          {run.error && <span title={run.error}>{run.error}</span>}
                         </div>
-                      ))}
-                    </div>
-                  )}
+                        <div className="schedule-run-actions">
+                          <button className="schedule-run-action" title="Open session" aria-label={`Open session for ${run.taskId ?? run.id}`} onClick={() => openScheduleRun(run, false)}>
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            className="schedule-run-action"
+                            title={run.runId ? "Open task output" : "Task output not available yet"}
+                            aria-label={run.runId ? `Open task output ${run.taskId ?? run.id}` : `Task output unavailable ${run.taskId ?? run.id}`}
+                            disabled={!run.runId}
+                            onClick={() => openScheduleRun(run, true)}
+                          >
+                            <Target className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              ))}
-            </div>
+              </>
+            )}
           </div>
         )}
-      </div>
-      {drawerOpen && <div className="drawer-backdrop" onClick={() => setDrawerOpen(false)} />}
 
-      {/* Main content */}
-      <div className="chat-main">
-        <div className={`chat-messages ${messagesSettling ? "chat-messages--settling" : ""}`} ref={messagesContainerRef}>
-          {messages.length === 0 && (
-            <div className="chat-empty">
-              <Sparkles className="chat-empty-icon" />
-              <p>Send a message to start</p>
-            </div>
-          )}
-          {messages.map((msg) => {
-            // System "Run succeeded" → stat card
-            if (msg.role === "system" && msg.markdown.startsWith("Run succeeded")) {
-              return (
-                <div key={msg.id} className="chat-stat">
-                  {runStats.durationSeconds !== null && <span>{runStats.durationSeconds}s</span>}
-                  {runStats.tokensUsed !== null && <span>{runStats.tokensUsed.toLocaleString()} tokens</span>}
-                  <span>完成</span>
-                </div>
-              );
-            }
-            // System messages → skip others
-            if (msg.role === "system") return null;
-            const isFocusedRun = Boolean(focusedScheduleTarget?.runId && msg.runId === focusedScheduleTarget.runId);
-            return (
-              <div
-                key={msg.id}
-                className={`chat-bubble ${msg.role} ${isFocusedRun ? "chat-bubble--focused-run" : ""}`}
-                data-run-id={msg.runId ?? undefined}
-              >
-                <div className="chat-bubble-header">
-                  <strong>{msg.author}</strong>
-                  {msg.time && (
-                    <span className="chat-time" title={msg.createdAt ?? msg.time}>
-                      {formatMessageTime(msg.createdAt ?? msg.time)}
-                    </span>
-                  )}
-                </div>
-                <div className="prose-mini">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{msg.markdown}</ReactMarkdown>
-                </div>
+        {activeSection === "settings" && (
+          <div className="detail-scroll">
+            <div className="detail-header">
+              <div>
+                <span className="side-eyebrow">设置</span>
+                <h1>{settingsSection === "channels" ? "消息通道详情" : "Provider 详情"}</h1>
               </div>
-            );
-          })}
-          {(sendMessage.isPending || isStreaming || streamingText) && messages[messages.length - 1]?.role !== "agent" && (
-            <div className="chat-bubble agent">
-              <div className="chat-bubble-header"><strong>Agent</strong></div>
-              {streamingText ? (
-                <div className="prose-mini">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{streamingText}</ReactMarkdown>
-                </div>
-              ) : (
-                <div className="chat-typing">
-                  <span className="typing-dots"><span/><span/><span/></span>
-                </div>
-              )}
             </div>
-          )}
-        </div>
-
-        {messages.length > 0 && (
-          <div className="chat-scroll-controls">
-            <button className="chat-scroll-btn" onClick={scrollMessagesToTop} title="Back to top" aria-label="Back to top">
-              <ArrowUp className="h-4 w-4" />
-            </button>
-            <button className="chat-scroll-btn" onClick={() => scrollMessagesToBottom("smooth")} title="Back to bottom" aria-label="Back to bottom">
-              <ArrowDown className="h-4 w-4" />
-            </button>
+            {settingsSection === "channels" ? (
+              <div className="settings-channel-grid">
+                {channels.length === 0 && <div className="detail-empty">No channels available</div>}
+                {channels.map((channel) => (
+                  <ChannelCard key={channel.id} channel={channel} onSaved={() => queryClient.invalidateQueries({ queryKey: ["channels"] })} />
+                ))}
+              </div>
+            ) : (
+              <div className="detail-section">
+                <h2>Default provider</h2>
+                <ProviderSelect value={agentType} onChange={setAgentType} />
+              </div>
+            )}
           </div>
         )}
-
-        <div className="chat-bar">
-          <div className="chat-bar-left">
-            <button className={`bar-btn ${drawerOpen && drawerTab === "channels" ? "bar-btn--active" : ""}`} onClick={() => openDrawer("channels")} title="Channels">
-              <Settings className="h-4 w-4" />
-            </button>
-            <button className={`bar-btn ${drawerOpen && drawerTab === "skills" ? "bar-btn--active" : ""}`} onClick={() => openDrawer("skills")} title="Skills">
-              <Sparkles className="h-4 w-4" />
-              <span className="bar-btn-label">Skills</span>
-            </button>
-            <button className={`bar-btn ${drawerOpen && drawerTab === "sessions" ? "bar-btn--active" : ""}`} onClick={() => openDrawer("sessions")} title="History">
-              <Clock className="h-4 w-4" />
-              <span className="bar-btn-label">History</span>
-            </button>
-            <button className={`bar-btn ${drawerOpen && drawerTab === "schedules" ? "bar-btn--active" : ""}`} onClick={() => openDrawer("schedules")} title="Schedules">
-              <CalendarClock className="h-4 w-4" />
-              <span className="bar-btn-label">Schedules</span>
-            </button>
-            <div className="dropdown-wrapper">
-              <button className="bar-btn" onClick={() => setAgentMenuOpen(!agentMenuOpen)} title="Switch agent">
-                <span className="bar-btn-label">{currentAgent.label}</span>
-                <ChevronDown className="h-3 w-3" />
-              </button>
-              {agentMenuOpen && (
-                <div className="dropdown-menu">
-                  {AGENT_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.value}
-                      className={`dropdown-item ${agentType === opt.value ? "active" : ""}`}
-                      onClick={() => { setAgentType(opt.value); setAgentMenuOpen(false); }}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-          <textarea
-            ref={draftInputRef}
-            className="chat-input"
-            value={draft}
-            onChange={(e) => setDraft(e.currentTarget.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Type a message..."
-            rows={1}
-          />
-          <button className="send-btn" onClick={handleSend} disabled={sendMessage.isPending || !draft.trim()}>
-            <SendHorizontal className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-
-      {agentMenuOpen && (
-        <div className="dropdown-backdrop" onClick={() => setAgentMenuOpen(false)} />
-      )}
+      </section>
     </main>
   );
 }
@@ -1212,6 +1193,58 @@ function TimezoneSelect({ value, onChange, label }: { value: string; onChange: (
               </button>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProviderSelect({ value, onChange }: { value: AgentType; onChange: (value: AgentType) => void }) {
+  const [open, setOpen] = useState(false);
+  const selected = AGENT_OPTIONS.find((option) => option.value === value) ?? AGENT_OPTIONS[0];
+
+  const closeWhenFocusLeaves = (event: React.FocusEvent<HTMLDivElement>) => {
+    const nextTarget = event.relatedTarget;
+    if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
+      setOpen(false);
+    }
+  };
+
+  return (
+    <div className="provider-select" onBlur={closeWhenFocusLeaves}>
+      <button
+        type="button"
+        className={`provider-trigger ${open ? "provider-trigger--open" : ""}`}
+        aria-label="Provider"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span>
+          <strong>{selected.label}</strong>
+          <small>{selected.value}</small>
+        </span>
+        <ChevronDown className="h-3.5 w-3.5" />
+      </button>
+      {open && (
+        <div className="provider-menu" role="listbox" aria-label="Provider">
+          {AGENT_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="option"
+              aria-selected={option.value === value}
+              className={`provider-option ${option.value === value ? "provider-option--selected" : ""}`}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                onChange(option.value);
+                setOpen(false);
+              }}
+            >
+              <span>{option.label}</span>
+              {option.value === value && <Check className="h-3.5 w-3.5" />}
+            </button>
+          ))}
         </div>
       )}
     </div>

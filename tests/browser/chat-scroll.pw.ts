@@ -110,7 +110,7 @@ test("initial load corrects non-user scroll restoration during settling", async 
   await expect(messages).not.toHaveClass(/chat-messages--settling/);
 });
 
-test("composer input sits below the toolbar and grows for multiline input", async ({ page }) => {
+test("composer input stays in the workspace detail pane and grows for multiline input", async ({ page }) => {
   await page.addInitScript((id) => {
     localStorage.setItem("sessionId", id);
   }, sessionId);
@@ -119,17 +119,17 @@ test("composer input sits below the toolbar and grows for multiline input", asyn
 
   await page.goto("/");
 
-  const toolbar = page.locator(".chat-bar-left");
+  const detailPane = page.locator(".detail-pane--workspace");
   const input = page.locator(".chat-input");
 
-  await expect(toolbar).toBeVisible();
+  await expect(detailPane).toBeVisible();
   await expect(input).toBeVisible();
 
-  const toolbarBox = await toolbar.boundingBox();
+  const detailBox = await detailPane.boundingBox();
   const inputBox = await input.boundingBox();
-  expect(toolbarBox).not.toBeNull();
+  expect(detailBox).not.toBeNull();
   expect(inputBox).not.toBeNull();
-  expect(inputBox!.y).toBeGreaterThan(toolbarBox!.y + toolbarBox!.height - 1);
+  expect(inputBox!.y).toBeGreaterThan(detailBox!.y);
 
   const initialHeight = inputBox!.height;
   await input.fill("first line\nsecond line\nthird line\nfourth line");
@@ -156,13 +156,12 @@ test("history shows the session name and truncates long labels", async ({ page }
   await mockWorkspaceApis(page, snapshot);
 
   await page.goto("/");
-  await page.locator(".chat-bar").getByRole("button", { name: "History" }).click();
   const search = page.getByPlaceholder("Search history...");
   await expect(search).toBeFocused();
 
   const title = page.locator(".session-title").first();
   await expect(title).toHaveText(longName);
-  await expect(page.locator(".drawer-list")).not.toContainText("Claude session");
+  await expect(page.locator(".context-list")).not.toContainText("Claude session");
   await expect(page.locator(".session-meta").first()).toContainText("Web");
   await expect.poll(() => page.locator(".session-meta").first().textContent()).not.toBe("Web");
   await expect.poll(() => title.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
@@ -187,7 +186,6 @@ test("history renames sessions inline", async ({ page }) => {
   await mockWorkspaceApis(page, snapshot);
 
   await page.goto("/");
-  await page.locator(".chat-bar").getByRole("button", { name: "History" }).click();
   await page.getByRole("button", { name: "Rename Browser scroll regression" }).click();
 
   const input = page.locator(".session-name-input");
@@ -210,7 +208,6 @@ test("history shows rename errors inline", async ({ page }) => {
   await mockWorkspaceApis(page, snapshot);
 
   await page.goto("/");
-  await page.locator(".chat-bar").getByRole("button", { name: "History" }).click();
   await page.getByRole("button", { name: "Rename Browser scroll regression" }).click();
 
   const input = page.locator(".session-name-input");
@@ -221,7 +218,25 @@ test("history shows rename errors inline", async ({ page }) => {
   await expect(input).toHaveAttribute("aria-invalid", "true");
 });
 
-test("schedules drawer creates and pauses a scheduled message", async ({ page }) => {
+test("settings separates channel and provider details", async ({ page }) => {
+  await page.addInitScript((id) => {
+    localStorage.setItem("sessionId", id);
+  }, sessionId);
+
+  await mockWorkspaceApis(page, createScrollableSnapshot());
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "设置" }).click();
+  await expect(page.locator(".side-pane").getByRole("button", { name: /消息通道/ })).toBeVisible();
+  await expect(page.locator(".side-pane").getByRole("button", { name: /Provider/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "消息通道详情" })).toBeVisible();
+
+  await page.locator(".side-pane").getByRole("button", { name: /Provider/ }).click();
+  await expect(page.getByRole("heading", { name: "Provider 详情" })).toBeVisible();
+  await expect(page.locator(".detail-pane").getByRole("button", { name: "Provider" })).toContainText("Claude");
+});
+
+test("tasks section creates, opens, and pauses a scheduled message", async ({ page }) => {
   await page.addInitScript((id) => {
     localStorage.setItem("sessionId", id);
   }, sessionId);
@@ -293,7 +308,7 @@ test("schedules drawer creates and pauses a scheduled message", async ({ page })
   await mockWorkspaceApis(page, createScrollableSnapshot());
 
   await page.goto("/");
-  await page.locator(".chat-bar").getByRole("button", { name: "Schedules" }).click();
+  await page.getByRole("button", { name: "任务" }).click();
   await page.getByRole("button", { name: "Cron" }).click();
   await expect(page.locator(".schedule-preview")).toContainText("Next");
   await page.getByRole("button", { name: "Timezone" }).click();
@@ -306,14 +321,13 @@ test("schedules drawer creates and pauses a scheduled message", async ({ page })
   await expect(page.locator(".schedule-item-title .schedule-status")).toHaveText("active");
   await expect(page.locator(".schedule-item-meta")).toContainText("UTC");
   await expect(page.locator(".schedule-item-summary")).toHaveText("Send a scheduled summary");
-  await page.getByRole("button", { name: "Run history" }).click();
   await expect(page.locator(".schedule-run-item")).toContainText("succeeded");
   await expect(page.locator(".schedule-run-item")).toContainText("Send a scheduled summary");
   await expect(page.getByRole("button", { name: "Open session for tsk_test" })).toBeVisible();
   await page.getByRole("button", { name: "Open task output tsk_test" }).click();
   await expect(page.locator('[data-run-id="run_test"]')).toHaveClass(/chat-bubble--focused-run/);
-  await page.locator(".chat-bar").getByRole("button", { name: "Schedules" }).click();
-  await page.getByRole("button", { name: "Edit schedule" }).click();
+  await page.getByRole("button", { name: "任务" }).click();
+  await page.getByRole("button", { name: "Edit" }).click();
   await expect(page.locator(".schedule-edit-form .schedule-preview")).toContainText("Next");
   await page.getByLabel("Edit message").fill("Updated scheduled summary");
   await page.getByLabel("Edit cron expression").fill("15 10 * * 1-5");
@@ -321,7 +335,7 @@ test("schedules drawer creates and pauses a scheduled message", async ({ page })
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.locator(".schedule-item-title")).toContainText("15 10 * * 1-5");
   await expect(page.locator(".schedule-item-summary")).toHaveText("Updated scheduled summary");
-  await page.getByRole("button", { name: "Pause schedule" }).click();
+  await page.getByRole("button", { name: "Pause" }).click();
   await expect(page.locator(".schedule-item-title .schedule-status")).toHaveText("paused");
 });
 
