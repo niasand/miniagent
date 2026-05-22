@@ -415,6 +415,115 @@ button { cursor: pointer; }
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-ring) 16%, transparent);
 }
 
+.timezone-select {
+  position: relative;
+  min-width: 0;
+}
+
+.timezone-trigger {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  gap: 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-background);
+  padding: 7px 10px;
+  color: var(--color-foreground);
+  text-align: left;
+  outline: none;
+}
+
+.timezone-trigger:hover,
+.timezone-trigger--open {
+  border-color: color-mix(in srgb, var(--color-primary) 28%, var(--color-border));
+  background: color-mix(in srgb, var(--color-muted) 45%, var(--color-background));
+}
+
+.timezone-trigger:focus-visible {
+  border-color: var(--color-ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-ring) 16%, transparent);
+}
+
+.timezone-trigger-icon,
+.timezone-chevron {
+  flex-shrink: 0;
+  color: var(--color-muted-foreground);
+}
+
+.timezone-trigger--open .timezone-chevron {
+  transform: rotate(180deg);
+}
+
+.timezone-trigger-text,
+.timezone-option-text {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.timezone-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timezone-detail {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-muted-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timezone-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 5px);
+  right: 0;
+  left: 0;
+  display: grid;
+  max-height: 230px;
+  gap: 2px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  padding: 4px;
+  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.14);
+}
+
+.timezone-option {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  padding: 7px 8px;
+  color: var(--color-foreground);
+  text-align: left;
+}
+
+.timezone-option:hover,
+.timezone-option--selected {
+  background: color-mix(in srgb, var(--color-primary) 9%, var(--color-surface));
+}
+
+.timezone-option--selected {
+  color: var(--color-primary);
+}
+
 .schedule-preview {
   overflow: hidden;
   border-radius: 6px;

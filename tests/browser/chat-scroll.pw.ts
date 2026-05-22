@@ -296,7 +296,9 @@ test("schedules drawer creates and pauses a scheduled message", async ({ page })
   await page.locator(".chat-bar").getByRole("button", { name: "Schedules" }).click();
   await page.getByRole("button", { name: "Cron" }).click();
   await expect(page.locator(".schedule-preview")).toContainText("Next");
-  await page.getByLabel("Timezone").selectOption("UTC");
+  await page.getByRole("button", { name: "Timezone" }).click();
+  await page.getByRole("option", { name: /^UTC\b/ }).click();
+  await expect(page.getByRole("button", { name: "Timezone" })).toContainText("UTC");
   await page.getByPlaceholder("Message to send...").fill("Send a scheduled summary");
   await page.getByRole("button", { name: "Create" }).click();
 

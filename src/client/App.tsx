@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import QRCode from "qrcode";
-import { ArrowDown, ArrowUp, CalendarClock, Check, ChevronDown, Clock, ExternalLink, Pause, Pencil, Play, Search, SendHorizontal, Settings, Sparkles, Target, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, CalendarClock, Check, ChevronDown, Clock, ExternalLink, Globe2, Pause, Pencil, Play, Search, SendHorizontal, Settings, Sparkles, Target, Trash2, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
@@ -774,16 +774,11 @@ export default function App() {
                   aria-label="Cron expression"
                 />
               )}
-              <select
-                className="schedule-input"
+              <TimezoneSelect
                 value={scheduleTimezone}
-                onChange={(e) => setScheduleTimezone(e.currentTarget.value)}
-                aria-label="Timezone"
-              >
-                {SCHEDULE_TIMEZONES.map((timezone) => (
-                  <option key={timezone} value={timezone}>{timezone}</option>
-                ))}
-              </select>
+                onChange={setScheduleTimezone}
+                label="Timezone"
+              />
               {scheduleKind === "cron" && (
                 <div className={`schedule-preview ${schedulePreviewError ? "schedule-preview--error" : ""}`}>
                   {schedulePreviewError instanceof Error
@@ -893,16 +888,11 @@ export default function App() {
                           aria-label="Edit cron expression"
                         />
                       )}
-                      <select
-                        className="schedule-input"
+                      <TimezoneSelect
                         value={editScheduleTimezone}
-                        onChange={(e) => setEditScheduleTimezone(e.currentTarget.value)}
-                        aria-label="Edit timezone"
-                      >
-                        {SCHEDULE_TIMEZONES.map((timezone) => (
-                          <option key={timezone} value={timezone}>{timezone}</option>
-                        ))}
-                      </select>
+                        onChange={setEditScheduleTimezone}
+                        label="Edit timezone"
+                      />
                       {editScheduleKind === "cron" && (
                         <div className={`schedule-preview ${editSchedulePreviewError ? "schedule-preview--error" : ""}`}>
                           {editSchedulePreviewError instanceof Error
@@ -1162,6 +1152,88 @@ function toDateTimeInput(value?: string | Date): string {
   if (Number.isNaN(date.getTime())) return defaultRunAtInput();
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function TimezoneSelect({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) {
+  const [open, setOpen] = useState(false);
+
+  const closeWhenFocusLeaves = (event: React.FocusEvent<HTMLDivElement>) => {
+    const nextTarget = event.relatedTarget;
+    if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
+      setOpen(false);
+    }
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      setOpen(false);
+    }
+  };
+
+  return (
+    <div className="timezone-select" onBlur={closeWhenFocusLeaves} onKeyDown={handleKeyDown}>
+      <button
+        type="button"
+        className={`timezone-trigger ${open ? "timezone-trigger--open" : ""}`}
+        aria-label={label}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <Globe2 className="h-4 w-4 timezone-trigger-icon" />
+        <span className="timezone-trigger-text">
+          <span className="timezone-name">{value}</span>
+          <span className="timezone-detail">{formatTimezoneDetail(value)}</span>
+        </span>
+        <ChevronDown className="h-3.5 w-3.5 timezone-chevron" />
+      </button>
+      {open && (
+        <div className="timezone-menu" role="listbox" aria-label={label}>
+          {SCHEDULE_TIMEZONES.map((timezone) => {
+            const selected = timezone === value;
+            return (
+              <button
+                key={timezone}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                className={`timezone-option ${selected ? "timezone-option--selected" : ""}`}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  onChange(timezone);
+                  setOpen(false);
+                }}
+              >
+                <span className="timezone-option-text">
+                  <span className="timezone-name">{timezone}</span>
+                  <span className="timezone-detail">{formatTimezoneDetail(timezone)}</span>
+                </span>
+                {selected && <Check className="h-3.5 w-3.5" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatTimezoneDetail(timezone: string): string {
+  const now = new Date();
+  try {
+    const parts = new Intl.DateTimeFormat(undefined, {
+      timeZone: timezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZoneName: "shortOffset",
+    }).formatToParts(now);
+    const time = `${parts.find((part) => part.type === "hour")?.value ?? ""}:${parts.find((part) => part.type === "minute")?.value ?? ""}`;
+    const offset = parts.find((part) => part.type === "timeZoneName")?.value.replace("GMT", "UTC") ?? "";
+    return `${time} ${offset}`.trim();
+  } catch {
+    return timezone;
+  }
 }
 
 function renderHighlightedSessionName(text: string, query: string) {
