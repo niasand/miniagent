@@ -50,6 +50,7 @@ export class WorkspaceService {
       const msgs = this.messages.getLatestBySession(sessionId, 200);
       messages = msgs.map((m) => ({
         id: m.id,
+        runId: m.runId,
         role: this.mapRole(m.role),
         author: m.role === "user" ? "You" : m.role === "assistant" ? "Agent" : m.role,
         time: m.createdAt,

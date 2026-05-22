@@ -239,9 +239,10 @@ test("schedules drawer creates and pauses a scheduled message", async ({ page })
         scheduleId: "sch_test",
         sessionId,
         taskId: "tsk_test",
+        runId: "run_test",
         scheduledFor: "2026-05-19T09:00:00.000+08:00",
         payloadSummary: "Send a scheduled summary",
-        status: "queued",
+        status: "succeeded",
         error: null,
         createdAt: "2026-05-19T09:00:01.000+08:00",
       }] } });
@@ -304,8 +305,12 @@ test("schedules drawer creates and pauses a scheduled message", async ({ page })
   await expect(page.locator(".schedule-item-meta")).toContainText("UTC");
   await expect(page.locator(".schedule-item-summary")).toHaveText("Send a scheduled summary");
   await page.getByRole("button", { name: "Run history" }).click();
-  await expect(page.locator(".schedule-run-item")).toContainText("queued");
+  await expect(page.locator(".schedule-run-item")).toContainText("succeeded");
   await expect(page.locator(".schedule-run-item")).toContainText("Send a scheduled summary");
+  await expect(page.getByRole("button", { name: "Open session for tsk_test" })).toBeVisible();
+  await page.getByRole("button", { name: "Open task output tsk_test" }).click();
+  await expect(page.locator('[data-run-id="run_test"]')).toHaveClass(/chat-bubble--focused-run/);
+  await page.locator(".chat-bar").getByRole("button", { name: "Schedules" }).click();
   await page.getByRole("button", { name: "Edit schedule" }).click();
   await expect(page.locator(".schedule-edit-form .schedule-preview")).toContainText("Next");
   await page.getByLabel("Edit message").fill("Updated scheduled summary");
@@ -368,6 +373,7 @@ function createScrollableSnapshot(): WorkspaceSnapshot {
     ],
     messages: Array.from({ length: 18 }, (_, index) => ({
       id: `msg_${index}`,
+      runId: index === 3 ? "run_test" : null,
       role: index % 2 === 0 ? "user" : "agent",
       author: index % 2 === 0 ? "You" : "Agent",
       createdAt: "2026-05-19T01:00:00.000Z",

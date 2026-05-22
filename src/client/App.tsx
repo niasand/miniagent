@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import QRCode from "qrcode";
-import { ArrowDown, ArrowUp, CalendarClock, Check, ChevronDown, Clock, Pause, Pencil, Play, Search, SendHorizontal, Settings, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, CalendarClock, Check, ChevronDown, Clock, ExternalLink, Pause, Pencil, Play, Search, SendHorizontal, Settings, Sparkles, Target, Trash2, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
@@ -13,7 +13,7 @@ import { fetchSkills } from "./api/skills.js";
 import { sendSessionMessage } from "./api/messages.js";
 import { createChatScrollController, type ChatScrollController } from "./lib/chat-scroll.js";
 import type { AgentType, ChatMessage, RunStats, SkillMeta } from "./api/types.js";
-import type { WorkspaceSchedule, WorkspaceScheduleKind, WorkspaceSnapshot } from "../shared/workspace.js";
+import type { WorkspaceSchedule, WorkspaceScheduleKind, WorkspaceScheduleRun, WorkspaceSnapshot } from "../shared/workspace.js";
 
 const AGENT_OPTIONS: Array<{ value: AgentType; label: string }> = [
   { value: "codex", label: "Codex" },
@@ -57,6 +57,7 @@ export default function App() {
   const [editScheduleTimezone, setEditScheduleTimezone] = useState("Asia/Shanghai");
   const [editScheduleText, setEditScheduleText] = useState("");
   const [editScheduleError, setEditScheduleError] = useState<string | null>(null);
+  const [focusedScheduleTarget, setFocusedScheduleTarget] = useState<{ sessionId: string; runId: string } | null>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const draftInputRef = useRef<HTMLTextAreaElement>(null);
   const scrollControllerRef = useRef<ChatScrollController | null>(null);
@@ -338,6 +339,30 @@ export default function App() {
     resizeDraftInput();
   }, [draft]);
 
+  useEffect(() => {
+    const runId = focusedScheduleTarget?.runId;
+    if (!runId || focusedScheduleTarget.sessionId !== messagesSessionKey) return;
+
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const target = Array.from(container.querySelectorAll<HTMLElement>("[data-run-id]"))
+      .find((element) => element.dataset.runId === runId);
+    if (!target) return;
+
+    const frameId = window.requestAnimationFrame(() => {
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    const timerId = window.setTimeout(() => {
+      setFocusedScheduleTarget((current) => current?.runId === runId ? null : current);
+    }, 2400);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.clearTimeout(timerId);
+    };
+  }, [focusedScheduleTarget, lastMessageId, messages.length, messagesSessionKey]);
+
   const openDrawer = (tab: DrawerTab) => {
     if (drawerOpen && drawerTab === tab) {
       setDrawerOpen(false);
@@ -486,6 +511,14 @@ export default function App() {
   const submitScheduleEdit = () => {
     if (editScheduleMutation.isPending) return;
     editScheduleMutation.mutate();
+  };
+
+  const openScheduleRun = (run: WorkspaceScheduleRun, focusOutput: boolean) => {
+    setSessionId(run.sessionId);
+    localStorage.setItem("sessionId", run.sessionId);
+    setDrawerOpen(false);
+    setFocusedScheduleTarget(focusOutput && run.runId ? { sessionId: run.sessionId, runId: run.runId } : null);
+    queryClient.invalidateQueries({ queryKey: ["workspace", run.sessionId] });
   };
 
   const startSessionRename = (id: string, name: string) => {
@@ -676,6 +709,7 @@ export default function App() {
                           onClick={() => {
                             setSessionId(s.id);
                             localStorage.setItem("sessionId", s.id);
+                            setFocusedScheduleTarget(null);
                             queryClient.invalidateQueries({ queryKey: ["workspace", s.id] });
                           }}
                         >
@@ -905,11 +939,32 @@ export default function App() {
                       {(scheduleRunsData?.runs ?? []).length === 0 && <div className="schedule-run-empty">No runs yet</div>}
                       {(scheduleRunsData?.runs ?? []).map((run) => (
                         <div key={run.id} className="schedule-run-item">
-                          <span className={`schedule-status schedule-status--${run.status}`}>{run.status}</span>
-                          <span>{formatZonedTime(run.scheduledFor ?? run.createdAt, schedule.timezone)}</span>
-                          {run.payloadSummary && <span title={run.payloadSummary}>{run.payloadSummary}</span>}
-                          {run.taskId && <span>{run.taskId}</span>}
-                          {run.error && <span title={run.error}>{run.error}</span>}
+                          <div className="schedule-run-main">
+                            <span className={`schedule-status schedule-status--${run.status}`}>{run.status}</span>
+                            <span>{formatZonedTime(run.scheduledFor ?? run.createdAt, schedule.timezone)}</span>
+                            {run.payloadSummary && <span title={run.payloadSummary}>{run.payloadSummary}</span>}
+                            {run.taskId && <span title={run.taskId}>{run.taskId}</span>}
+                            {run.error && <span title={run.error}>{run.error}</span>}
+                          </div>
+                          <div className="schedule-run-actions">
+                            <button
+                              className="schedule-run-action"
+                              title="Open session"
+                              aria-label={`Open session for ${run.taskId ?? run.id}`}
+                              onClick={() => openScheduleRun(run, false)}
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              className="schedule-run-action"
+                              title={run.runId ? "Open task output" : "Task output not available yet"}
+                              aria-label={run.runId ? `Open task output ${run.taskId ?? run.id}` : `Task output unavailable ${run.taskId ?? run.id}`}
+                              disabled={!run.runId}
+                              onClick={() => openScheduleRun(run, true)}
+                            >
+                              <Target className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -944,8 +999,13 @@ export default function App() {
             }
             // System messages → skip others
             if (msg.role === "system") return null;
+            const isFocusedRun = Boolean(focusedScheduleTarget?.runId && msg.runId === focusedScheduleTarget.runId);
             return (
-              <div key={msg.id} className={`chat-bubble ${msg.role}`}>
+              <div
+                key={msg.id}
+                className={`chat-bubble ${msg.role} ${isFocusedRun ? "chat-bubble--focused-run" : ""}`}
+                data-run-id={msg.runId ?? undefined}
+              >
                 <div className="chat-bubble-header">
                   <strong>{msg.author}</strong>
                   {msg.time && (

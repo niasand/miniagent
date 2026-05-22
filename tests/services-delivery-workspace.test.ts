@@ -250,11 +250,13 @@ describe("WorkspaceService", () => {
   it("returns messages for selected session", () => {
     const s1 = sessions.createSession({ title: "1", agentType: "claude", workspacePath: "/tmp" });
     const s2 = sessions.createSession({ title: "2", agentType: "claude", workspacePath: "/tmp" });
+    const { task } = sessions.createTask({ sessionId: s1.id, sourceType: "web", type: "message", input: {} });
+    const { run } = sessions.startRun({ sessionId: s1.id, taskId: task.id });
 
     const evt1 = events.append({ sessionId: s1.id, type: "msg" });
     const evt2 = events.append({ sessionId: s1.id, type: "msg" });
     messages.insert({ sessionId: s1.id, role: "user", content: "hi", sourceEventId: evt1.id });
-    messages.insert({ sessionId: s1.id, role: "assistant", content: "there", sourceEventId: evt2.id });
+    messages.insert({ sessionId: s1.id, runId: run.id, role: "assistant", content: "there", sourceEventId: evt2.id });
 
     const evt3 = events.append({ sessionId: s2.id, type: "msg" });
     messages.insert({ sessionId: s2.id, role: "user", content: "other", sourceEventId: evt3.id });
@@ -266,6 +268,7 @@ describe("WorkspaceService", () => {
     expect(snapshot.messages[0].role).toBe("user");
     expect(snapshot.messages[0].markdown).toBe("hi");
     expect(snapshot.messages[1].role).toBe("agent");
+    expect(snapshot.messages[1].runId).toBe(run.id);
     expect(snapshot.messages[1].markdown).toBe("there");
   });
 

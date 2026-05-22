@@ -23,6 +23,7 @@ export type WorkspaceSessionSummary = {
 
 export type WorkspaceMessage = {
   id: string;
+  runId?: string | null;
   role: "user" | "agent" | "tool" | "system";
   author: string;
   time?: string;
@@ -255,6 +256,7 @@ export type WorkspaceScheduleRun = {
   scheduleId: string;
   sessionId: string;
   taskId: string | null;
+  runId?: string | null;
   scheduledFor: string | null;
   payloadSummary: string | null;
   status: WorkspaceScheduleRunStatus;

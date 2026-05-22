@@ -611,15 +611,51 @@ button { cursor: pointer; }
 
 .schedule-run-item {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   min-width: 0;
+  gap: 6px;
+}
+
+.schedule-run-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
   gap: 6px;
   overflow: hidden;
   white-space: nowrap;
 }
 
-.schedule-run-item span:not(.schedule-status) {
+.schedule-run-main span:not(.schedule-status) {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.schedule-run-actions {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 2px;
+}
+
+.schedule-run-action {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-muted-foreground);
+}
+
+.schedule-run-action:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-muted) 80%, transparent);
+  color: var(--color-foreground);
+}
+
+.schedule-run-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
 }
 
 /* Channel cards */
@@ -884,6 +920,21 @@ button { cursor: pointer; }
   align-self: flex-start;
   max-width: min(680px, 86%);
   border-left: 3px solid var(--color-primary);
+}
+
+.chat-bubble--focused-run {
+  border-color: color-mix(in srgb, var(--color-primary) 60%, var(--color-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 14%, transparent), 0 10px 30px rgba(15, 23, 42, 0.08);
+  animation: schedule-run-focus 1.8s ease-out;
+}
+
+@keyframes schedule-run-focus {
+  0% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-primary) 24%, transparent), 0 10px 30px rgba(15, 23, 42, 0.08);
+  }
+  100% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 14%, transparent), 0 10px 30px rgba(15, 23, 42, 0.08);
+  }
 }
 
 .chat-bubble-header {

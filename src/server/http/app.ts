@@ -991,6 +991,7 @@ function mapScheduleRun(record: ScheduleRunRecord): WorkspaceScheduleRun {
     scheduleId: record.scheduleId,
     sessionId: record.sessionId,
     taskId: record.taskId,
+    runId: record.runId,
     scheduledFor: record.scheduledFor,
     payloadSummary: record.payloadSummary,
     status: (record.taskStatus ?? record.status) as WorkspaceScheduleRun["status"],

@@ -9,6 +9,7 @@ export type ScheduleRunRecord = {
   scheduleId: string;
   sessionId: string;
   taskId: string | null;
+  runId: string | null;
   scheduledFor: string | null;
   payloadSummary: string | null;
   status: ScheduleRunStatus;
@@ -22,6 +23,7 @@ type ScheduleRunRow = {
   schedule_id: string;
   session_id: string;
   task_id: string | null;
+  run_id: string | null;
   scheduled_for: string | null;
   payload_summary: string | null;
   status: ScheduleRunStatus;
@@ -45,7 +47,7 @@ export class ScheduleRunStore {
     const row = this.db.prepare(
       `INSERT INTO schedule_runs (id, schedule_id, session_id, task_id, scheduled_for, payload_summary, status, error, created_at)
        VALUES (@id, @scheduleId, @sessionId, @taskId, @scheduledFor, @payloadSummary, @status, @error, @createdAt)
-       RETURNING *, NULL AS task_status`,
+       RETURNING *, NULL AS run_id, NULL AS task_status`,
     ).get({
       id: createId("shr"),
       scheduleId: input.scheduleId,
@@ -62,7 +64,7 @@ export class ScheduleRunStore {
 
   listBySchedule(scheduleId: string, limit = 20): ScheduleRunRecord[] {
     const rows = this.db.prepare(
-      `SELECT sr.*, t.status AS task_status
+      `SELECT sr.*, t.run_id AS run_id, t.status AS task_status
        FROM schedule_runs sr
        LEFT JOIN tasks t ON t.id = sr.task_id
        WHERE sr.schedule_id = ?
@@ -79,6 +81,7 @@ function mapRow(row: ScheduleRunRow): ScheduleRunRecord {
     scheduleId: row.schedule_id,
     sessionId: row.session_id,
     taskId: row.task_id,
+    runId: row.run_id,
     scheduledFor: row.scheduled_for,
     payloadSummary: row.payload_summary,
     status: row.status,

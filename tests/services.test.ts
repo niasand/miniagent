@@ -152,9 +152,15 @@ describe("SchedulerService", () => {
     const runs = scheduler.listRuns(schedule.id);
     expect(runs).toHaveLength(1);
     expect(runs[0].taskId).toBe(result.triggered[0].taskId);
+    expect(runs[0].runId).toBeNull();
     expect(runs[0].taskStatus).toBe("queued");
     expect(runs[0].scheduledFor).toBe(schedule.nextRunAt);
     expect(runs[0].payloadSummary).toBe("scheduled");
+
+    const { run } = sessions.startRun({ sessionId: session.id, taskId: result.triggered[0].taskId });
+    const startedRuns = scheduler.listRuns(schedule.id);
+    expect(startedRuns[0].runId).toBe(run.id);
+    expect(startedRuns[0].taskStatus).toBe("running");
   });
 });
 
