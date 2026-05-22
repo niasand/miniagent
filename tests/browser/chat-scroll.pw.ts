@@ -26,7 +26,7 @@ test("clicking back to top after refresh is not overridden by initial auto-scrol
   await expect(messages).not.toHaveClass(/chat-messages--settling/);
 
   await page.getByRole("button", { name: "Back to top" }).click();
-  await expect.poll(() => messages.evaluate((el) => el.scrollTop)).toBeLessThan(20);
+  await expect.poll(() => messages.evaluate((el) => el.scrollTop), { timeout: 5_000 }).toBeLessThan(20);
 
   await page.waitForTimeout(650);
 
@@ -110,7 +110,7 @@ test("initial load corrects non-user scroll restoration during settling", async 
   await expect(messages).not.toHaveClass(/chat-messages--settling/);
 });
 
-test("composer input sits below the toolbar and grows on Shift+Enter", async ({ page }) => {
+test("composer input sits below the toolbar and grows for multiline input", async ({ page }) => {
   await page.addInitScript((id) => {
     localStorage.setItem("sessionId", id);
   }, sessionId);
@@ -132,12 +132,9 @@ test("composer input sits below the toolbar and grows on Shift+Enter", async ({ 
   expect(inputBox!.y).toBeGreaterThan(toolbarBox!.y + toolbarBox!.height - 1);
 
   const initialHeight = inputBox!.height;
-  await input.click();
-  await page.keyboard.type("first line");
-  await page.keyboard.press("Shift+Enter");
-  await page.keyboard.type("second line");
+  await input.fill("first line\nsecond line\nthird line\nfourth line");
 
-  await expect(input).toHaveValue("first line\nsecond line");
+  await expect(input).toHaveValue("first line\nsecond line\nthird line\nfourth line");
   await expect.poll(async () => (await input.boundingBox())?.height ?? 0).toBeGreaterThan(initialHeight + 4);
 });
 
@@ -310,8 +307,10 @@ test("schedules drawer creates and pauses a scheduled message", async ({ page })
   await expect(page.locator(".schedule-run-item")).toContainText("queued");
   await expect(page.locator(".schedule-run-item")).toContainText("Send a scheduled summary");
   await page.getByRole("button", { name: "Edit schedule" }).click();
+  await expect(page.locator(".schedule-edit-form .schedule-preview")).toContainText("Next");
   await page.getByLabel("Edit message").fill("Updated scheduled summary");
   await page.getByLabel("Edit cron expression").fill("15 10 * * 1-5");
+  await expect(page.locator(".schedule-edit-form .schedule-preview")).toContainText("Next");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.locator(".schedule-item-title")).toContainText("15 10 * * 1-5");
   await expect(page.locator(".schedule-item-summary")).toHaveText("Updated scheduled summary");

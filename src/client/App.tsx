@@ -133,6 +133,18 @@ export default function App() {
     retry: false,
     staleTime: 5_000,
   });
+  const { data: editSchedulePreview, error: editSchedulePreviewError } = useQuery({
+    queryKey: ["schedule-edit-preview", editingScheduleId, editScheduleKind, editScheduleCronExpr, editScheduleTimezone],
+    queryFn: () => previewSchedule({
+      kind: editScheduleKind,
+      cronExpr: editScheduleKind === "cron" ? editScheduleCronExpr.trim() : null,
+      runAt: editScheduleKind === "once" ? new Date(editScheduleRunAt).toISOString() : null,
+      timezone: editScheduleTimezone,
+    }),
+    enabled: drawerOpen && drawerTab === "schedules" && Boolean(editingScheduleId) && editScheduleKind === "cron" && editScheduleCronExpr.trim().length > 0,
+    retry: false,
+    staleTime: 5_000,
+  });
   const { data: scheduleRunsData } = useQuery({
     queryKey: ["schedule-runs", expandedScheduleId],
     queryFn: () => expandedScheduleId ? fetchScheduleRuns(expandedScheduleId) : Promise.resolve({ runs: [] }),
@@ -857,6 +869,15 @@ export default function App() {
                           <option key={timezone} value={timezone}>{timezone}</option>
                         ))}
                       </select>
+                      {editScheduleKind === "cron" && (
+                        <div className={`schedule-preview ${editSchedulePreviewError ? "schedule-preview--error" : ""}`}>
+                          {editSchedulePreviewError instanceof Error
+                            ? editSchedulePreviewError.message
+                            : editSchedulePreview
+                              ? `Next ${formatZonedTime(editSchedulePreview.nextRunAt, editScheduleTimezone)}`
+                              : "Checking next run..."}
+                        </div>
+                      )}
                       <textarea
                         className="schedule-textarea"
                         value={editScheduleText}
