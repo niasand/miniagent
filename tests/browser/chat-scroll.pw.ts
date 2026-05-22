@@ -236,6 +236,42 @@ test("settings separates channel and provider details", async ({ page }) => {
   await expect(page.locator(".detail-pane").getByRole("button", { name: "Provider" })).toContainText("Claude");
 });
 
+test("settings hash survives reload and restores provider detail", async ({ page }) => {
+  await page.addInitScript((id) => {
+    localStorage.setItem("sessionId", id);
+  }, sessionId);
+
+  await mockWorkspaceApis(page, createScrollableSnapshot());
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "设置" }).click();
+  await page.locator(".side-pane").getByRole("button", { name: /Provider/ }).click();
+
+  await expect(page).toHaveURL(/#settings\/provider$/);
+  await page.reload({ waitUntil: "domcontentloaded" });
+
+  await expect(page).toHaveURL(/#settings\/provider$/);
+  await expect(page.getByRole("heading", { name: "Provider 详情" })).toBeVisible();
+});
+
+test("provider selection persists across reload", async ({ page }) => {
+  await page.addInitScript((id) => {
+    localStorage.setItem("sessionId", id);
+  }, sessionId);
+
+  await mockWorkspaceApis(page, createScrollableSnapshot());
+
+  await page.goto("/#settings/provider");
+  const providerTrigger = page.locator(".detail-pane").getByRole("button", { name: "Provider" });
+  await providerTrigger.click();
+  await page.getByRole("option", { name: /Codex/ }).click();
+
+  await expect(providerTrigger).toContainText("Codex");
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Provider 详情" })).toBeVisible();
+  await expect(page.locator(".detail-pane").getByRole("button", { name: "Provider" })).toContainText("Codex");
+});
+
 test("tasks section creates, opens, and pauses a scheduled message", async ({ page }) => {
   await page.addInitScript((id) => {
     localStorage.setItem("sessionId", id);
