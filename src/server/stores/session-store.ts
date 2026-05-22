@@ -494,6 +494,12 @@ export class SessionStore {
     return mapTaskRow(row);
   }
 
+  updateWorkspacePath(sessionId: string, workspacePath: string): void {
+    this.db.prepare(
+      "UPDATE sessions SET workspace_path = ?, updated_at = ? WHERE id = ?",
+    ).run(workspacePath, nowIso(), sessionId);
+  }
+
   private requireSession(id: string): SessionRecord {
     const s = this.getSession(id);
     if (!s) throw new Error(`Session not found: ${id}`);

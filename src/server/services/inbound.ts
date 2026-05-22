@@ -6,7 +6,7 @@ import { OutboxStore, type OutboxChannel, type OutboxKind } from "../stores/outb
 import { AuditLogStore, type AuditActorType } from "../stores/audit-log-store.js";
 import { AgentDefaultStore } from "../stores/agent-default-store.js";
 import { ContextBudgetStore } from "../stores/context-budget-store.js";
-import { WorkspacePolicy } from "../security/workspace-policy.js";
+import { WorkspacePolicy, WorkspacePolicyError } from "../security/workspace-policy.js";
 import { createId } from "../../shared/ids.js";
 import { nowIso } from "../../shared/time.js";
 import { stringifyJson, type JsonValue } from "../../shared/json.js";
@@ -112,7 +112,14 @@ export class InboundService {
 
   private handleUserMessage(msg: InboundMessage, text: string): InboundResult {
     const session = this.getOrCreateSession(msg);
-    this.options.workspacePolicy.assertAllowed(session.workspacePath);
+    const decision = this.options.workspacePolicy.evaluate(session.workspacePath);
+    if (!decision.allowed) {
+      const fallback = this.options.workspacePolicy.defaultWorkspace;
+      if (!fallback) throw new WorkspacePolicyError(session.workspacePath, decision.normalizedPath, decision.allowlist, decision.reason);
+      console.warn(`[Inbound] Session ${session.id} workspace "${session.workspacePath}" denied, auto-fixing to "${fallback}"`);
+      this.sessions.updateWorkspacePath(session.id, fallback);
+      session.workspacePath = fallback;
+    }
 
     const sourceType = this.channelType as SourceType;
     const dedupeKey = `${this.channelType}:${msg.messageId}`;

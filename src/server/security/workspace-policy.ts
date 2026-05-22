@@ -31,6 +31,10 @@ export class WorkspacePolicy {
     this.allowlist = normalizeAllowlist(allowlist);
   }
 
+  get defaultWorkspace(): string | undefined {
+    return this.allowlist[0];
+  }
+
   static fromEnvironment(fallbackAllowlist: string[]): WorkspacePolicy {
     const envAllowlist = process.env.WORKSPACE_ALLOWLIST;
     return new WorkspacePolicy(envAllowlist ? splitAllowlist(envAllowlist) : fallbackAllowlist);
