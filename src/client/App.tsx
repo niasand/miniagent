@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { fetchAgents, resolveAgentDefault, setAgentDefault } from "./api/agents.js";
 import { fetchChannels } from "./api/channels.js";
 import { sendSessionMessage } from "./api/messages.js";
@@ -64,6 +64,7 @@ export default function App() {
   const [streamingText, setStreamingText] = useState("");
   const lastGlobalSeqRef = useRef(0);
   const [providerError, setProviderError] = useState<string | null>(null);
+  const stableSessionOrderRef = useRef<string[]>([]);
 
   const { data: providerRuntimesData, error: providerRuntimesError } = useQuery({
     queryKey: ["agents"],
@@ -112,8 +113,18 @@ export default function App() {
   });
 
   const sessions = snapshot?.sessions ?? [];
+  const orderedSessions = useMemo(() => {
+    const nextIds = sessions.map((session) => session.id);
+    const existing = stableSessionOrderRef.current.filter((id) => nextIds.includes(id));
+    const unseen = nextIds.filter((id) => !existing.includes(id));
+    const nextOrder = [...existing, ...unseen];
+    stableSessionOrderRef.current = nextOrder;
+    return nextOrder
+      .map((id) => sessions.find((session) => session.id === id) ?? null)
+      .filter((session): session is NonNullable<typeof session> => session !== null);
+  }, [sessions]);
   const selectedSessionId = sessionId ?? snapshot?.selectedSessionId ?? null;
-  const selectedSessionName = sessions.find((session) => session.id === selectedSessionId)?.name ?? "Current session";
+  const selectedSessionName = orderedSessions.find((session) => session.id === selectedSessionId)?.name ?? "Current session";
 
   const { data: schedulesData } = useQuery({
     queryKey: ["schedules", selectedSessionId],
@@ -637,7 +648,7 @@ export default function App() {
       setActiveSection={setActiveSection}
       settingsSection={settingsSection}
       setSettingsSection={setSettingsSection}
-      sessions={sessions}
+      sessions={orderedSessions}
       sessionId={sessionId}
       sessionsQuery={sessionsQuery}
       setSessionsQuery={setSessionsQuery}

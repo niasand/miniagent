@@ -196,6 +196,67 @@ test("history renames sessions inline", async ({ page }) => {
   await expect(page.locator(".session-title")).toHaveText("Renamed session");
 });
 
+test("clicking a session keeps list order stable across workspace refresh", async ({ page }) => {
+  await page.addInitScript((id) => {
+    localStorage.setItem("sessionId", id);
+  }, sessionId);
+
+  const snapshot = createScrollableSnapshot();
+  snapshot.sessions.push({
+    ...snapshot.sessions[0],
+    id: "ses_second",
+    name: "Second session",
+    title: "Second session",
+    updatedAt: "2026-05-18T01:00:00.000Z",
+  });
+
+  let workspaceCallCount = 0;
+  await page.route("**/api/workspace**", async (route) => {
+    workspaceCallCount += 1;
+    const orderedSessions = workspaceCallCount === 1
+      ? snapshot.sessions
+      : [snapshot.sessions[1], snapshot.sessions[0]];
+    await route.fulfill({
+      json: {
+        ...snapshot,
+        selectedSessionId: workspaceCallCount === 1 ? sessionId : "ses_second",
+        sessions: orderedSessions,
+      },
+    });
+  });
+  await page.route("**/api/channels", async (route) => {
+    await route.fulfill({ json: { channels: [] } });
+  });
+  await page.route("**/api/skills", async (route) => {
+    await route.fulfill({ json: { skills: [] } });
+  });
+  await page.route("**/api/agents", async (route) => {
+    await route.fulfill({ json: { agents: [] } });
+  });
+  await page.route("**/api/agent-defaults/resolve", async (route) => {
+    await route.fulfill({ status: 404, json: { error: "No default agent found" } });
+  });
+  await page.route("**/api/events/stream**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "cache-control": "no-cache",
+        "content-type": "text/event-stream",
+      },
+      body: "",
+    });
+  });
+
+  await page.goto("/");
+  await expect(page.locator(".session-title").nth(0)).toHaveText("Browser scroll regression");
+  await expect(page.locator(".session-title").nth(1)).toHaveText("Second session");
+
+  await page.getByRole("button", { name: "Second session Web May 18" }).click();
+
+  await expect(page.locator(".session-title").nth(0)).toHaveText("Browser scroll regression");
+  await expect(page.locator(".session-title").nth(1)).toHaveText("Second session");
+});
+
 test("history shows rename errors inline", async ({ page }) => {
   await page.addInitScript((id) => {
     localStorage.setItem("sessionId", id);
