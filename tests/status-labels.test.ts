@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { localizeChannelErrorMessage, localizeProviderErrorMessage } from "../src/client/lib/error-messages.js";
 import {
+  formatCapabilityAvailability,
+  formatCapabilityName,
   formatChannelStatus,
   formatProviderStatus,
   formatScheduleKind,
@@ -40,6 +42,14 @@ describe("status labels", () => {
     expect(formatScheduleRunStatus("paused")).toBe("已暂停");
     expect(formatScheduleRunStatus("cancelled")).toBe("已取消");
   });
+
+  it("formats provider capability labels", () => {
+    expect(formatCapabilityName("textStreaming")).toBe("文本流式输出");
+    expect(formatCapabilityName("structuredEvents")).toBe("结构化事件");
+    expect(formatCapabilityName("sessionExport")).toBe("会话导出");
+    expect(formatCapabilityAvailability(true)).toBe("支持");
+    expect(formatCapabilityAvailability(false)).toBe("不支持");
+  });
 });
 
 describe("error message localization", () => {
@@ -54,6 +64,12 @@ describe("error message localization", () => {
     expect(localizeChannelErrorMessage("Channels API failed: 500")).toBe("通道列表加载失败：500");
     expect(localizeChannelErrorMessage("Save config failed: 400")).toBe("保存通道配置失败：400");
     expect(localizeChannelErrorMessage("Connection ok")).toBe("连接正常");
-    expect(localizeChannelErrorMessage("Gateway fetch failed: 502")).toBe("网关获取失败");
+    expect(localizeChannelErrorMessage("Connected")).toBe("已连接");
+    expect(localizeChannelErrorMessage("Gateway fetch failed: 502")).toBe("网关获取失败：502");
+    expect(localizeChannelErrorMessage("QQ token fetch failed: 401")).toBe("QQ 令牌获取失败：401");
+    expect(localizeChannelErrorMessage("Telegram send failed: 503")).toBe("Telegram 发送失败：503");
+    expect(localizeChannelErrorMessage("Telegram send failed after retries")).toBe("Telegram 发送失败，已达到重试上限");
+    expect(localizeChannelErrorMessage("WeChat send error: ret=-14 errcode=40001 expired")).toBe("WeChat 发送异常：业务码异常：ret=-14 errcode=40001 expired");
+    expect(localizeChannelErrorMessage("ret=-14 errcode=40001 expired")).toBe("业务码异常：ret=-14 errcode=40001 expired");
   });
 });

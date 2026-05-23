@@ -300,6 +300,8 @@ test("settings separates channel and provider details", async ({ page }) => {
   await expect(page.locator(".detail-pane").getByRole("radio", { name: /Claude/ })).toHaveAttribute("aria-checked", "true");
   await expect(page.locator(".provider-capability-card")).toHaveCount(3);
   await expect(page.locator(".provider-capability-card").filter({ hasText: "Claude" }).locator(".provider-status-badge")).toHaveText("已就绪");
+  await expect(page.locator(".provider-capability-card").filter({ hasText: "Claude" })).toContainText("文本流式输出：支持");
+  await expect(page.locator(".provider-capability-card").filter({ hasText: "Claude" })).toContainText("会话导出：不支持");
   await expect(page.locator(".provider-capability-card").filter({ hasText: "Trae" })).toContainText("traecli 未在 PATH 中找到");
 });
 

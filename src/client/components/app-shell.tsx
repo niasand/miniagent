@@ -8,7 +8,7 @@ import type { WorkspaceAgentRuntime, WorkspaceSchedule, WorkspaceScheduleKind, W
 import { ChannelCard } from "./channel-card.js";
 import { ProviderSelect, TimezoneSelect } from "./controls.js";
 import { localizeProviderErrorMessage } from "../lib/error-messages.js";
-import { formatProviderStatus, formatScheduleKind, formatScheduleRunStatus, formatScheduleStatus } from "../lib/status-labels.js";
+import { formatCapabilityAvailability, formatCapabilityName, formatProviderStatus, formatScheduleKind, formatScheduleRunStatus, formatScheduleStatus } from "../lib/status-labels.js";
 
 type AppSection = "workspace" | "skills" | "tasks" | "settings";
 type SettingsSection = "channels" | "provider";
@@ -604,7 +604,7 @@ export function AppShell(props: {
                       <div className="provider-capability-list">
                         {Object.entries(runtime.capabilities).map(([name, enabled]) => (
                           <span key={name} className={`provider-capability-pill ${enabled ? "provider-capability-pill--enabled" : "provider-capability-pill--disabled"}`}>
-                            {formatCapabilityName(name)}: {enabled ? "Yes" : "No"}
+                            {formatCapabilityName(name)}：{formatCapabilityAvailability(enabled)}
                           </span>
                         ))}
                       </div>
@@ -633,10 +633,4 @@ function formatMessageTime(value?: string): string {
     minute: "2-digit",
     hour12: false,
   }).format(date);
-}
-
-function formatCapabilityName(value: string): string {
-  return value
-    .replace(/([A-Z])/g, " $1")
-    .replace(/^./, (char) => char.toUpperCase());
 }

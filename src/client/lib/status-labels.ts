@@ -34,3 +34,18 @@ export function formatScheduleRunStatus(status: WorkspaceScheduleRunStatus): str
   if (status === "paused") return "已暂停";
   return "已取消";
 }
+
+export function formatCapabilityName(value: string): string {
+  if (value === "textStreaming") return "文本流式输出";
+  if (value === "structuredEvents") return "结构化事件";
+  if (value === "nativeCompact") return "原生压缩";
+  if (value === "resume") return "续接会话";
+  if (value === "sessionExport") return "会话导出";
+  if (value === "permissionPrompt") return "权限提示";
+  if (value === "imageInput") return "图片输入";
+  return value.replace(/([A-Z])/g, " $1").replace(/^./, (char) => char.toUpperCase());
+}
+
+export function formatCapabilityAvailability(enabled: boolean): string {
+  return enabled ? "支持" : "不支持";
+}
