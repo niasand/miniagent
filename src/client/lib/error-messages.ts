@@ -49,6 +49,11 @@ function translateBusinessCode(message: string): string | null {
   return null;
 }
 
+function translateApiFailure(message: string, prefix: string, label: string): string | null {
+  const matched = matchStatusCode(message, prefix);
+  return matched ? `${label}：${matched[1]}` : null;
+}
+
 export function localizeProviderErrorMessage(message: string | null | undefined): string | null {
   if (!message) return null;
 
@@ -122,6 +127,60 @@ export function localizeChannelErrorMessage(message: string | null | undefined):
 
   if (/connection failed/i.test(message)) return "连接失败";
   if (/authentication failed/i.test(message)) return "认证失败";
+
+  return message;
+}
+
+export function localizeAppErrorMessage(message: string | null | undefined): string | null {
+  if (!message) return null;
+
+  const provider = localizeProviderErrorMessage(message);
+  if (provider !== message) return provider;
+
+  const channel = localizeChannelErrorMessage(message);
+  if (channel !== message) return channel;
+
+  const directApiTranslations: Array<[string, string]> = [
+    ["Workspace API failed", "工作区加载失败"],
+    ["Skills API failed", "技能列表加载失败"],
+    ["Events API failed", "事件加载失败"],
+    ["Message API failed", "发送消息失败"],
+    ["Handoff API failed", "创建交接失败"],
+    ["Create session API failed", "创建会话失败"],
+    ["Update session API failed", "更新会话失败"],
+    ["List schedules API failed", "任务列表加载失败"],
+    ["Create schedule API failed", "创建任务失败"],
+    ["Preview schedule API failed", "任务预览失败"],
+    ["List schedule runs API failed", "任务运行记录加载失败"],
+    ["Update schedule API failed", "更新任务失败"],
+    ["Runtime start API failed", "启动运行失败"],
+    ["Runtime stop API failed", "停止运行失败"],
+    ["Runtime permissions API failed", "加载运行权限失败"],
+    ["Runtime permission response API failed", "提交权限响应失败"],
+    ["Compact failed", "压缩上下文失败"],
+    ["Restart from ContextPack failed", "从 ContextPack 重启失败"],
+  ];
+
+  for (const [prefix, label] of directApiTranslations) {
+    const translated = translateApiFailure(message, prefix, label);
+    if (translated) return translated;
+  }
+
+  if (message === "Save provider failed") return "保存提供方失败";
+  if (message === "Rename failed") return "重命名失败";
+  if (message === "Create schedule failed") return "创建任务失败";
+  if (message === "Update schedule failed") return "更新任务失败";
+  if (message === "Message send failed") return "消息发送失败";
+  if (message === "Runtime start failed") return "启动运行失败";
+  if (message === "Runtime stop failed") return "停止运行失败";
+  if (message === "Context compact failed") return "压缩上下文失败";
+  if (message === "No session selected") return "未选择会话";
+  if (message === "No schedule selected") return "未选择任务";
+  if (message === "Message is required") return "请输入消息内容";
+  if (message === "Run time is required") return "请选择执行时间";
+  if (message === "Name is required") return "名称不能为空";
+  if (message === "No default agent found") return "未找到默认提供方";
+  if (message === "Failed") return "请求失败";
 
   return message;
 }

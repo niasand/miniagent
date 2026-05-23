@@ -298,6 +298,7 @@ test("settings separates channel and provider details", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "提供方详情" })).toBeVisible();
   await expect(page.locator(".detail-pane").getByRole("radiogroup", { name: "提供方" })).toBeVisible();
   await expect(page.locator(".detail-pane").getByRole("radio", { name: /Claude/ })).toHaveAttribute("aria-checked", "true");
+  await expect(page.locator(".provider-toggle-wrap").filter({ hasText: "Claude" })).toContainText("Anthropic · ACP 运行时");
   await expect(page.locator(".provider-capability-card")).toHaveCount(3);
   await expect(page.locator(".provider-capability-card").filter({ hasText: "Claude" }).locator(".provider-status-badge")).toHaveText("已就绪");
   await expect(page.locator(".provider-capability-card").filter({ hasText: "Claude" })).toContainText("文本流式输出：支持");

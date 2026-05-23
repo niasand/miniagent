@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { localizeChannelErrorMessage, localizeProviderErrorMessage } from "../src/client/lib/error-messages.js";
+import { localizeAppErrorMessage, localizeChannelErrorMessage, localizeProviderErrorMessage } from "../src/client/lib/error-messages.js";
 import {
   formatCapabilityAvailability,
   formatCapabilityName,
   formatChannelStatus,
   formatProviderStatus,
+  formatProviderSubtitle,
   formatScheduleKind,
   formatScheduleRunStatus,
   formatScheduleStatus,
@@ -47,8 +48,15 @@ describe("status labels", () => {
     expect(formatCapabilityName("textStreaming")).toBe("文本流式输出");
     expect(formatCapabilityName("structuredEvents")).toBe("结构化事件");
     expect(formatCapabilityName("sessionExport")).toBe("会话导出");
+    expect(formatCapabilityName("fooBarBaz")).toBe("Foo Bar Baz");
     expect(formatCapabilityAvailability(true)).toBe("支持");
     expect(formatCapabilityAvailability(false)).toBe("不支持");
+  });
+
+  it("formats provider subtitles", () => {
+    expect(formatProviderSubtitle("codex", "acp")).toBe("OpenAI · ACP 运行时");
+    expect(formatProviderSubtitle("claude", "cli")).toBe("Anthropic · CLI 运行时");
+    expect(formatProviderSubtitle("trae")).toBe("Trae 提供方");
   });
 });
 
@@ -71,5 +79,18 @@ describe("error message localization", () => {
     expect(localizeChannelErrorMessage("Telegram send failed after retries")).toBe("Telegram 发送失败，已达到重试上限");
     expect(localizeChannelErrorMessage("WeChat send error: ret=-14 errcode=40001 expired")).toBe("WeChat 发送异常：业务码异常：ret=-14 errcode=40001 expired");
     expect(localizeChannelErrorMessage("ret=-14 errcode=40001 expired")).toBe("业务码异常：ret=-14 errcode=40001 expired");
+  });
+
+  it("localizes app-level api errors", () => {
+    expect(localizeAppErrorMessage("Workspace API failed: 500")).toBe("工作区加载失败：500");
+    expect(localizeAppErrorMessage("Skills API failed: 503")).toBe("技能列表加载失败：503");
+    expect(localizeAppErrorMessage("Update session API failed: 409")).toBe("更新会话失败：409");
+    expect(localizeAppErrorMessage("Create schedule API failed: 500")).toBe("创建任务失败：500");
+    expect(localizeAppErrorMessage("Preview schedule API failed: 422")).toBe("任务预览失败：422");
+    expect(localizeAppErrorMessage("Runtime permissions API failed: 500")).toBe("加载运行权限失败：500");
+    expect(localizeAppErrorMessage("Compact failed: 500")).toBe("压缩上下文失败：500");
+    expect(localizeAppErrorMessage("Restart from ContextPack failed: 500")).toBe("从 ContextPack 重启失败：500");
+    expect(localizeAppErrorMessage("No default agent found")).toBe("未找到默认提供方");
+    expect(localizeAppErrorMessage("Failed")).toBe("请求失败");
   });
 });

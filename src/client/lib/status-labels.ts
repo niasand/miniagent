@@ -1,5 +1,6 @@
+import type { AgentType } from "../api/types.js";
 import type { ChannelInfo } from "../api/channels.js";
-import type { WorkspaceAgentHealthStatus, WorkspaceScheduleKind, WorkspaceScheduleRunStatus, WorkspaceScheduleStatus } from "../../shared/workspace.js";
+import type { WorkspaceAgentHealthStatus, WorkspaceRuntimeKind, WorkspaceScheduleKind, WorkspaceScheduleRunStatus, WorkspaceScheduleStatus } from "../../shared/workspace.js";
 
 export function formatProviderStatus(status: WorkspaceAgentHealthStatus | "unknown"): string {
   if (status === "healthy") return "已就绪";
@@ -43,9 +44,27 @@ export function formatCapabilityName(value: string): string {
   if (value === "sessionExport") return "会话导出";
   if (value === "permissionPrompt") return "权限提示";
   if (value === "imageInput") return "图片输入";
-  return value.replace(/([A-Z])/g, " $1").replace(/^./, (char) => char.toUpperCase());
+  return splitCamelCase(value);
 }
 
 export function formatCapabilityAvailability(enabled: boolean): string {
   return enabled ? "支持" : "不支持";
+}
+
+export function formatProviderSubtitle(agentType: AgentType, runtimeKind?: WorkspaceRuntimeKind): string {
+  const family = agentType === "codex"
+    ? "OpenAI"
+    : agentType === "claude"
+      ? "Anthropic"
+      : "Trae";
+
+  if (!runtimeKind) return `${family} 提供方`;
+  return `${family} · ${runtimeKind === "acp" ? "ACP 运行时" : "CLI 运行时"}`;
+}
+
+function splitCamelCase(value: string): string {
+  return value
+    .replace(/([A-Z])/g, " $1")
+    .replace(/^./, (char) => char.toUpperCase())
+    .trim();
 }

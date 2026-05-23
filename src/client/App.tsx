@@ -9,7 +9,7 @@ import { fetchSkills } from "./api/skills.js";
 import type { AgentType, SkillMeta } from "./api/types.js";
 import { AppShell } from "./components/app-shell.js";
 import { createChatScrollController, type ChatScrollController } from "./lib/chat-scroll.js";
-import { localizeProviderErrorMessage } from "./lib/error-messages.js";
+import { localizeAppErrorMessage, localizeProviderErrorMessage } from "./lib/error-messages.js";
 import type { WorkspaceSchedule, WorkspaceScheduleKind, WorkspaceScheduleRun, WorkspaceSnapshot } from "../shared/workspace.js";
 
 type AppSection = "workspace" | "skills" | "tasks" | "settings";
@@ -470,7 +470,7 @@ export default function App() {
       queryClient.invalidateQueries({ queryKey: ["workspace"] });
     },
     onError: (error) => {
-      setRenameSessionError(error instanceof Error ? error.message : "重命名失败");
+      setRenameSessionError(localizeAppErrorMessage(error instanceof Error ? error.message : "Rename failed"));
     },
   });
 
@@ -501,7 +501,7 @@ export default function App() {
       queryClient.invalidateQueries({ queryKey: ["schedules", selectedSessionId] });
     },
     onError: (error) => {
-      setScheduleError(error instanceof Error ? error.message : "创建任务失败");
+      setScheduleError(localizeAppErrorMessage(error instanceof Error ? error.message : "Create schedule failed"));
     },
   });
 
@@ -540,7 +540,7 @@ export default function App() {
       queryClient.invalidateQueries({ queryKey: ["schedule-runs", selectedScheduleId] });
     },
     onError: (error) => {
-      setEditScheduleError(error instanceof Error ? error.message : "更新任务失败");
+      setEditScheduleError(localizeAppErrorMessage(error instanceof Error ? error.message : "Update schedule failed"));
     },
   });
 

@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { AgentType } from "../api/types.js";
 import type { WorkspaceAgentRuntime } from "../../shared/workspace.js";
 import { localizeProviderErrorMessage } from "../lib/error-messages.js";
-import { formatProviderStatus } from "../lib/status-labels.js";
+import { formatProviderStatus, formatProviderSubtitle } from "../lib/status-labels.js";
 
 export const AGENT_OPTIONS: Array<{ value: AgentType; label: string }> = [
   { value: "codex", label: "Codex" },
@@ -14,6 +14,7 @@ export const AGENT_OPTIONS: Array<{ value: AgentType; label: string }> = [
 type ProviderOption = {
   value: AgentType;
   label: string;
+  subtitle: string;
   disabled: boolean;
   reason?: string;
   status: WorkspaceAgentRuntime["status"] | "unknown";
@@ -108,6 +109,7 @@ export function ProviderSelect({
     return {
       value: option.value,
       label: option.label,
+      subtitle: formatProviderSubtitle(option.value, runtime?.runtimeKind),
       disabled,
       reason: disabled ? getProviderDisabledReason(runtime) : undefined,
       status: runtime?.status ?? "unknown",
@@ -134,7 +136,7 @@ export function ProviderSelect({
             >
               <span className="provider-toggle-text">
                 <strong>{option.label}</strong>
-                <small>{option.value}</small>
+                <small>{option.subtitle}</small>
               </span>
               <span className={`provider-toggle-status provider-toggle-status--${option.status}`}>{formatProviderStatus(option.status)}</span>
               {selected && <Check className="h-3.5 w-3.5" />}
