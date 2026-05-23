@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import type { ChannelInfo } from "../../src/client/api/channels.js";
+import type { SkillMeta } from "../../src/client/api/types.js";
 import type { WorkspaceSnapshot } from "../../src/shared/workspace.js";
 
 const sessionId = "ses_browser_scroll";
@@ -26,7 +27,7 @@ test("clicking back to top after refresh is not overridden by initial auto-scrol
   await expect.poll(() => distanceFromBottom(messages)).toBeLessThanOrEqual(1);
   await expect(messages).not.toHaveClass(/chat-messages--settling/);
 
-  await page.getByRole("button", { name: "Back to top" }).click();
+  await page.getByRole("button", { name: "回到顶部" }).click();
   await expect.poll(() => messages.evaluate((el) => el.scrollTop), { timeout: 5_000 }).toBeLessThan(20);
 
   await page.waitForTimeout(650);
@@ -157,14 +158,14 @@ test("history shows the session name and truncates long labels", async ({ page }
   await mockWorkspaceApis(page, snapshot);
 
   await page.goto("/");
-  const search = page.getByPlaceholder("Search history...");
+  const search = page.getByPlaceholder("搜索会话...");
   await expect(search).toBeFocused();
 
   const title = page.locator(".session-title").first();
   await expect(title).toHaveText(longName);
   await expect(page.locator(".context-list")).not.toContainText("Claude session");
-  await expect(page.locator(".session-meta").first()).toContainText("Web");
-  await expect.poll(() => page.locator(".session-meta").first().textContent()).not.toBe("Web");
+  await expect(page.locator(".session-meta").first()).toContainText("网页");
+  await expect.poll(() => page.locator(".session-meta").first().textContent()).not.toBe("网页");
   await expect.poll(() => title.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
 
   await search.fill("next three");
@@ -187,7 +188,7 @@ test("history renames sessions inline", async ({ page }) => {
   await mockWorkspaceApis(page, snapshot);
 
   await page.goto("/");
-  await page.getByRole("button", { name: "Rename Browser scroll regression" }).click();
+  await page.getByRole("button", { name: "重命名 Browser scroll regression" }).click();
 
   const input = page.locator(".session-name-input");
   await expect(input).toBeFocused();
@@ -252,7 +253,7 @@ test("clicking a session keeps list order stable across workspace refresh", asyn
   await expect(page.locator(".session-title").nth(0)).toHaveText("Browser scroll regression");
   await expect(page.locator(".session-title").nth(1)).toHaveText("Second session");
 
-  await page.getByRole("button", { name: "Second session Web May 18" }).click();
+  await page.getByRole("button", { name: "Second session 网页 May 18" }).click();
 
   await expect(page.locator(".session-title").nth(0)).toHaveText("Browser scroll regression");
   await expect(page.locator(".session-title").nth(1)).toHaveText("Second session");
@@ -270,7 +271,7 @@ test("history shows rename errors inline", async ({ page }) => {
   await mockWorkspaceApis(page, snapshot);
 
   await page.goto("/");
-  await page.getByRole("button", { name: "Rename Browser scroll regression" }).click();
+  await page.getByRole("button", { name: "重命名 Browser scroll regression" }).click();
 
   const input = page.locator(".session-name-input");
   await input.fill("Broken name");
@@ -299,7 +300,7 @@ test("settings separates channel and provider details", async ({ page }) => {
   await expect(page.locator(".detail-pane").getByRole("radio", { name: /Claude/ })).toHaveAttribute("aria-checked", "true");
   await expect(page.locator(".provider-capability-card")).toHaveCount(3);
   await expect(page.locator(".provider-capability-card").filter({ hasText: "Claude" }).locator(".provider-status-badge")).toHaveText("已就绪");
-  await expect(page.locator(".provider-capability-card").filter({ hasText: "Trae" })).toContainText("traecli was not found on PATH");
+  await expect(page.locator(".provider-capability-card").filter({ hasText: "Trae" })).toContainText("traecli 未在 PATH 中找到");
 });
 
 test("channel cards show localized status labels", async ({ page }) => {
@@ -334,6 +335,32 @@ test("channel cards show localized status labels", async ({ page }) => {
   await expect(page.locator(".channel-card").filter({ hasText: "Feishu" }).locator(".channel-status")).toHaveText("已连接");
   await expect(page.locator(".channel-card").filter({ hasText: "Telegram" }).locator(".channel-status")).toHaveText("可配置");
   await expect(page.locator(".channel-card").filter({ hasText: "WeChat" }).locator(".channel-status")).toHaveText("离线");
+});
+
+test("workspace and skills pages show localized copy", async ({ page }) => {
+  await page.addInitScript((id) => {
+    localStorage.setItem("sessionId", id);
+  }, sessionId);
+
+  await mockWorkspaceApis(page, createScrollableSnapshot(), {
+    skills: [
+      {
+        name: "ship-it",
+        description: "Ship the current change safely.",
+        source: "project",
+      },
+    ],
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByPlaceholder("搜索会话...")).toBeVisible();
+  await expect(page.getByPlaceholder("输入消息...")).toBeVisible();
+  await page.getByRole("button", { name: "技能" }).click();
+  await expect(page.getByPlaceholder("搜索技能...")).toBeVisible();
+  await expect(page.getByRole("button", { name: "使用技能" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "说明" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "调用方式" })).toBeVisible();
 });
 
 test("settings hash survives reload and restores provider detail", async ({ page }) => {
@@ -407,7 +434,7 @@ test("provider selector disables unavailable runtimes with a reason", async ({ p
   const traeOption = page.locator(".detail-pane").getByRole("radio", { name: /Trae/ });
   await expect(traeOption).toBeDisabled();
   await expect(traeOption).toHaveAttribute("aria-disabled", "true");
-  await expect(page.locator(".provider-toggle-wrap").filter({ hasText: "Trae" })).toContainText("traecli was not found on PATH");
+  await expect(page.locator(".provider-toggle-wrap").filter({ hasText: "Trae" })).toContainText("traecli 未在 PATH 中找到");
 });
 
 test("provider capability cards wrap long command paths without horizontal overflow", async ({ page }) => {
@@ -576,6 +603,7 @@ async function mockWorkspaceApis(
     agentCommands?: Partial<Record<"claude" | "codex" | "trae", string>>;
     channels?: ChannelInfo[];
     channelTestResults?: Record<string, { ok: boolean; message: string }>;
+    skills?: SkillMeta[];
   },
 ) {
   let defaultAgentType: "claude" | "codex" | "trae" = "claude";
@@ -699,7 +727,7 @@ async function mockWorkspaceApis(
     await route.fulfill({ status: 404, json: { error: "not found" } });
   });
   await page.route("**/api/skills", async (route) => {
-    await route.fulfill({ json: { skills: [] } });
+    await route.fulfill({ json: { skills: options?.skills ?? [] } });
   });
   await page.route("**/api/events/stream**", async (route) => {
     await route.fulfill({

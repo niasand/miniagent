@@ -7,6 +7,7 @@ import type { ChannelInfo } from "../api/channels.js";
 import type { WorkspaceAgentRuntime, WorkspaceSchedule, WorkspaceScheduleKind, WorkspaceScheduleRun, WorkspaceSnapshot } from "../../shared/workspace.js";
 import { ChannelCard } from "./channel-card.js";
 import { ProviderSelect, TimezoneSelect } from "./controls.js";
+import { localizeProviderErrorMessage } from "../lib/error-messages.js";
 import { formatProviderStatus, formatScheduleKind, formatScheduleRunStatus, formatScheduleStatus } from "../lib/status-labels.js";
 
 type AppSection = "workspace" | "skills" | "tasks" | "settings";
@@ -121,7 +122,7 @@ export function AppShell(props: {
         </button>
         <button className={`nav-item ${props.activeSection === "skills" ? "active" : ""}`} onClick={() => props.setActiveSection("skills")}>
           <Sparkles className="h-4 w-4" />
-          <span>Skill</span>
+          <span>技能</span>
         </button>
         <button className={`nav-item ${props.activeSection === "tasks" ? "active" : ""}`} onClick={() => props.setActiveSection("tasks")}>
           <CalendarClock className="h-4 w-4" />
@@ -138,7 +139,7 @@ export function AppShell(props: {
           <>
             <div className="side-header">
               <span className="side-eyebrow">工作台</span>
-              <h2>Session 列表</h2>
+              <h2>会话列表</h2>
             </div>
             <div className="side-search">
               <Search className="h-4 w-4 side-search-icon" />
@@ -147,14 +148,14 @@ export function AppShell(props: {
                 className="side-search-input"
                 value={props.sessionsQuery}
                 onChange={(event) => props.setSessionsQuery(event.currentTarget.value)}
-                placeholder="Search history..."
+                placeholder="搜索会话..."
               />
             </div>
             <div className="context-list">
-              {props.sessions.length === 0 && <div className="side-empty">No sessions yet</div>}
-              {props.sessions.length > 0 && filteredSessions.length === 0 && <div className="side-empty">No matching sessions</div>}
+              {props.sessions.length === 0 && <div className="side-empty">暂无会话</div>}
+              {props.sessions.length > 0 && filteredSessions.length === 0 && <div className="side-empty">没有匹配的会话</div>}
               {filteredSessions.map((session) => {
-                const sessionName = session.name || session.title || "Untitled";
+                const sessionName = session.name || session.title || "未命名会话";
                 const isEditing = props.editingSessionId === session.id;
                 return (
                   <div key={session.id} className={`session-item ${session.id === props.sessionId ? "session-item--active" : ""}`}>
@@ -168,15 +169,15 @@ export function AppShell(props: {
                             onKeyDown={(event) => {
                               if (event.key === "Escape") props.cancelSessionRename();
                             }}
-                            aria-label="Session name"
+                            aria-label="会话名称"
                             aria-invalid={props.renameSessionError ? "true" : "false"}
                             aria-describedby={props.renameSessionError ? `session-rename-error-${session.id}` : undefined}
                             autoFocus
                           />
-                          <button className="session-edit-btn" type="submit" title="Save" aria-label="Save session name" disabled={props.renameSessionPending}>
+                          <button className="session-edit-btn" type="submit" title="保存" aria-label="保存会话名称" disabled={props.renameSessionPending}>
                             <Check className="h-4 w-4" />
                           </button>
-                          <button className="session-edit-btn" type="button" title="Cancel" aria-label="Cancel rename" onClick={props.cancelSessionRename}>
+                          <button className="session-edit-btn" type="button" title="取消" aria-label="取消重命名" onClick={props.cancelSessionRename}>
                             <X className="h-4 w-4" />
                           </button>
                         </div>
@@ -195,7 +196,7 @@ export function AppShell(props: {
                             <span>{props.formatSessionUpdatedAt(session.updatedAt)}</span>
                           </span>
                         </button>
-                        <button className="session-action" title="Rename" aria-label={`Rename ${sessionName}`} onClick={() => props.startSessionRename(session.id, sessionName)}>
+                        <button className="session-action" title="重命名" aria-label={`重命名 ${sessionName}`} onClick={() => props.startSessionRename(session.id, sessionName)}>
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
                         <span className={`session-status session-status--${session.status}`}>
@@ -213,8 +214,8 @@ export function AppShell(props: {
         {props.activeSection === "skills" && (
           <>
             <div className="side-header">
-              <span className="side-eyebrow">Skill</span>
-              <h2>Skills 列表</h2>
+              <span className="side-eyebrow">技能</span>
+              <h2>技能列表</h2>
             </div>
             <div className="side-search">
               <Search className="h-4 w-4 side-search-icon" />
@@ -223,11 +224,11 @@ export function AppShell(props: {
                 className="side-search-input"
                 value={props.skillsQuery}
                 onChange={(event) => props.setSkillsQuery(event.currentTarget.value)}
-                placeholder="Search skills..."
+                placeholder="搜索技能..."
               />
             </div>
             <div className="context-list">
-              {props.filteredSkills.length === 0 && <div className="side-empty">No matching skills</div>}
+              {props.filteredSkills.length === 0 && <div className="side-empty">没有匹配的技能</div>}
               {props.filteredSkills.map((skill) => (
                 <button
                   key={skill.name}
@@ -305,7 +306,7 @@ export function AppShell(props: {
               {props.messages.length === 0 && (
                 <div className="chat-empty">
                   <Sparkles className="chat-empty-icon" />
-                  <p>Send a message to start</p>
+                  <p>发送消息开始对话</p>
                 </div>
               )}
               {props.messages.map((message) => {
@@ -350,10 +351,10 @@ export function AppShell(props: {
 
             {props.messages.length > 0 && (
               <div className="chat-scroll-controls">
-                <button className="chat-scroll-btn" onClick={props.scrollMessagesToTop} title="Back to top" aria-label="Back to top">
+                <button className="chat-scroll-btn" onClick={props.scrollMessagesToTop} title="回到顶部" aria-label="回到顶部">
                   <ArrowUp className="h-4 w-4" />
                 </button>
-                <button className="chat-scroll-btn" onClick={() => props.scrollMessagesToBottom("smooth")} title="Back to bottom" aria-label="Back to bottom">
+                <button className="chat-scroll-btn" onClick={() => props.scrollMessagesToBottom("smooth")} title="回到底部" aria-label="回到底部">
                   <ArrowDown className="h-4 w-4" />
                 </button>
               </div>
@@ -366,7 +367,7 @@ export function AppShell(props: {
                 value={props.draft}
                 onChange={(event) => props.setDraft(event.currentTarget.value)}
                 onKeyDown={props.handleKeyDown}
-                placeholder="Type a message..."
+                placeholder="输入消息..."
                 rows={1}
               />
               <button className="send-btn" onClick={props.handleSend} disabled={props.sendMessagePending || !props.draft.trim()}>
@@ -382,25 +383,25 @@ export function AppShell(props: {
               <>
                 <div className="detail-header">
                   <div>
-                    <span className="side-eyebrow">Skills 详情</span>
+                    <span className="side-eyebrow">技能详情</span>
                     <h1>{props.selectedSkill.name}</h1>
                   </div>
                   <button className="primary-action" onClick={() => props.useSkillInWorkspace(props.selectedSkill!)}>
                     <Sparkles className="h-4 w-4" />
-                    Use skill
+                    使用技能
                   </button>
                 </div>
                 <div className="detail-section">
-                  <h2>Description</h2>
-                  <p>{props.selectedSkill.description || "No description provided."}</p>
+                  <h2>说明</h2>
+                  <p>{props.selectedSkill.description || "暂无说明。"}</p>
                 </div>
                 <div className="detail-section">
-                  <h2>Invocation</h2>
+                  <h2>调用方式</h2>
                   <code className="inline-code">/{props.selectedSkill.name}</code>
                 </div>
               </>
             ) : (
-              <div className="detail-empty">No skill selected</div>
+              <div className="detail-empty">尚未选择技能</div>
             )}
           </div>
         )}
@@ -599,7 +600,7 @@ export function AppShell(props: {
                         </div>
                         <span className={`provider-status-badge provider-status-badge--${runtime.status}`}>{formatProviderStatus(runtime.status)}</span>
                       </div>
-                      {runtime.message && <p className="provider-capability-message">{runtime.message}</p>}
+                      {runtime.message && <p className="provider-capability-message">{localizeProviderErrorMessage(runtime.message)}</p>}
                       <div className="provider-capability-list">
                         {Object.entries(runtime.capabilities).map(([name, enabled]) => (
                           <span key={name} className={`provider-capability-pill ${enabled ? "provider-capability-pill--enabled" : "provider-capability-pill--disabled"}`}>

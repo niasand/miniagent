@@ -9,6 +9,7 @@ import { fetchSkills } from "./api/skills.js";
 import type { AgentType, SkillMeta } from "./api/types.js";
 import { AppShell } from "./components/app-shell.js";
 import { createChatScrollController, type ChatScrollController } from "./lib/chat-scroll.js";
+import { localizeProviderErrorMessage } from "./lib/error-messages.js";
 import type { WorkspaceSchedule, WorkspaceScheduleKind, WorkspaceScheduleRun, WorkspaceSnapshot } from "../shared/workspace.js";
 
 type AppSection = "workspace" | "skills" | "tasks" | "settings";
@@ -106,7 +107,7 @@ export default function App() {
     queryFn: async () => {
       const qs = sessionId ? `?sessionId=${sessionId}` : "";
       const res = await fetch(`/api/workspace${qs}`);
-      if (!res.ok) throw new Error("Failed");
+      if (!res.ok) throw new Error("加载失败");
       return res.json() as Promise<WorkspaceSnapshot>;
     },
     refetchInterval: 3_000,
@@ -453,7 +454,7 @@ export default function App() {
       if (context?.previousAgentType) {
         setAgentTypeState(context.previousAgentType);
       }
-      setProviderError(error instanceof Error ? error.message : "Save provider failed");
+      setProviderError(localizeProviderErrorMessage(error instanceof Error ? error.message : "Save provider failed"));
     },
   });
 
@@ -469,16 +470,16 @@ export default function App() {
       queryClient.invalidateQueries({ queryKey: ["workspace"] });
     },
     onError: (error) => {
-      setRenameSessionError(error instanceof Error ? error.message : "Rename failed");
+      setRenameSessionError(error instanceof Error ? error.message : "重命名失败");
     },
   });
 
   const createScheduleMutation = useMutation({
     mutationFn: () => {
-      if (!selectedSessionId) throw new Error("No session selected");
+      if (!selectedSessionId) throw new Error("未选择会话");
       const text = scheduleText.trim();
-      if (!text) throw new Error("Message is required");
-      if (scheduleKind === "once" && !scheduleRunAt) throw new Error("Run time is required");
+      if (!text) throw new Error("请输入消息内容");
+      if (scheduleKind === "once" && !scheduleRunAt) throw new Error("请选择执行时间");
       if (scheduleKind === "cron" && !scheduleCronExpr.trim()) throw new Error("请输入 Cron 表达式");
       return createSchedule({
         sessionId: selectedSessionId,
@@ -515,10 +516,10 @@ export default function App() {
 
   const editScheduleMutation = useMutation({
     mutationFn: () => {
-      if (!editingScheduleId) throw new Error("No schedule selected");
+      if (!editingScheduleId) throw new Error("未选择任务");
       const text = editScheduleText.trim();
-      if (!text) throw new Error("Message is required");
-      if (editScheduleKind === "once" && !editScheduleRunAt) throw new Error("Run time is required");
+      if (!text) throw new Error("请输入消息内容");
+      if (editScheduleKind === "once" && !editScheduleRunAt) throw new Error("请选择执行时间");
       if (editScheduleKind === "cron" && !editScheduleCronExpr.trim()) throw new Error("请输入 Cron 表达式");
       return updateSchedule(editingScheduleId, {
         kind: editScheduleKind,
@@ -617,7 +618,7 @@ export default function App() {
     const nextName = editingSessionName.trim();
     if (renameSession.isPending) return;
     if (!nextName) {
-      setRenameSessionError("Name is required");
+      setRenameSessionError("名称不能为空");
       return;
     }
     renameSession.mutate({ id, name: nextName });
@@ -640,8 +641,8 @@ export default function App() {
   };
 
   const effectiveProviderError = providerError
-    ?? (providerRuntimesError instanceof Error ? providerRuntimesError.message : null)
-    ?? (providerDefaultError instanceof Error ? providerDefaultError.message : null);
+    ?? (providerRuntimesError instanceof Error ? localizeProviderErrorMessage(providerRuntimesError.message) : null)
+    ?? (providerDefaultError instanceof Error ? localizeProviderErrorMessage(providerDefaultError.message) : null);
 
   return (
     <AppShell
@@ -769,8 +770,8 @@ function formatSessionChannel(channelType: WorkspaceSnapshot["sessions"][number]
   if (channelType === "wechat") return "WeChat";
   if (channelType === "wecom") return "WeCom";
   if (channelType === "dingtalk") return "DingTalk";
-  if (channelType === "web") return "Web";
-  return "Local";
+  if (channelType === "web") return "网页";
+  return "本地";
 }
 
 function formatMessageTime(value?: string): string {

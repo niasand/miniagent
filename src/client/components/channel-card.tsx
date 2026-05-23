@@ -1,6 +1,7 @@
 import QRCode from "qrcode";
 import { useRef, useState } from "react";
 import { pollWechatQRStatus, requestWechatQRCode, saveChannelConfig, testChannel, type ChannelInfo } from "../api/channels.js";
+import { localizeChannelErrorMessage } from "../lib/error-messages.js";
 import { formatChannelStatus } from "../lib/status-labels.js";
 
 const CHANNEL_FIELDS: Record<string, Array<{ key: string; label: string }>> = {
@@ -65,7 +66,7 @@ export function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSave
       setEditing(false);
       onSaved();
     } catch (currentError) {
-      setError(currentError instanceof Error ? currentError.message : "保存失败");
+      setError(localizeChannelErrorMessage(currentError instanceof Error ? currentError.message : "Save failed"));
     } finally {
       setSaving(false);
     }
@@ -76,9 +77,15 @@ export function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSave
     setTestResult(null);
     try {
       const result = await testChannel(channel.id);
-      setTestResult(result);
+      setTestResult({
+        ok: result.ok,
+        message: localizeChannelErrorMessage(result.message) ?? result.message,
+      });
     } catch (currentError) {
-      setTestResult({ ok: false, message: currentError instanceof Error ? currentError.message : "测试失败" });
+      setTestResult({
+        ok: false,
+        message: localizeChannelErrorMessage(currentError instanceof Error ? currentError.message : "Test failed") ?? "测试失败",
+      });
     } finally {
       setTesting(false);
     }
@@ -97,7 +104,7 @@ export function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSave
     try {
       const qr = await requestWechatQRCode();
       if (qr.error) {
-        setError(qr.error);
+        setError(localizeChannelErrorMessage(qr.error));
         setQrPolling(false);
         qrPollingRef.current = false;
         return;
@@ -125,7 +132,7 @@ export function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSave
           const status = await pollWechatQRStatus(qrcodeKey);
           if (status.error) {
             setQrStatus("error");
-            setError(status.error);
+            setError(localizeChannelErrorMessage(status.error));
             setQrPolling(false);
             qrPollingRef.current = false;
             return;

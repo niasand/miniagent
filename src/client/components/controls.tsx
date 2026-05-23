@@ -2,6 +2,7 @@ import { Check, ChevronDown, Globe2 } from "lucide-react";
 import { useState } from "react";
 import type { AgentType } from "../api/types.js";
 import type { WorkspaceAgentRuntime } from "../../shared/workspace.js";
+import { localizeProviderErrorMessage } from "../lib/error-messages.js";
 import { formatProviderStatus } from "../lib/status-labels.js";
 
 export const AGENT_OPTIONS: Array<{ value: AgentType; label: string }> = [
@@ -147,12 +148,12 @@ export function ProviderSelect({
 }
 
 function getProviderDisabledReason(runtime?: WorkspaceAgentRuntime): string {
-  if (!runtime) return "Provider probe is unavailable";
-  if (runtime.message) return runtime.message;
-  if (runtime.status === "missing") return `${runtime.label} is not installed on this machine`;
-  if (runtime.status === "auth_required") return `${runtime.label} requires authentication`;
-  if (runtime.status === "failed") return `${runtime.label} is not available right now`;
-  return `${runtime.label} cannot be selected right now`;
+  if (!runtime) return localizeProviderErrorMessage("Provider probe is unavailable") ?? "";
+  if (runtime.message) return localizeProviderErrorMessage(runtime.message) ?? runtime.message;
+  if (runtime.status === "missing") return localizeProviderErrorMessage(`${runtime.label} is not installed on this machine`) ?? `${runtime.label} 未安装在当前机器上`;
+  if (runtime.status === "auth_required") return localizeProviderErrorMessage(`${runtime.label} requires authentication`) ?? `${runtime.label} 需要先完成认证`;
+  if (runtime.status === "failed") return localizeProviderErrorMessage(`${runtime.label} is not available right now`) ?? `${runtime.label} 当前暂不可用`;
+  return localizeProviderErrorMessage(`${runtime.label} cannot be selected right now`) ?? `${runtime.label} 当前无法选择`;
 }
 
 function formatTimezoneDetail(timezone: string): string {
