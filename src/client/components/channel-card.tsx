@@ -1,6 +1,7 @@
 import QRCode from "qrcode";
 import { useRef, useState } from "react";
 import { pollWechatQRStatus, requestWechatQRCode, saveChannelConfig, testChannel, type ChannelInfo } from "../api/channels.js";
+import { formatChannelStatus } from "../lib/status-labels.js";
 
 const CHANNEL_FIELDS: Record<string, Array<{ key: string; label: string }>> = {
   feishu: [
@@ -64,7 +65,7 @@ export function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSave
       setEditing(false);
       onSaved();
     } catch (currentError) {
-      setError(currentError instanceof Error ? currentError.message : "Save failed");
+      setError(currentError instanceof Error ? currentError.message : "保存失败");
     } finally {
       setSaving(false);
     }
@@ -77,7 +78,7 @@ export function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSave
       const result = await testChannel(channel.id);
       setTestResult(result);
     } catch (currentError) {
-      setTestResult({ ok: false, message: currentError instanceof Error ? currentError.message : "Test failed" });
+      setTestResult({ ok: false, message: currentError instanceof Error ? currentError.message : "测试失败" });
     } finally {
       setTesting(false);
     }
@@ -103,7 +104,7 @@ export function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSave
       }
       const qrContent = qr.qrcode_img_content ?? qr.qrcode_url ?? "";
       if (!qrContent) {
-        setError("No QR code URL returned");
+        setError("未返回二维码链接");
         setQrPolling(false);
         qrPollingRef.current = false;
         return;
@@ -113,7 +114,7 @@ export function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSave
       setQrStatus("waiting");
       const qrcodeKey = qr.qrcode ?? qr.token ?? "";
       if (!qrcodeKey) {
-        setError("No qrcode key returned");
+        setError("未返回二维码标识");
         setQrPolling(false);
         qrPollingRef.current = false;
         return;
@@ -137,7 +138,7 @@ export function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSave
               await saveChannelConfig("wechat", { bot_token: status.bot_token, ...(status.baseurl ? { base_url: status.baseurl } : {}) });
             } catch (saveError) {
               setQrStatus("error");
-              setError(saveError instanceof Error ? saveError.message : "Save config failed");
+              setError(saveError instanceof Error ? saveError.message : "保存配置失败");
               return;
             }
             onSaved();
@@ -157,7 +158,7 @@ export function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSave
       };
       setTimeout(poll, 2000);
     } catch (currentError) {
-      setError(currentError instanceof Error ? currentError.message : "QR request failed");
+      setError(currentError instanceof Error ? currentError.message : "二维码请求失败");
       setQrPolling(false);
       qrPollingRef.current = false;
     }
@@ -177,10 +178,10 @@ export function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSave
       {channel.id === "wechat" && !editing && (
         <div className="channel-actions">
           <button className="channel-config-btn" onClick={handleWechatQRLogin} disabled={qrPolling}>
-            {qrPolling ? "Waiting..." : "Scan QR Login"}
+            {qrPolling ? "等待扫码中..." : "扫码登录"}
           </button>
           <button className="channel-test-btn" onClick={handleTest} disabled={testing}>
-            {testing ? "Testing..." : "Test Connection"}
+            {testing ? "测试中..." : "测试连接"}
           </button>
         </div>
       )}
@@ -188,10 +189,10 @@ export function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSave
         <div className="wechat-qr-container">
           <img src={qrUrl} alt="WeChat QR Code" className="wechat-qr-img" />
           <p className="wechat-qr-status">
-            {qrStatus === "waiting" && "Scan with WeChat..."}
-            {qrStatus === "scanned" && "Scanned! Confirm on phone..."}
-            {qrStatus === "confirmed" && "Login successful!"}
-            {qrStatus === "expired" && "QR expired. Try again."}
+            {qrStatus === "waiting" && "请使用微信扫码..."}
+            {qrStatus === "scanned" && "已扫码，请在手机上确认..."}
+            {qrStatus === "confirmed" && "登录成功"}
+            {qrStatus === "expired" && "二维码已过期，请重试"}
           </p>
         </div>
       )}
@@ -199,10 +200,10 @@ export function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSave
       {configurable && channel.id !== "wechat" && !editing && (
         <div className="channel-actions">
           <button className="channel-config-btn" onClick={startEdit}>
-            Configure
+            配置
           </button>
           <button className="channel-test-btn" onClick={handleTest} disabled={testing}>
-            {testing ? "Testing..." : "Test Connection"}
+            {testing ? "测试中..." : "测试连接"}
           </button>
         </div>
       )}
@@ -230,19 +231,13 @@ export function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSave
           ))}
           {error && <p className="channel-form-error">{error}</p>}
           <div className="channel-form-actions">
-            <button className="channel-form-cancel" onClick={handleCancel}>Cancel</button>
+            <button className="channel-form-cancel" onClick={handleCancel}>取消</button>
             <button className="channel-form-save" onClick={handleSave} disabled={saving}>
-              {saving ? "Saving..." : "Save"}
+              {saving ? "保存中..." : "保存"}
             </button>
           </div>
         </div>
       )}
     </div>
   );
-}
-
-function formatChannelStatus(status: ChannelInfo["status"]): string {
-  if (status === "connected") return "已连接";
-  if (status === "available") return "可配置";
-  return "离线";
 }

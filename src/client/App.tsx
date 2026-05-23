@@ -125,7 +125,7 @@ export default function App() {
       .filter((session): session is NonNullable<typeof session> => session !== null);
   }, [sessions]);
   const selectedSessionId = sessionId ?? snapshot?.selectedSessionId ?? null;
-  const selectedSessionName = orderedSessions.find((session) => session.id === selectedSessionId)?.name ?? "Current session";
+  const selectedSessionName = orderedSessions.find((session) => session.id === selectedSessionId)?.name ?? "当前会话";
 
   const { data: schedulesData } = useQuery({
     queryKey: ["schedules", selectedSessionId],
@@ -479,7 +479,7 @@ export default function App() {
       const text = scheduleText.trim();
       if (!text) throw new Error("Message is required");
       if (scheduleKind === "once" && !scheduleRunAt) throw new Error("Run time is required");
-      if (scheduleKind === "cron" && !scheduleCronExpr.trim()) throw new Error("Cron expression is required");
+      if (scheduleKind === "cron" && !scheduleCronExpr.trim()) throw new Error("请输入 Cron 表达式");
       return createSchedule({
         sessionId: selectedSessionId,
         kind: scheduleKind,
@@ -500,7 +500,7 @@ export default function App() {
       queryClient.invalidateQueries({ queryKey: ["schedules", selectedSessionId] });
     },
     onError: (error) => {
-      setScheduleError(error instanceof Error ? error.message : "Create schedule failed");
+      setScheduleError(error instanceof Error ? error.message : "创建任务失败");
     },
   });
 
@@ -519,7 +519,7 @@ export default function App() {
       const text = editScheduleText.trim();
       if (!text) throw new Error("Message is required");
       if (editScheduleKind === "once" && !editScheduleRunAt) throw new Error("Run time is required");
-      if (editScheduleKind === "cron" && !editScheduleCronExpr.trim()) throw new Error("Cron expression is required");
+      if (editScheduleKind === "cron" && !editScheduleCronExpr.trim()) throw new Error("请输入 Cron 表达式");
       return updateSchedule(editingScheduleId, {
         kind: editScheduleKind,
         runAt: editScheduleKind === "once" ? new Date(editScheduleRunAt).toISOString() : null,
@@ -539,7 +539,7 @@ export default function App() {
       queryClient.invalidateQueries({ queryKey: ["schedule-runs", selectedScheduleId] });
     },
     onError: (error) => {
-      setEditScheduleError(error instanceof Error ? error.message : "Update schedule failed");
+      setEditScheduleError(error instanceof Error ? error.message : "更新任务失败");
     },
   });
 

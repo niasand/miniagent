@@ -1,0 +1,36 @@
+import type { ChannelInfo } from "../api/channels.js";
+import type { WorkspaceAgentHealthStatus, WorkspaceScheduleKind, WorkspaceScheduleRunStatus, WorkspaceScheduleStatus } from "../../shared/workspace.js";
+
+export function formatProviderStatus(status: WorkspaceAgentHealthStatus | "unknown"): string {
+  if (status === "healthy") return "已就绪";
+  if (status === "missing") return "未安装";
+  if (status === "auth_required") return "需认证";
+  if (status === "failed") return "异常";
+  return "未知";
+}
+
+export function formatChannelStatus(status: ChannelInfo["status"]): string {
+  if (status === "connected") return "已连接";
+  if (status === "available") return "可配置";
+  return "离线";
+}
+
+export function formatScheduleKind(kind: WorkspaceScheduleKind): string {
+  return kind === "once" ? "单次" : "周期";
+}
+
+export function formatScheduleStatus(status: WorkspaceScheduleStatus): string {
+  if (status === "active") return "启用中";
+  if (status === "paused") return "已暂停";
+  return "已取消";
+}
+
+export function formatScheduleRunStatus(status: WorkspaceScheduleRunStatus): string {
+  if (status === "scheduled") return "待执行";
+  if (status === "queued") return "排队中";
+  if (status === "running") return "执行中";
+  if (status === "succeeded") return "成功";
+  if (status === "failed") return "失败";
+  if (status === "paused") return "已暂停";
+  return "已取消";
+}

@@ -2,6 +2,7 @@ import { Check, ChevronDown, Globe2 } from "lucide-react";
 import { useState } from "react";
 import type { AgentType } from "../api/types.js";
 import type { WorkspaceAgentRuntime } from "../../shared/workspace.js";
+import { formatProviderStatus } from "../lib/status-labels.js";
 
 export const AGENT_OPTIONS: Array<{ value: AgentType; label: string }> = [
   { value: "codex", label: "Codex" },
@@ -113,7 +114,7 @@ export function ProviderSelect({
   });
 
   return (
-    <div className="provider-select" role="radiogroup" aria-label="Provider">
+    <div className="provider-select" role="radiogroup" aria-label="提供方">
       {options.map((option) => {
         const selected = option.value === value;
         return (
@@ -152,14 +153,6 @@ function getProviderDisabledReason(runtime?: WorkspaceAgentRuntime): string {
   if (runtime.status === "auth_required") return `${runtime.label} requires authentication`;
   if (runtime.status === "failed") return `${runtime.label} is not available right now`;
   return `${runtime.label} cannot be selected right now`;
-}
-
-export function formatProviderStatus(status: ProviderOption["status"]): string {
-  if (status === "healthy") return "已就绪";
-  if (status === "missing") return "未安装";
-  if (status === "auth_required") return "需认证";
-  if (status === "failed") return "异常";
-  return "未知";
 }
 
 function formatTimezoneDetail(timezone: string): string {

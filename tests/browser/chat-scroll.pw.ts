@@ -290,12 +290,12 @@ test("settings separates channel and provider details", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "设置" }).click();
   await expect(page.locator(".side-pane").getByRole("button", { name: /消息通道/ })).toBeVisible();
-  await expect(page.locator(".side-pane").getByRole("button", { name: /Provider/ })).toBeVisible();
+  await expect(page.locator(".side-pane").getByRole("button", { name: /提供方/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: "消息通道详情" })).toBeVisible();
 
-  await page.locator(".side-pane").getByRole("button", { name: /Provider/ }).click();
-  await expect(page.getByRole("heading", { name: "Provider 详情" })).toBeVisible();
-  await expect(page.locator(".detail-pane").getByRole("radiogroup", { name: "Provider" })).toBeVisible();
+  await page.locator(".side-pane").getByRole("button", { name: /提供方/ }).click();
+  await expect(page.getByRole("heading", { name: "提供方详情" })).toBeVisible();
+  await expect(page.locator(".detail-pane").getByRole("radiogroup", { name: "提供方" })).toBeVisible();
   await expect(page.locator(".detail-pane").getByRole("radio", { name: /Claude/ })).toHaveAttribute("aria-checked", "true");
   await expect(page.locator(".provider-capability-card")).toHaveCount(3);
   await expect(page.locator(".provider-capability-card").filter({ hasText: "Claude" }).locator(".provider-status-badge")).toHaveText("已就绪");
@@ -310,16 +310,30 @@ test("channel cards show localized status labels", async ({ page }) => {
   await mockWorkspaceApis(page, createScrollableSnapshot(), {
     channels: [
       {
+        id: "feishu",
+        label: "Feishu",
+        status: "connected",
+        description: "Feishu bot is already connected.",
+      },
+      {
         id: "telegram",
         label: "Telegram",
         status: "available",
         description: "Configure Telegram delivery with a bot token.",
       },
+      {
+        id: "wechat",
+        label: "WeChat",
+        status: "disconnected",
+        description: "WeChat bot is offline.",
+      },
     ],
   });
 
   await page.goto("/#settings/channels");
+  await expect(page.locator(".channel-card").filter({ hasText: "Feishu" }).locator(".channel-status")).toHaveText("已连接");
   await expect(page.locator(".channel-card").filter({ hasText: "Telegram" }).locator(".channel-status")).toHaveText("可配置");
+  await expect(page.locator(".channel-card").filter({ hasText: "WeChat" }).locator(".channel-status")).toHaveText("离线");
 });
 
 test("settings hash survives reload and restores provider detail", async ({ page }) => {
@@ -331,13 +345,13 @@ test("settings hash survives reload and restores provider detail", async ({ page
 
   await page.goto("/");
   await page.getByRole("button", { name: "设置" }).click();
-  await page.locator(".side-pane").getByRole("button", { name: /Provider/ }).click();
+  await page.locator(".side-pane").getByRole("button", { name: /提供方/ }).click();
 
   await expect(page).toHaveURL(/#settings\/provider$/);
   await page.reload({ waitUntil: "domcontentloaded" });
 
   await expect(page).toHaveURL(/#settings\/provider$/);
-  await expect(page.getByRole("heading", { name: "Provider 详情" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "提供方详情" })).toBeVisible();
 });
 
 test("provider selection persists across reload", async ({ page }) => {
@@ -355,7 +369,7 @@ test("provider selection persists across reload", async ({ page }) => {
   await expect(codexOption).toHaveAttribute("aria-checked", "true");
   await expect(claudeOption).toHaveAttribute("aria-checked", "false");
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "Provider 详情" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "提供方详情" })).toBeVisible();
   await expect(page.locator(".detail-pane").getByRole("radio", { name: /Codex/ })).toHaveAttribute("aria-checked", "true");
 });
 
@@ -444,7 +458,7 @@ test("channel settings wrap long test failure messages without horizontal overfl
   await page.goto("/#settings/channels");
 
   const card = page.locator(".channel-card").filter({ hasText: "Telegram" }).first();
-  await card.getByRole("button", { name: "Test Connection" }).click();
+  await card.getByRole("button", { name: "测试连接" }).click();
 
   const result = card.locator(".channel-test-result");
   await expect(result).toContainText(longMessage);
@@ -525,34 +539,34 @@ test("tasks section creates, opens, and pauses a scheduled message", async ({ pa
 
   await page.goto("/");
   await page.getByRole("button", { name: "任务" }).click();
-  await page.getByRole("button", { name: "Cron" }).click();
-  await expect(page.locator(".schedule-preview")).toContainText("Next");
-  await page.getByRole("button", { name: "Timezone" }).click();
+  await page.getByRole("button", { name: "周期" }).click();
+  await expect(page.locator(".schedule-preview")).toContainText("下次执行");
+  await page.getByRole("button", { name: "时区" }).click();
   await page.getByRole("option", { name: /^UTC\b/ }).click();
-  await expect(page.getByRole("button", { name: "Timezone" })).toContainText("UTC");
-  await page.getByPlaceholder("Message to send...").fill("Send a scheduled summary");
-  await page.getByRole("button", { name: "Create" }).click();
+  await expect(page.getByRole("button", { name: "时区" })).toContainText("UTC");
+  await page.getByPlaceholder("输入要发送的消息...").fill("Send a scheduled summary");
+  await page.getByRole("button", { name: "创建" }).click();
 
   await expect(page.locator(".schedule-item")).toHaveCount(1);
-  await expect(page.locator(".schedule-item-title .schedule-status")).toHaveText("active");
+  await expect(page.locator(".schedule-item-title .schedule-status")).toHaveText("启用中");
   await expect(page.locator(".schedule-item-meta")).toContainText("UTC");
   await expect(page.locator(".schedule-item-summary")).toHaveText("Send a scheduled summary");
-  await expect(page.locator(".schedule-run-item")).toContainText("succeeded");
+  await expect(page.locator(".schedule-run-item")).toContainText("成功");
   await expect(page.locator(".schedule-run-item")).toContainText("Send a scheduled summary");
-  await expect(page.getByRole("button", { name: "Open session for tsk_test" })).toBeVisible();
-  await page.getByRole("button", { name: "Open task output tsk_test" }).click();
+  await expect(page.getByRole("button", { name: "打开会话 tsk_test" })).toBeVisible();
+  await page.getByRole("button", { name: "打开任务输出 tsk_test" }).click();
   await expect(page.locator('[data-run-id="run_test"]')).toHaveClass(/chat-bubble--focused-run/);
   await page.getByRole("button", { name: "任务" }).click();
-  await page.getByRole("button", { name: "Edit" }).click();
-  await expect(page.locator(".schedule-edit-form .schedule-preview")).toContainText("Next");
-  await page.getByLabel("Edit message").fill("Updated scheduled summary");
-  await page.getByLabel("Edit cron expression").fill("15 10 * * 1-5");
-  await expect(page.locator(".schedule-edit-form .schedule-preview")).toContainText("Next");
-  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "编辑" }).click();
+  await expect(page.locator(".schedule-edit-form .schedule-preview")).toContainText("下次执行");
+  await page.getByLabel("编辑消息").fill("Updated scheduled summary");
+  await page.getByLabel("编辑 Cron 表达式").fill("15 10 * * 1-5");
+  await expect(page.locator(".schedule-edit-form .schedule-preview")).toContainText("下次执行");
+  await page.getByRole("button", { name: "保存" }).click();
   await expect(page.locator(".schedule-item-title")).toContainText("15 10 * * 1-5");
   await expect(page.locator(".schedule-item-summary")).toHaveText("Updated scheduled summary");
-  await page.getByRole("button", { name: "Pause" }).click();
-  await expect(page.locator(".schedule-item-title .schedule-status")).toHaveText("paused");
+  await page.getByRole("button", { name: "暂停" }).click();
+  await expect(page.locator(".schedule-item-title .schedule-status")).toHaveText("已暂停");
 });
 
 async function mockWorkspaceApis(
@@ -674,7 +688,7 @@ async function mockWorkspaceApis(
     const testMatch = url.pathname.match(/^\/api\/channels\/([^/]+)\/test$/);
     if (route.request().method() === "POST" && testMatch) {
       const channelId = decodeURIComponent(testMatch[1]);
-      await route.fulfill({ json: options?.channelTestResults?.[channelId] ?? { ok: true, message: "Connection ok" } });
+      await route.fulfill({ json: options?.channelTestResults?.[channelId] ?? { ok: true, message: "连接正常" } });
       return;
     }
     const configMatch = url.pathname.match(/^\/api\/channels\/([^/]+)\/config$/);

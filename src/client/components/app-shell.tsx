@@ -6,7 +6,8 @@ import type { AgentType, SkillMeta } from "../api/types.js";
 import type { ChannelInfo } from "../api/channels.js";
 import type { WorkspaceAgentRuntime, WorkspaceSchedule, WorkspaceScheduleKind, WorkspaceScheduleRun, WorkspaceSnapshot } from "../../shared/workspace.js";
 import { ChannelCard } from "./channel-card.js";
-import { ProviderSelect, TimezoneSelect, formatProviderStatus } from "./controls.js";
+import { ProviderSelect, TimezoneSelect } from "./controls.js";
+import { formatProviderStatus, formatScheduleKind, formatScheduleRunStatus, formatScheduleStatus } from "../lib/status-labels.js";
 
 type AppSection = "workspace" | "skills" | "tasks" | "settings";
 type SettingsSection = "channels" | "provider";
@@ -249,10 +250,10 @@ export function AppShell(props: {
             </div>
             <div className="context-list">
               <button className={`context-item context-item--create ${!props.selectedSchedule ? "context-item--active" : ""}`} onClick={props.startNewSchedule}>
-                <strong>New schedule</strong>
+                <strong>新建任务</strong>
                 <span title={props.selectedSessionName}>{props.selectedSessionName}</span>
               </button>
-              {props.schedules.length === 0 && <div className="side-empty">No schedules yet</div>}
+              {props.schedules.length === 0 && <div className="side-empty">暂无任务</div>}
               {props.schedules.map((schedule) => (
                 <button
                   key={schedule.id}
@@ -263,11 +264,11 @@ export function AppShell(props: {
                   }}
                 >
                   <span className="schedule-item-title">
-                    <span className={`schedule-status schedule-status--${schedule.status}`}>{schedule.status}</span>
-                    <span>{schedule.kind === "once" ? "Once" : schedule.cronExpr}</span>
+                    <span className={`schedule-status schedule-status--${schedule.status}`}>{formatScheduleStatus(schedule.status)}</span>
+                    <span>{schedule.kind === "once" ? formatScheduleKind(schedule.kind) : schedule.cronExpr}</span>
                   </span>
                   <span className="schedule-item-meta">
-                    <span>{schedule.nextRunAt ? `Next ${props.formatZonedTime(schedule.nextRunAt, schedule.timezone)}` : "No next run"}</span>
+                    <span>{schedule.nextRunAt ? `下次执行 ${props.formatZonedTime(schedule.nextRunAt, schedule.timezone)}` : "暂无下次执行"}</span>
                     <span>{schedule.timezone}</span>
                   </span>
                   {schedule.payloadSummary && <span className="schedule-item-summary" title={schedule.payloadText ?? schedule.payloadSummary}>{schedule.payloadSummary}</span>}
@@ -289,8 +290,8 @@ export function AppShell(props: {
                 <span>Feishu, QQ, Telegram, WeChat</span>
               </button>
               <button className={`context-item ${props.settingsSection === "provider" ? "context-item--active" : ""}`} onClick={() => props.setSettingsSection("provider")}>
-                <strong>Provider</strong>
-                <span>Default {props.agentType}</span>
+                <strong>提供方</strong>
+                <span>默认 {props.agentType}</span>
               </button>
             </div>
           </>
@@ -411,32 +412,32 @@ export function AppShell(props: {
                 <div className="detail-header">
                   <div>
                     <span className="side-eyebrow">定时任务详情</span>
-                    <h1>New schedule</h1>
+                    <h1>新建任务</h1>
                   </div>
                 </div>
                 <div className="schedule-form schedule-form--detail">
-                  <div className="segmented-control" role="group" aria-label="Schedule kind">
-                    <button className={`segmented-btn ${props.scheduleKind === "once" ? "active" : ""}`} onClick={() => props.setScheduleKind("once")}>Once</button>
-                    <button className={`segmented-btn ${props.scheduleKind === "cron" ? "active" : ""}`} onClick={() => props.setScheduleKind("cron")}>Cron</button>
+                  <div className="segmented-control" role="group" aria-label="任务类型">
+                    <button className={`segmented-btn ${props.scheduleKind === "once" ? "active" : ""}`} onClick={() => props.setScheduleKind("once")}>单次</button>
+                    <button className={`segmented-btn ${props.scheduleKind === "cron" ? "active" : ""}`} onClick={() => props.setScheduleKind("cron")}>周期</button>
                   </div>
                   {props.scheduleKind === "once"
-                    ? <input className="schedule-input" type="datetime-local" value={props.scheduleRunAt} onChange={(event) => props.setScheduleRunAt(event.currentTarget.value)} aria-label="Run at" />
-                    : <input className="schedule-input" value={props.scheduleCronExpr} onChange={(event) => props.setScheduleCronExpr(event.currentTarget.value)} placeholder="0 9 * * 1-5" aria-label="Cron expression" />}
-                  <TimezoneSelect value={props.scheduleTimezone} onChange={props.setScheduleTimezone} label="Timezone" />
+                    ? <input className="schedule-input" type="datetime-local" value={props.scheduleRunAt} onChange={(event) => props.setScheduleRunAt(event.currentTarget.value)} aria-label="执行时间" />
+                    : <input className="schedule-input" value={props.scheduleCronExpr} onChange={(event) => props.setScheduleCronExpr(event.currentTarget.value)} placeholder="0 9 * * 1-5" aria-label="Cron 表达式" />}
+                  <TimezoneSelect value={props.scheduleTimezone} onChange={props.setScheduleTimezone} label="时区" />
                   {props.scheduleKind === "cron" && (
                     <div className={`schedule-preview ${props.schedulePreviewError instanceof Error ? "schedule-preview--error" : ""}`}>
                       {props.schedulePreviewError instanceof Error
                         ? props.schedulePreviewError.message
                         : props.schedulePreview
-                          ? `Next ${props.formatZonedTime(props.schedulePreview.nextRunAt, props.scheduleTimezone)}`
-                          : "Checking next run..."}
+                          ? `下次执行 ${props.formatZonedTime(props.schedulePreview.nextRunAt, props.scheduleTimezone)}`
+                          : "正在计算下次执行时间..."}
                     </div>
                   )}
-                  <textarea className="schedule-textarea" value={props.scheduleText} onChange={(event) => props.setScheduleText(event.currentTarget.value)} placeholder="Message to send..." rows={4} />
+                  <textarea className="schedule-textarea" value={props.scheduleText} onChange={(event) => props.setScheduleText(event.currentTarget.value)} placeholder="输入要发送的消息..." rows={4} />
                   {props.scheduleError && <div className="schedule-error" role="alert">{props.scheduleError}</div>}
                   <button className="schedule-create-btn" onClick={props.handleCreateSchedule} disabled={!props.selectedSessionId || props.createSchedulePending}>
                     <CalendarClock className="h-4 w-4" />
-                    Create
+                    创建
                   </button>
                 </div>
               </>
@@ -445,104 +446,104 @@ export function AppShell(props: {
                 <div className="detail-header">
                   <div>
                     <span className="side-eyebrow">定时任务详情</span>
-                    <h1>{props.selectedSchedule.kind === "once" ? "Once" : props.selectedSchedule.cronExpr}</h1>
+                    <h1>{props.selectedSchedule.kind === "once" ? "单次任务" : props.selectedSchedule.cronExpr}</h1>
                   </div>
                   <div className="detail-actions">
                     {props.selectedSchedule.status !== "cancelled" && (
                       <button className="secondary-action" onClick={() => props.startScheduleEdit(props.selectedSchedule!)}>
                         <Pencil className="h-4 w-4" />
-                        Edit
+                        编辑
                       </button>
                     )}
                     {props.selectedSchedule.status === "active"
                       ? (
                         <button className="secondary-action" onClick={() => props.updateSchedule({ id: props.selectedSchedule!.id, action: "pause" })}>
                           <Pause className="h-4 w-4" />
-                          Pause
+                          暂停
                         </button>
                         )
                       : props.selectedSchedule.status === "paused"
                         ? (
                           <button className="secondary-action" onClick={() => props.updateSchedule({ id: props.selectedSchedule!.id, action: "resume" })}>
                             <Play className="h-4 w-4" />
-                            Resume
+                            恢复
                           </button>
                           )
                         : null}
                     {props.selectedSchedule.status !== "cancelled" && (
                       <button className="secondary-action secondary-action--danger" onClick={() => props.updateSchedule({ id: props.selectedSchedule!.id, action: "cancel" })}>
                         <Trash2 className="h-4 w-4" />
-                        Cancel
+                        取消
                       </button>
                     )}
                   </div>
                 </div>
                 <div className="detail-section detail-grid">
-                  <div><span>Status</span><strong>{props.selectedSchedule.status}</strong></div>
-                  <div><span>Timezone</span><strong>{props.selectedSchedule.timezone}</strong></div>
-                  <div><span>Next run</span><strong>{props.selectedSchedule.nextRunAt ? props.formatZonedTime(props.selectedSchedule.nextRunAt, props.selectedSchedule.timezone) : "No next run"}</strong></div>
-                  <div><span>Session</span><strong>{props.selectedSessionName}</strong></div>
+                  <div><span>状态</span><strong>{formatScheduleStatus(props.selectedSchedule.status)}</strong></div>
+                  <div><span>时区</span><strong>{props.selectedSchedule.timezone}</strong></div>
+                  <div><span>下次执行</span><strong>{props.selectedSchedule.nextRunAt ? props.formatZonedTime(props.selectedSchedule.nextRunAt, props.selectedSchedule.timezone) : "暂无下次执行"}</strong></div>
+                  <div><span>会话</span><strong>{props.selectedSessionName}</strong></div>
                 </div>
                 {props.selectedSchedule.payloadSummary && (
                   <div className="detail-section">
-                    <h2>Message</h2>
+                    <h2>消息内容</h2>
                     <p>{props.selectedSchedule.payloadText ?? props.selectedSchedule.payloadSummary}</p>
                   </div>
                 )}
                 {props.editingScheduleId === props.selectedSchedule.id && (
                   <div className="detail-section">
-                    <h2>Edit schedule</h2>
+                    <h2>编辑任务</h2>
                     <div className="schedule-edit-form schedule-edit-form--detail">
-                      <div className="segmented-control" role="group" aria-label="Edit schedule kind">
-                        <button className={`segmented-btn ${props.editScheduleKind === "once" ? "active" : ""}`} onClick={() => props.setEditScheduleKind("once")}>Once</button>
-                        <button className={`segmented-btn ${props.editScheduleKind === "cron" ? "active" : ""}`} onClick={() => props.setEditScheduleKind("cron")}>Cron</button>
+                      <div className="segmented-control" role="group" aria-label="编辑任务类型">
+                        <button className={`segmented-btn ${props.editScheduleKind === "once" ? "active" : ""}`} onClick={() => props.setEditScheduleKind("once")}>单次</button>
+                        <button className={`segmented-btn ${props.editScheduleKind === "cron" ? "active" : ""}`} onClick={() => props.setEditScheduleKind("cron")}>周期</button>
                       </div>
                       {props.editScheduleKind === "once"
-                        ? <input className="schedule-input" type="datetime-local" value={props.editScheduleRunAt} onChange={(event) => props.setEditScheduleRunAt(event.currentTarget.value)} aria-label="Edit run at" />
-                        : <input className="schedule-input" value={props.editScheduleCronExpr} onChange={(event) => props.setEditScheduleCronExpr(event.currentTarget.value)} aria-label="Edit cron expression" />}
-                      <TimezoneSelect value={props.editScheduleTimezone} onChange={props.setEditScheduleTimezone} label="Edit timezone" />
+                        ? <input className="schedule-input" type="datetime-local" value={props.editScheduleRunAt} onChange={(event) => props.setEditScheduleRunAt(event.currentTarget.value)} aria-label="编辑执行时间" />
+                        : <input className="schedule-input" value={props.editScheduleCronExpr} onChange={(event) => props.setEditScheduleCronExpr(event.currentTarget.value)} aria-label="编辑 Cron 表达式" />}
+                      <TimezoneSelect value={props.editScheduleTimezone} onChange={props.setEditScheduleTimezone} label="编辑时区" />
                       {props.editScheduleKind === "cron" && (
                         <div className={`schedule-preview ${props.editSchedulePreviewError instanceof Error ? "schedule-preview--error" : ""}`}>
                           {props.editSchedulePreviewError instanceof Error
                             ? props.editSchedulePreviewError.message
                             : props.editSchedulePreview
-                              ? `Next ${props.formatZonedTime(props.editSchedulePreview.nextRunAt, props.editScheduleTimezone)}`
-                              : "Checking next run..."}
+                              ? `下次执行 ${props.formatZonedTime(props.editSchedulePreview.nextRunAt, props.editScheduleTimezone)}`
+                              : "正在计算下次执行时间..."}
                         </div>
                       )}
-                      <textarea className="schedule-textarea" value={props.editScheduleText} onChange={(event) => props.setEditScheduleText(event.currentTarget.value)} aria-label="Edit message" rows={4} />
+                      <textarea className="schedule-textarea" value={props.editScheduleText} onChange={(event) => props.setEditScheduleText(event.currentTarget.value)} aria-label="编辑消息" rows={4} />
                       {props.editScheduleError && <div className="schedule-error" role="alert">{props.editScheduleError}</div>}
                       <div className="schedule-edit-actions">
-                        <button className="schedule-secondary-btn" onClick={() => props.setEditingScheduleId(null)}>Cancel</button>
+                        <button className="schedule-secondary-btn" onClick={() => props.setEditingScheduleId(null)}>取消</button>
                         <button className="schedule-create-btn" onClick={props.submitScheduleEdit} disabled={props.editSchedulePending}>
                           <Check className="h-4 w-4" />
-                          Save
+                          保存
                         </button>
                       </div>
                     </div>
                   </div>
                 )}
                 <div className="detail-section">
-                  <h2>Run history</h2>
+                  <h2>运行记录</h2>
                   <div className="schedule-run-list schedule-run-list--detail">
-                    {props.scheduleRuns.length === 0 && <div className="schedule-run-empty">No runs yet</div>}
+                    {props.scheduleRuns.length === 0 && <div className="schedule-run-empty">暂无执行记录</div>}
                     {props.scheduleRuns.map((run) => (
                       <div key={run.id} className="schedule-run-item">
                         <div className="schedule-run-main">
-                          <span className={`schedule-status schedule-status--${run.status}`}>{run.status}</span>
+                          <span className={`schedule-status schedule-status--${run.status}`}>{formatScheduleRunStatus(run.status)}</span>
                           <span>{props.formatZonedTime(run.scheduledFor ?? run.createdAt, props.selectedSchedule!.timezone)}</span>
                           {run.payloadSummary && <span title={run.payloadSummary}>{run.payloadSummary}</span>}
                           {run.taskId && <span title={run.taskId}>{run.taskId}</span>}
                           {run.error && <span title={run.error}>{run.error}</span>}
                         </div>
                         <div className="schedule-run-actions">
-                          <button className="schedule-run-action" title="Open session" aria-label={`Open session for ${run.taskId ?? run.id}`} onClick={() => props.openScheduleRun(run, false)}>
+                          <button className="schedule-run-action" title="打开会话" aria-label={`打开会话 ${run.taskId ?? run.id}`} onClick={() => props.openScheduleRun(run, false)}>
                             <ExternalLink className="h-3.5 w-3.5" />
                           </button>
                           <button
                             className="schedule-run-action"
-                            title={run.runId ? "Open task output" : "Task output not available yet"}
-                            aria-label={run.runId ? `Open task output ${run.taskId ?? run.id}` : `Task output unavailable ${run.taskId ?? run.id}`}
+                            title={run.runId ? "打开任务输出" : "任务输出暂不可用"}
+                            aria-label={run.runId ? `打开任务输出 ${run.taskId ?? run.id}` : `任务输出暂不可用 ${run.taskId ?? run.id}`}
                             disabled={!run.runId}
                             onClick={() => props.openScheduleRun(run, true)}
                           >
@@ -563,19 +564,19 @@ export function AppShell(props: {
             <div className="detail-header">
               <div>
                 <span className="side-eyebrow">设置</span>
-                <h1>{props.settingsSection === "channels" ? "消息通道详情" : "Provider 详情"}</h1>
+                <h1>{props.settingsSection === "channels" ? "消息通道详情" : "提供方详情"}</h1>
               </div>
             </div>
             {props.settingsSection === "channels" ? (
               <div className="settings-channel-grid">
-                {props.channels.length === 0 && <div className="detail-empty">No channels available</div>}
+                {props.channels.length === 0 && <div className="detail-empty">暂无可用通道</div>}
                 {props.channels.map((channel) => (
                   <ChannelCard key={channel.id} channel={channel} onSaved={props.onChannelsSaved} />
                 ))}
               </div>
             ) : (
               <div className="detail-section">
-                <h2>Default provider</h2>
+                <h2>默认提供方</h2>
                 <ProviderSelect
                   value={props.agentType}
                   onChange={props.setAgentType}
@@ -587,7 +588,7 @@ export function AppShell(props: {
             )}
             {props.settingsSection === "provider" && (
               <div className="detail-section">
-                <h2>Provider capabilities</h2>
+                <h2>提供方能力</h2>
                 <div className="provider-capability-grid">
                   {props.providerRuntimes.map((runtime) => (
                     <div key={runtime.agentType} className={`provider-capability-card ${runtime.agentType === props.agentType ? "provider-capability-card--active" : ""}`}>
