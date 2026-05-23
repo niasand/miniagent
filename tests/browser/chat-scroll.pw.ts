@@ -302,6 +302,26 @@ test("settings separates channel and provider details", async ({ page }) => {
   await expect(page.locator(".provider-capability-card").filter({ hasText: "Trae" })).toContainText("traecli was not found on PATH");
 });
 
+test("channel cards show localized status labels", async ({ page }) => {
+  await page.addInitScript((id) => {
+    localStorage.setItem("sessionId", id);
+  }, sessionId);
+
+  await mockWorkspaceApis(page, createScrollableSnapshot(), {
+    channels: [
+      {
+        id: "telegram",
+        label: "Telegram",
+        status: "available",
+        description: "Configure Telegram delivery with a bot token.",
+      },
+    ],
+  });
+
+  await page.goto("/#settings/channels");
+  await expect(page.locator(".channel-card").filter({ hasText: "Telegram" }).locator(".channel-status")).toHaveText("可配置");
+});
+
 test("settings hash survives reload and restores provider detail", async ({ page }) => {
   await page.addInitScript((id) => {
     localStorage.setItem("sessionId", id);

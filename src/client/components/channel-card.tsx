@@ -169,7 +169,7 @@ export function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSave
         <strong>{channel.label}</strong>
         <span className={`channel-status channel-status--${channel.status}`}>
           <span className="channel-dot" />
-          {channel.status === "connected" ? "Connected" : channel.status === "available" ? "Available" : "Offline"}
+          {formatChannelStatus(channel.status)}
         </span>
       </div>
       <p className="channel-card-desc">{channel.description}</p>
@@ -239,4 +239,10 @@ export function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSave
       )}
     </div>
   );
+}
+
+function formatChannelStatus(status: ChannelInfo["status"]): string {
+  if (status === "connected") return "已连接";
+  if (status === "available") return "可配置";
+  return "离线";
 }
