@@ -110,6 +110,7 @@ export default function App() {
       return res.json() as Promise<WorkspaceSnapshot>;
     },
     refetchInterval: 3_000,
+    placeholderData: (previous) => previous,
   });
 
   const sessions = snapshot?.sessions ?? [];
