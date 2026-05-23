@@ -6,7 +6,7 @@ import type { AgentType, SkillMeta } from "../api/types.js";
 import type { ChannelInfo } from "../api/channels.js";
 import type { WorkspaceAgentRuntime, WorkspaceSchedule, WorkspaceScheduleKind, WorkspaceScheduleRun, WorkspaceSnapshot } from "../../shared/workspace.js";
 import { ChannelCard } from "./channel-card.js";
-import { ProviderSelect, TimezoneSelect } from "./controls.js";
+import { ProviderSelect, TimezoneSelect, formatProviderStatus } from "./controls.js";
 
 type AppSection = "workspace" | "skills" | "tasks" | "settings";
 type SettingsSection = "channels" | "provider";
@@ -596,7 +596,7 @@ export function AppShell(props: {
                           <strong>{runtime.label}</strong>
                           <p>{runtime.command}</p>
                         </div>
-                        <span className={`provider-status-badge provider-status-badge--${runtime.status}`}>{runtime.status}</span>
+                        <span className={`provider-status-badge provider-status-badge--${runtime.status}`}>{formatProviderStatus(runtime.status)}</span>
                       </div>
                       {runtime.message && <p className="provider-capability-message">{runtime.message}</p>}
                       <div className="provider-capability-list">

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
+import type { ChannelInfo } from "../../src/client/api/channels.js";
 import type { WorkspaceSnapshot } from "../../src/shared/workspace.js";
 
 const sessionId = "ses_browser_scroll";
@@ -297,6 +298,7 @@ test("settings separates channel and provider details", async ({ page }) => {
   await expect(page.locator(".detail-pane").getByRole("radiogroup", { name: "Provider" })).toBeVisible();
   await expect(page.locator(".detail-pane").getByRole("radio", { name: /Claude/ })).toHaveAttribute("aria-checked", "true");
   await expect(page.locator(".provider-capability-card")).toHaveCount(3);
+  await expect(page.locator(".provider-capability-card").filter({ hasText: "Claude" }).locator(".provider-status-badge")).toHaveText("已就绪");
   await expect(page.locator(".provider-capability-card").filter({ hasText: "Trae" })).toContainText("traecli was not found on PATH");
 });
 
@@ -393,6 +395,41 @@ test("provider capability cards wrap long command paths without horizontal overf
   await expect(command).toContainText("@agentclientprotocol/claude-agent-acp");
   await expect.poll(() => claudeCard.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
   await expect.poll(() => command.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+});
+
+test("channel settings wrap long test failure messages without horizontal overflow", async ({ page }) => {
+  await page.addInitScript((id) => {
+    localStorage.setItem("sessionId", id);
+  }, sessionId);
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  const longMessage = "https://hooks.example.com/services/telegram/bot_token/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+  await mockWorkspaceApis(page, createScrollableSnapshot(), {
+    channels: [
+      {
+        id: "telegram",
+        label: "Telegram",
+        status: "available",
+        description: "Configure Telegram delivery with a bot token.",
+      },
+    ],
+    channelTestResults: {
+      telegram: {
+        ok: false,
+        message: longMessage,
+      },
+    },
+  });
+
+  await page.goto("/#settings/channels");
+
+  const card = page.locator(".channel-card").filter({ hasText: "Telegram" }).first();
+  await card.getByRole("button", { name: "Test Connection" }).click();
+
+  const result = card.locator(".channel-test-result");
+  await expect(result).toContainText(longMessage);
+  await expect.poll(() => card.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  await expect.poll(() => result.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
 });
 
 test("tasks section creates, opens, and pauses a scheduled message", async ({ page }) => {
@@ -503,6 +540,8 @@ async function mockWorkspaceApis(
   snapshot: WorkspaceSnapshot,
   options?: {
     agentCommands?: Partial<Record<"claude" | "codex" | "trae", string>>;
+    channels?: ChannelInfo[];
+    channelTestResults?: Record<string, { ok: boolean; message: string }>;
   },
 ) {
   let defaultAgentType: "claude" | "codex" | "trae" = "claude";
@@ -606,8 +645,24 @@ async function mockWorkspaceApis(
       },
     });
   });
-  await page.route("**/api/channels", async (route) => {
-    await route.fulfill({ json: { channels: [] } });
+  await page.route((url) => url.pathname === "/api/channels" || /^\/api\/channels\/[^/]+\/(?:config|test)$/.test(url.pathname), async (route) => {
+    const url = new URL(route.request().url());
+    if (route.request().method() === "GET" && url.pathname === "/api/channels") {
+      await route.fulfill({ json: { channels: options?.channels ?? [] } });
+      return;
+    }
+    const testMatch = url.pathname.match(/^\/api\/channels\/([^/]+)\/test$/);
+    if (route.request().method() === "POST" && testMatch) {
+      const channelId = decodeURIComponent(testMatch[1]);
+      await route.fulfill({ json: options?.channelTestResults?.[channelId] ?? { ok: true, message: "Connection ok" } });
+      return;
+    }
+    const configMatch = url.pathname.match(/^\/api\/channels\/([^/]+)\/config$/);
+    if (route.request().method() === "PUT" && configMatch) {
+      await route.fulfill({ json: { config: route.request().postDataJSON() } });
+      return;
+    }
+    await route.fulfill({ status: 404, json: { error: "not found" } });
   });
   await page.route("**/api/skills", async (route) => {
     await route.fulfill({ json: { skills: [] } });

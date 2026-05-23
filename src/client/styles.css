@@ -210,6 +210,7 @@ button { cursor: pointer; }
 .settings-channel-grid {
   display: grid;
   max-width: 760px;
+  min-width: 0;
   gap: 10px;
 }
 
@@ -254,6 +255,7 @@ button { cursor: pointer; }
   display: grid;
   gap: 9px;
   max-width: 760px;
+  min-width: 0;
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--color-surface);
@@ -971,6 +973,7 @@ button { cursor: pointer; }
 
 .channel-card {
   margin-bottom: 8px;
+  min-width: 0;
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--color-background);
@@ -987,6 +990,8 @@ button { cursor: pointer; }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
   margin-bottom: 6px;
   font-size: 14px;
 }
@@ -996,6 +1001,7 @@ button { cursor: pointer; }
   color: var(--color-muted-foreground);
   font-size: 12px;
   line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .channel-status {
@@ -1055,6 +1061,7 @@ button { cursor: pointer; }
 
 .channel-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 8px;
 }
@@ -1083,6 +1090,7 @@ button { cursor: pointer; }
   font-size: 12px;
   padding: 4px 8px;
   border-radius: 4px;
+  overflow-wrap: anywhere;
 }
 
 .channel-test-ok { color: #22c55e; background: color-mix(in srgb, #22c55e 10%, transparent); }
@@ -1091,6 +1099,7 @@ button { cursor: pointer; }
 .channel-form {
   display: grid;
   gap: 10px;
+  min-width: 0;
   margin-top: 10px;
   border-top: 1px solid var(--color-border);
   padding-top: 10px;
@@ -1099,12 +1108,14 @@ button { cursor: pointer; }
 .channel-field {
   display: grid;
   gap: 4px;
+  min-width: 0;
   font-size: 12px;
   font-weight: 600;
 }
 
 .channel-field input {
   width: 100%;
+  min-width: 0;
   height: 34px;
   border: 1px solid var(--color-border);
   border-radius: 6px;
@@ -1125,6 +1136,7 @@ button { cursor: pointer; }
   margin: 0;
   color: #ef4444;
   font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .channel-form-actions {
@@ -1170,6 +1182,7 @@ button { cursor: pointer; }
 
 .provider-toggle-wrap {
   display: grid;
+  min-width: 0;
   gap: 4px;
 }
 
@@ -1216,6 +1229,7 @@ button { cursor: pointer; }
 .provider-toggle-text {
   display: grid;
   gap: 2px;
+  min-width: 0;
 }
 
 .provider-toggle small {
@@ -1270,6 +1284,7 @@ button { cursor: pointer; }
   color: var(--color-muted-foreground);
   font-size: 12px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .provider-error {

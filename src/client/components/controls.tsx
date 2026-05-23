@@ -154,12 +154,12 @@ function getProviderDisabledReason(runtime?: WorkspaceAgentRuntime): string {
   return `${runtime.label} cannot be selected right now`;
 }
 
-function formatProviderStatus(status: ProviderOption["status"]): string {
-  if (status === "healthy") return "Ready";
-  if (status === "missing") return "Missing";
-  if (status === "auth_required") return "Auth";
-  if (status === "failed") return "Error";
-  return "Unknown";
+export function formatProviderStatus(status: ProviderOption["status"]): string {
+  if (status === "healthy") return "已就绪";
+  if (status === "missing") return "未安装";
+  if (status === "auth_required") return "需认证";
+  if (status === "failed") return "异常";
+  return "未知";
 }
 
 function formatTimezoneDetail(timezone: string): string {
