@@ -1285,6 +1285,7 @@ button { cursor: pointer; }
 
 .provider-capability-card {
   display: grid;
+  min-width: 0;
   gap: 10px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
@@ -1302,15 +1303,22 @@ button { cursor: pointer; }
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  min-width: 0;
+}
+
+.provider-capability-header > div {
+  min-width: 0;
 }
 
 .provider-capability-header p {
   margin: 4px 0 0;
   color: var(--color-muted-foreground);
   font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .provider-status-badge {
+  flex-shrink: 0;
   border-radius: 999px;
   padding: 4px 8px;
   font-size: 11px;
@@ -1322,13 +1330,16 @@ button { cursor: pointer; }
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  min-width: 0;
 }
 
 .provider-capability-pill {
+  max-width: 100%;
   border-radius: 999px;
   padding: 4px 8px;
   font-size: 11px;
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .provider-capability-pill--enabled {

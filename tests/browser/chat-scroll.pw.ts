@@ -374,6 +374,27 @@ test("provider selector disables unavailable runtimes with a reason", async ({ p
   await expect(page.locator(".provider-toggle-wrap").filter({ hasText: "Trae" })).toContainText("traecli was not found on PATH");
 });
 
+test("provider capability cards wrap long command paths without horizontal overflow", async ({ page }) => {
+  await page.addInitScript((id) => {
+    localStorage.setItem("sessionId", id);
+  }, sessionId);
+
+  await mockWorkspaceApis(page, createScrollableSnapshot(), {
+    agentCommands: {
+      claude: "/Users/zhiwei/projects/MiniAgent/node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js",
+    },
+  });
+
+  await page.goto("/#settings/provider");
+
+  const claudeCard = page.locator(".provider-capability-card").filter({ hasText: "Claude" }).first();
+  const command = claudeCard.locator(".provider-capability-header p");
+
+  await expect(command).toContainText("@agentclientprotocol/claude-agent-acp");
+  await expect.poll(() => claudeCard.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  await expect.poll(() => command.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+});
+
 test("tasks section creates, opens, and pauses a scheduled message", async ({ page }) => {
   await page.addInitScript((id) => {
     localStorage.setItem("sessionId", id);
@@ -477,7 +498,13 @@ test("tasks section creates, opens, and pauses a scheduled message", async ({ pa
   await expect(page.locator(".schedule-item-title .schedule-status")).toHaveText("paused");
 });
 
-async function mockWorkspaceApis(page: Page, snapshot: WorkspaceSnapshot) {
+async function mockWorkspaceApis(
+  page: Page,
+  snapshot: WorkspaceSnapshot,
+  options?: {
+    agentCommands?: Partial<Record<"claude" | "codex" | "trae", string>>;
+  },
+) {
   let defaultAgentType: "claude" | "codex" | "trae" = "claude";
 
   await page.route("**/api/workspace**", async (route) => {
@@ -492,7 +519,7 @@ async function mockWorkspaceApis(page: Page, snapshot: WorkspaceSnapshot) {
             runtimeKind: "acp",
             label: "Claude",
             status: "healthy",
-            command: "claude-agent-acp",
+            command: options?.agentCommands?.claude ?? "claude-agent-acp",
             version: null,
             message: null,
             checkedAt: "2026-05-19T01:00:00.000Z",
@@ -511,7 +538,7 @@ async function mockWorkspaceApis(page: Page, snapshot: WorkspaceSnapshot) {
             runtimeKind: "acp",
             label: "Codex",
             status: "healthy",
-            command: "codex",
+            command: options?.agentCommands?.codex ?? "codex",
             version: null,
             message: null,
             checkedAt: "2026-05-19T01:00:00.000Z",
@@ -530,7 +557,7 @@ async function mockWorkspaceApis(page: Page, snapshot: WorkspaceSnapshot) {
             runtimeKind: "acp",
             label: "Trae",
             status: "missing",
-            command: "traecli",
+            command: options?.agentCommands?.trae ?? "traecli",
             version: null,
             message: "traecli was not found on PATH",
             checkedAt: "2026-05-19T01:00:00.000Z",
