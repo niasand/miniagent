@@ -24,6 +24,7 @@ import { RuntimeSupervisor } from "../runtime/supervisor.js";
 import { RuntimeService } from "../runtime/service.js";
 import { WorkspacePolicy, WorkspacePolicyError } from "../security/workspace-policy.js";
 import { ChannelRegistry } from "../channels/registry.js";
+import { KnowledgeService } from "../services/knowledge.js";
 import type { WorkspaceSchedule, WorkspaceScheduleRun } from "../../shared/workspace.js";
 import type { ScheduleRecord } from "../stores/schedule-store.js";
 import type { ScheduleRunRecord } from "../stores/schedule-run-store.js";
@@ -52,7 +53,8 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
   const eventStore = new EventStore(db);
   const sessionStore = new SessionStore(db, eventStore);
   const permissionRequests = new PermissionRequestStore(db);
-  const runtimeService = new RuntimeService(db, runtimeSupervisor, workspacePolicy);
+  const knowledgeService = new KnowledgeService();
+  const runtimeService = new RuntimeService(db, runtimeSupervisor, workspacePolicy, knowledgeService);
 
   // ── Middleware ──
 

@@ -6,6 +6,8 @@ import { PermissionRequestStore } from "../stores/permission-request-store.js";
 import { RuntimeSupervisor } from "./supervisor.js";
 import { RuntimeAdapterRegistry } from "./registry.js";
 import { WorkspacePolicy, WorkspacePolicyError } from "../security/workspace-policy.js";
+import type { KnowledgeService } from "../services/knowledge.js";
+import type { JsonValue } from "../../shared/json.js";
 
 export type StartNextQueuedTaskResult = {
   task: { id: string; sessionId: string; status: string; type: string; input: unknown };
@@ -21,6 +23,7 @@ export class RuntimeService {
     private readonly db: SqliteDatabase,
     private readonly supervisor: RuntimeSupervisor,
     private readonly workspacePolicy: WorkspacePolicy,
+    private readonly knowledgeService?: KnowledgeService,
   ) {
     const events = new EventStore(db);
     this.sessions = new SessionStore(db, events);
@@ -56,9 +59,13 @@ export class RuntimeService {
       taskId: task.id,
     });
 
+    const knowledgeInput = this.knowledgeService
+      ? this.augmentWithKnowledge(session, task.input)
+      : task.input;
+
     this.supervisor.sendInput(started.run.id, {
       taskType: task.type,
-      input: task.input,
+      input: knowledgeInput,
     });
 
     return {
@@ -71,5 +78,24 @@ export class RuntimeService {
       },
       run: { id: started.run.id, status: started.run.status },
     };
+  }
+
+  private augmentWithKnowledge(
+    session: { defaultParams: JsonValue },
+    taskInput: JsonValue,
+  ): JsonValue {
+    const config = this.knowledgeService!.resolveConfig(session.defaultParams);
+    if (!config.enabled) return taskInput;
+
+    const queryText = this.knowledgeService!.extractQueryText(taskInput);
+    if (!queryText) return taskInput;
+
+    const knowledge = this.knowledgeService!.retrieve(queryText, config);
+    if (!knowledge) return taskInput;
+
+    const inputObj = taskInput && typeof taskInput === "object" && !Array.isArray(taskInput)
+      ? taskInput as Record<string, unknown>
+      : { text: taskInput };
+    return { ...inputObj, knowledge };
   }
 }

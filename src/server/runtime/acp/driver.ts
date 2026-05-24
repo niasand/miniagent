@@ -501,10 +501,15 @@ function mapSessionUpdate(params: JsonValue): RuntimeEventDraft[] {
   return [{ type: "runtime_event", payload: { protocol: "acp", sessionId, update, receivedAt: nowIso() } }];
 }
 
-function toPromptBlocks(input: JsonValue): JsonValue[] {
+export function toPromptBlocks(input: JsonValue): JsonValue[] {
   const object = asJsonObject(input);
   const text = readInputText(input);
-  const blocks: JsonValue[] = text ? [{ type: "text", text }] : [];
+  const knowledge = typeof object.knowledge === "string" ? object.knowledge : null;
+  const blocks: JsonValue[] = [];
+
+  if (knowledge) blocks.push({ type: "text", text: knowledge });
+  if (text) blocks.push({ type: "text", text });
+
   const files = readArray(object.files);
   for (const file of files) {
     if (typeof file === "string") {
