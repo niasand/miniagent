@@ -354,6 +354,40 @@ button { cursor: pointer; }
   font-size: 13px;
 }
 
+.skill-path-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.skill-path-code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copy-path-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-muted);
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.copy-path-btn:hover {
+  color: var(--color-foreground);
+  border-color: var(--color-foreground);
+}
+
 .side-search-icon { color: var(--color-muted-foreground); }
 
 .side-empty {

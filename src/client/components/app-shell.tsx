@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, CalendarClock, Check, Clock, ExternalLink, Pause, Pencil, Play, Search, SendHorizontal, Settings, Sparkles, Target, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, CalendarClock, Check, ClipboardCopy, Clock, ExternalLink, Pause, Pencil, Play, Search, SendHorizontal, Settings, Sparkles, Target, Trash2, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
@@ -398,6 +398,19 @@ export function AppShell(props: {
                 <div className="detail-section">
                   <h2>调用方式</h2>
                   <code className="inline-code">/{props.selectedSkill.name}</code>
+                </div>
+                <div className="detail-section">
+                  <h2>路径</h2>
+                  <div className="skill-path-row">
+                    <code className="inline-code skill-path-code">{props.selectedSkill.path}</code>
+                    <button
+                      className="copy-path-btn"
+                      title="复制路径"
+                      onClick={() => { navigator.clipboard.writeText(props.selectedSkill!.path); }}
+                    >
+                      <ClipboardCopy className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
               </>
             ) : (

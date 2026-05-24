@@ -633,7 +633,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
       join(homedir(), ".claude", "skills"),
     ];
     const seen = new Set<string>();
-    const results: Array<{ name: string; description: string; source: string }> = [];
+    const results: Array<{ name: string; description: string; source: string; path: string }> = [];
     for (const skillsDir of dirs) {
       let entries: string[];
       try {
@@ -656,6 +656,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
           name: entry,
           description: parseFrontmatterDescription(mdContent) ?? "",
           source: skillsDir === dirs[0] ? "project" : "user",
+          path: entryPath,
         });
       }
     }
@@ -1036,8 +1037,11 @@ function parseFrontmatterDescription(content: string): string | null {
   const match = content.match(/^---\n([\s\S]*?)\n---/);
   if (!match) return null;
   const frontmatter = match[1];
-  const descMatch = frontmatter.match(/^description:\s*>-?\s*\n([\s\S]*?)(?=\n\w|\n---|$)/m);
-  if (descMatch) return descMatch[1].replace(/^\s+/, "").trim();
+  // Supports YAML multiline: >- (folded strip), > (folded keep), |- (literal strip), | (literal keep)
+  const multilineMatch = frontmatter.match(
+    /^description:\s*(?:[>|][+-]?)\s*\n([\s\S]*?)(?=\n\w|\n---|$)/m,
+  );
+  if (multilineMatch) return multilineMatch[1].replace(/^\s+/, "").trim();
   const simpleMatch = frontmatter.match(/^description:\s*(.+)/m);
   if (simpleMatch) return simpleMatch[1].trim();
   return null;

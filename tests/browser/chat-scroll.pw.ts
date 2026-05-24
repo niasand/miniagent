@@ -351,6 +351,7 @@ test("workspace and skills pages show localized copy", async ({ page }) => {
         name: "ship-it",
         description: "Ship the current change safely.",
         source: "project",
+        path: "/project/.claude/skills/ship-it",
       },
     ],
   });

@@ -20,6 +20,7 @@ export type SkillMeta = {
   name: string;
   description: string;
   source: "project" | "user";
+  path: string;
 };
 
 export type ListSkillsResponse = {
