@@ -2,9 +2,12 @@
 
 ## 启动方式
 
-需要两个进程，API（端口 7273）和前端（端口 7272）：
+两个进程：API（端口 7273）+ 前端 dev server（端口 7272）。**禁止使用 `vite preview`（4173）**。
 
 ```bash
+# 首次或 schema 变更后先执行
+npm run db:migrate
+
 # 启动 API
 nohup npx tsx src/server/http/server.ts > /tmp/miniagent-api.log 2>&1 &
 
@@ -12,21 +15,19 @@ nohup npx tsx src/server/http/server.ts > /tmp/miniagent-api.log 2>&1 &
 nohup npx vite --host 127.0.0.1 > /tmp/miniagent-web.log 2>&1 &
 ```
 
-- 首次或 schema 变更后先执行 `npm run db:migrate`
 - 前端访问：http://127.0.0.1:7272
 - API 端口可通过 `MINIAGENT_API_PORT` 环境变量覆盖
 
 ### 重启
 
 ```bash
-# 停止
-kill $(lsof -ti :7273) 2>/dev/null   # API
-kill $(lsof -ti :7272) 2>/dev/null   # 前端
+kill $(lsof -ti :7273) 2>/dev/null
+kill $(lsof -ti :7272) 2>/dev/null
 
 # 重新启动（同上）
+nohup npx tsx src/server/http/server.ts > /tmp/miniagent-api.log 2>&1 &
+nohup npx vite --host 127.0.0.1 > /tmp/miniagent-web.log 2>&1 &
 ```
-
-前端代码变更后需 `npm run build` 更新 dist（仅影响 production preview 端口 4173，dev 模式自动热更新）。
 
 ## 项目规则
 
