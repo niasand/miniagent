@@ -638,12 +638,17 @@ export default function App() {
     queryClient.invalidateQueries({ queryKey: ["workspace", id] });
   };
 
-  const handleNewSession = () => {
-    setSessionId(null);
-    localStorage.removeItem(SESSION_STORAGE_KEY);
+  const handleNewSession = async () => {
+    const res = await createSession({ agentType });
+    setSessionId(res.sessionId);
+    localStorage.setItem(SESSION_STORAGE_KEY, res.sessionId);
     setFocusedScheduleTarget(null);
     setDraft("");
     setActiveSection("workspace");
+    setSessionsPage(1);
+    setExtraSessions([]);
+    setSessionsHasMore(true);
+    queryClient.invalidateQueries({ queryKey: ["workspace"] });
   };
 
   const startSessionRename = (id: string, name: string) => {
