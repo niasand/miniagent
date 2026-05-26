@@ -15,7 +15,7 @@ const AGENT_PRICING: Record<string, ModelPricing> = {
 };
 
 export function estimateCost(inputTokens: number, outputTokens: number, agentType?: string): number {
-  const pricing = (agentType && AGENT_PRICING[agentType]) ?? DEFAULT_PRICING;
+  const pricing = (agentType ? AGENT_PRICING[agentType] : undefined) ?? DEFAULT_PRICING;
   const inputCost = (inputTokens / 1_000_000) * pricing.inputPerMillion;
   const outputCost = (outputTokens / 1_000_000) * pricing.outputPerMillion;
   return inputCost + outputCost;
