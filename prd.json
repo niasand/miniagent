@@ -1,0 +1,124 @@
+{
+  "project": "MiniAgent",
+  "branchName": "ralph/unified-session-list",
+  "description": "Unified session list: show all non-cron sessions across channels, with session_name from first user message, cross-channel conversation continuation, session header with copy buttons, and filtered conversation history",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add listSessionsFiltered method to filter out cron-only sessions",
+      "description": "As a developer, I need a backend method to list sessions excluding those that only have cron tasks, so the UI only shows user-initiated conversations.",
+      "acceptanceCriteria": [
+        "Add `listSessionsFiltered(options: { excludeCronOnly?: boolean })` method to SessionStore",
+        "A session is 'cron-only' if ALL its tasks have source_type = 'cron' (i.e. no web/feishu user messages)",
+        "Use SQL subquery: exclude sessions where NOT EXISTS a task with source_type != 'cron'",
+        "Method still returns sessions ordered by updated_at DESC, with configurable limit (default 100)",
+        "Existing `listSessions()` method remains unchanged for backward compatibility",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Key SQL pattern: WHERE NOT EXISTS (SELECT 1 FROM tasks t WHERE t.session_id = s.id AND t.source_type != 'cron' AND t.source_type IS NOT NULL) — sessions with zero tasks should still appear (new empty sessions)"
+    },
+    {
+      "id": "US-002",
+      "title": "Update WorkspaceService.getSnapshot to use filtered session list",
+      "description": "As a developer, I need the workspace snapshot to use the filtered session list so the web UI automatically shows only non-cron sessions.",
+      "acceptanceCriteria": [
+        "Update `WorkspaceService.getSnapshot()` to call `listSessionsFiltered({ excludeCronOnly: true })` instead of `listSessions()`",
+        "The snapshot still includes all session fields (id, name, title, agentType, channelType, status, updatedAt)",
+        "selectedSessionId fallback logic (pick first from filtered list) still works",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Ensure session_name is always set from first user message",
+      "description": "As a user, I want every session to display my first message as the session name, regardless of channel (web or feishu).",
+      "acceptanceCriteria": [
+        "Verify `persistInitialSessionName` is called in both web and feishu inbound paths",
+        "Verify `summarizeSessionName` truncates to ~50 chars and strips markdown/slashes",
+        "Sessions created via web message flow call persistInitialSessionName after first user message insert",
+        "Sessions created via feishu message flow call persistInitialSessionName after first user message insert",
+        "Session name is empty only when no user message has been sent yet",
+        "WorkspaceSessionSummary.name field uses first user message content when session.name is empty",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "The `getSnapshot` already calls `getFirstUserMessages` and `getSessionName`. Verify these are wired correctly for all channel types."
+    },
+    {
+      "id": "US-004",
+      "title": "Add session header bar with name, ID, and copy buttons to chat panel",
+      "description": "As a user, I want to see the session name and session ID at the top of the chat panel, each with a copy button, so I can easily reference and share session identifiers.",
+      "acceptanceCriteria": [
+        "Add a new `chat-header` div at the top of the workspace chat-main section in AppShell",
+        "Header displays: session name (bold, truncated with ellipsis if too long) + session ID (monospace, truncated)",
+        "Each element has a copy-to-clipboard button with ClipboardCopy icon",
+        "Copy button shows brief visual feedback (e.g. icon change or tooltip) on click",
+        "Header is hidden when no session is selected (messages.length === 0 and no sessionId)",
+        "Header does not scroll with messages (position: sticky top)",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Session name comes from props.sessions.find(s => s.id === props.sessionId)?.name. Session ID is props.sessionId. Add CSS class `chat-header` with styling matching the existing app theme."
+    },
+    {
+      "id": "US-005",
+      "title": "Enable cross-channel conversation continuation from session list",
+      "description": "As a user, I want to click any session in the list (web or feishu origin) and continue the conversation from the web UI, so I can seamlessly resume any session regardless of its original channel.",
+      "acceptanceCriteria": [
+        "Selecting any session in the sidebar loads its messages in the chat panel",
+        "The send message API (`POST /api/sessions/:sessionId/messages`) already works for any session ID regardless of channel — verify this path accepts messages for feishu-originated sessions",
+        "When sending a message to a feishu-originated session from web, the message is stored with sourceType 'web' and the response is delivered back via web SSE (not feishu)",
+        "The chat input bar (textarea + send button) is always visible when a session is selected",
+        "Sending a message creates a task and starts a run on the selected session",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "The inbound service `receiveOnSession` already handles messages on arbitrary sessions. The web message route handler needs to support specifying any sessionId. Check if the web channel currently restricts to web-only sessions."
+    },
+    {
+      "id": "US-006",
+      "title": "Filter meaningless agent messages from conversation display",
+      "description": "As a user, I want the chat panel to hide empty or meaningless agent replies (pure thinking blocks, empty responses) so the conversation reads cleanly.",
+      "acceptanceCriteria": [
+        "Add filtering logic in the message rendering loop of AppShell workspace section",
+        "Filter out messages where role='assistant' AND (content is empty string OR content is only whitespace OR content matches thinking-only pattern like '<thinking>...</thinking>' with no other content)",
+        "Filter out messages where role='system' and content starts with 'Run succeeded' (already partially done) OR content is empty",
+        "User messages are never filtered",
+        "Normal agent responses with actual content are never filtered",
+        "Filtering is client-side only — raw messages remain stored in the database unchanged",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "The current rendering already has `if (message.role === 'system') return null;` and special handling for 'Run succeeded'. Extend this to also filter empty/thinking-only assistant messages. Consider a helper function `isMessageDisplayable(message)`."
+    },
+    {
+      "id": "US-007",
+      "title": "Load full conversation history for selected session",
+      "description": "As a user, I want to see the complete conversation history when I select a session, not just the latest 200 messages, so I can review the full context.",
+      "acceptanceCriteria": [
+        "Increase the message limit in `getLatestBySession` call within `getSnapshot` from 200 to a higher limit or remove the limit entirely for conversation display",
+        "Alternatively, add a pagination mechanism: load first 200, then lazy-load older messages on scroll-to-top",
+        "For MVP: increasing the limit to 1000 is acceptable",
+        "Messages are ordered by created_at ASC (oldest first) — verify this ordering",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Current code: `this.messages.getLatestBySession(sessionId, 200)`. The MessageStore.getLatestBySession already accepts a limit parameter. For MVP, just increase to 1000. For later, add cursor-based pagination."
+    }
+  ]
+}
