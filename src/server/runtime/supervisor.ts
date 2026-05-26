@@ -271,6 +271,8 @@ export class RuntimeSupervisor {
       stopReason: exit.message ?? exit.signal,
       errorClass: exit.exitCode === 0 && !exit.signal ? null : classification.class,
       stoppedAt: exit.exitedAt,
+      inputTokens: activeRun.inputTokens,
+      outputTokens: activeRun.outputTokens,
     });
 
     this.persistAgentMessage(activeRun);
@@ -316,40 +318,9 @@ export class RuntimeSupervisor {
     return activeRun;
   }
 
-  private persistAgentMessage(activeRun: ActiveRun): void {
-    const deltas = this.events.listByRun(activeRun.runId, "text_delta");
-    const text = deltas
-      .map((e) => typeof (e.payload as Record<string, unknown>)?.text === "string" ? (e.payload as Record<string, unknown>).text as string : "")
-      .join("");
-    if (!text) return;
-
-    const lastDelta = deltas[deltas.length - 1];
-    this.messages.insert({
-      sessionId: activeRun.sessionId,
-      runId: activeRun.runId,
-      role: "assistant",
-      content: text,
-      sourceEventId: lastDelta.id,
-    });
-  }
-
-  private enqueueRunReply(activeRun: ActiveRun): void {
-    if (!this.outbox) return;
-
-    const session = this.sessions.getSession(activeRun.sessionId);
-    if (!session?.channelType || !session.channelRef) return;
-
+  private formatStats(activeRun: ActiveRun, agentType?: string): string {
     const run = this.sessions.getRun(activeRun.runId);
-    if (!run) return;
-
-    const deltas = this.events.listByRun(activeRun.runId, "text_delta");
-    const text = deltas
-      .map((e) => typeof (e.payload as Record<string, unknown>)?.text === "string" ? (e.payload as Record<string, unknown>).text as string : "")
-      .join("");
-
-    if (!text) return;
-
-    const durationSec = run.startedAt && run.stoppedAt
+    const durationSec = run?.startedAt && run?.stoppedAt
       ? ((new Date(run.stoppedAt).getTime() - new Date(run.startedAt).getTime()) / 1000).toFixed(1)
       : null;
 
@@ -361,10 +332,44 @@ export class RuntimeSupervisor {
       if (activeRun.inputTokens > 0) tokenParts.push(`in ${activeRun.inputTokens.toLocaleString()}`);
       if (activeRun.outputTokens > 0) tokenParts.push(`out ${activeRun.outputTokens.toLocaleString()}`);
       statsParts.push(tokenParts.join(" / "));
-      const cost = estimateCost(activeRun.inputTokens, activeRun.outputTokens, session.agentType);
+      const cost = estimateCost(activeRun.inputTokens, activeRun.outputTokens, agentType);
       if (cost > 0) statsParts.push(`$${cost.toFixed(4)}`);
     }
-    const stats = statsParts.length > 0 ? `\n\n${statsParts.join(" · ")}` : "";
+    return statsParts.length > 0 ? `\n\n${statsParts.join(" · ")}` : "";
+  }
+
+  private collectRunText(activeRun: ActiveRun): string {
+    return this.events.listByRun(activeRun.runId, "text_delta")
+      .map((e) => typeof (e.payload as Record<string, unknown>)?.text === "string" ? (e.payload as Record<string, unknown>).text as string : "")
+      .join("");
+  }
+
+  private persistAgentMessage(activeRun: ActiveRun): void {
+    const text = this.collectRunText(activeRun);
+    if (!text) return;
+
+    const deltas = this.events.listByRun(activeRun.runId, "text_delta");
+    const lastDelta = deltas[deltas.length - 1];
+    const stats = this.formatStats(activeRun);
+    this.messages.insert({
+      sessionId: activeRun.sessionId,
+      runId: activeRun.runId,
+      role: "assistant",
+      content: text + stats,
+      sourceEventId: lastDelta.id,
+    });
+  }
+
+  private enqueueRunReply(activeRun: ActiveRun): void {
+    if (!this.outbox) return;
+
+    const session = this.sessions.getSession(activeRun.sessionId);
+    if (!session?.channelType || !session.channelRef) return;
+
+    const text = this.collectRunText(activeRun);
+    if (!text) return;
+
+    const stats = this.formatStats(activeRun, session.agentType);
     const fullText = text + stats;
 
     const channelType = session.channelType as OutboxChannel;

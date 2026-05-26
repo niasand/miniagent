@@ -124,6 +124,8 @@ export type FinishRunInput = {
   stopReason?: string | null;
   errorClass?: string | null;
   stoppedAt?: string;
+  inputTokens?: number;
+  outputTokens?: number;
 };
 
 export type RuntimeProtocolStateUpdate = {
@@ -379,6 +381,8 @@ export class SessionStore {
           exitCode: input.exitCode ?? null,
           stopReason: input.stopReason ?? null,
           errorClass: input.errorClass ?? null,
+          inputTokens: input.inputTokens ?? null,
+          outputTokens: input.outputTokens ?? null,
         },
         createdAt: timestamp,
       });
