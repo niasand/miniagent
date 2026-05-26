@@ -13,6 +13,7 @@ import type {
   RuntimeLaunchContext, RuntimePermissionResponseInput,
 } from "./types.js";
 import { nowIso } from "../../shared/time.js";
+import { estimateCost } from "../../shared/pricing.js";
 import { createId } from "../../shared/ids.js";
 import type { JsonObject, JsonValue } from "../../shared/json.js";
 
@@ -354,8 +355,15 @@ export class RuntimeSupervisor {
 
     const statsParts: string[] = [];
     if (durationSec) statsParts.push(`⏱ ${durationSec}s`);
-    if (activeRun.inputTokens > 0) statsParts.push(`📥 ${activeRun.inputTokens.toLocaleString()} in`);
-    if (activeRun.outputTokens > 0) statsParts.push(`📤 ${activeRun.outputTokens.toLocaleString()} out`);
+    const hasTokens = activeRun.inputTokens > 0 || activeRun.outputTokens > 0;
+    if (hasTokens) {
+      const tokenParts: string[] = [];
+      if (activeRun.inputTokens > 0) tokenParts.push(`in ${activeRun.inputTokens.toLocaleString()}`);
+      if (activeRun.outputTokens > 0) tokenParts.push(`out ${activeRun.outputTokens.toLocaleString()}`);
+      statsParts.push(tokenParts.join(" / "));
+      const cost = estimateCost(activeRun.inputTokens, activeRun.outputTokens, session.agentType);
+      if (cost > 0) statsParts.push(`$${cost.toFixed(4)}`);
+    }
     const stats = statsParts.length > 0 ? `\n\n${statsParts.join(" · ")}` : "";
     const fullText = text + stats;
 
