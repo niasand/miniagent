@@ -702,7 +702,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   }, [text]);
   return (
     <button className="chat-header-copy" title={`复制${label}`} onClick={handleCopy}>
-      {copied ? <CheckCircle2 className="h-3.5 w-3.5 chat-header-copied" /> : <ClipboardCopy className="h-3.5 w-3.5" />}
+      {copied ? <CheckCircle2 className="h-3.5 w-3.5 chat-header-copied" /> : <Copy className="h-3.5 w-3.5" />}
     </button>
   );
 }
