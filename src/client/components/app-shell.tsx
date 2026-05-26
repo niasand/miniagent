@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, CalendarClock, Check, CheckCircle2, ClipboardCopy, Clock, ExternalLink, Loader2, Pause, Pencil, Play, Plus, Search, SendHorizontal, Settings, Sparkles, Target, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, CalendarClock, Check, CheckCircle2, ClipboardCopy, Clock, Copy, ExternalLink, Loader2, Pause, Pencil, Play, Plus, Search, SendHorizontal, Settings, Sparkles, Target, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
@@ -343,7 +343,7 @@ export function AppShell(props: {
                       <strong>{message.author}</strong>
                       {message.time && <span className="chat-time" title={message.createdAt ?? message.time}>{formatMessageTime(message.createdAt ?? message.time)}</span>}
                       <button className="chat-bubble-copy" title="复制" onClick={() => navigator.clipboard.writeText(message.markdown)}>
-                        <ClipboardCopy className="h-3.5 w-3.5" />
+                        <Copy className="h-3.5 w-3.5" />
                       </button>
                     </div>
                     <div className="prose-mini">
