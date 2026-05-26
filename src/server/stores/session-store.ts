@@ -244,9 +244,11 @@ export class SessionStore {
 
     const cronFilter = options.excludeCronOnly
       ? `AND NOT EXISTS (
-          SELECT 1 FROM tasks t
-          WHERE t.session_id = s.id
-          HAVING COUNT(*) > 0 AND COUNT(*) = SUM(CASE WHEN t.source_type = 'cron' THEN 1 ELSE 0 END)
+          SELECT 1 FROM (
+            SELECT session_id FROM tasks WHERE session_id = s.id
+            GROUP BY session_id
+            HAVING COUNT(*) > 0 AND COUNT(*) = SUM(CASE WHEN source_type = 'cron' THEN 1 ELSE 0 END)
+          )
         )`
       : "";
 
