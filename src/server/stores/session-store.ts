@@ -234,6 +234,34 @@ export class SessionStore {
     return rows.map(mapSessionRow);
   }
 
+  listSessionsFiltered(options: {
+    excludeCronOnly?: boolean;
+    limit?: number;
+    offset?: number;
+  } = {}): { sessions: SessionRecord[]; total: number } {
+    const limit = options.limit ?? 50;
+    const offset = options.offset ?? 0;
+
+    const cronFilter = options.excludeCronOnly
+      ? `AND NOT EXISTS (
+          SELECT 1 FROM tasks t
+          WHERE t.session_id = s.id
+          HAVING COUNT(*) > 0 AND COUNT(*) = SUM(CASE WHEN t.source_type = 'cron' THEN 1 ELSE 0 END)
+        )`
+      : "";
+
+    const countRow = this.db.prepare(
+      `SELECT COUNT(*) AS total FROM sessions s WHERE status != 'archived' ${cronFilter}`
+    ).get() as { total: number };
+
+    const rows = this.db.prepare(
+      `SELECT s.* FROM sessions s WHERE status != 'archived' ${cronFilter}
+       ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?`
+    ).all(limit, offset) as SessionRow[];
+
+    return { sessions: rows.map(mapSessionRow), total: countRow.total };
+  }
+
   findSessionByChannel(channelType: string, channelRef: string): SessionRecord | null {
     const row = this.db.prepare(
       "SELECT * FROM sessions WHERE channel_type = ? AND channel_ref = ? AND status != 'archived' ORDER BY updated_at DESC LIMIT 1"

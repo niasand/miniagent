@@ -1,4 +1,5 @@
-import { ArrowDown, ArrowUp, CalendarClock, Check, ClipboardCopy, Clock, ExternalLink, Pause, Pencil, Play, Search, SendHorizontal, Settings, Sparkles, Target, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, CalendarClock, Check, CheckCircle2, ClipboardCopy, Clock, ExternalLink, Loader2, Pause, Pencil, Play, Search, SendHorizontal, Settings, Sparkles, Target, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
@@ -23,6 +24,9 @@ export function AppShell(props: {
   sessionsQuery: string;
   setSessionsQuery: (value: string) => void;
   sessionsSearchRef: React.RefObject<HTMLInputElement | null>;
+  sessionsHasMore: boolean;
+  sessionsLoadingMore: boolean;
+  sessionsSentinelRef: React.RefObject<HTMLDivElement | null>;
   editingSessionId: string | null;
   editingSessionName: string;
   setEditingSessionName: (value: string) => void;
@@ -207,6 +211,11 @@ export function AppShell(props: {
                   </div>
                 );
               })}
+              {props.sessionsHasMore && (
+                <div ref={props.sessionsSentinelRef} className="session-sentinel">
+                  {props.sessionsLoadingMore && <Loader2 className="h-4 w-4 session-sentinel-spinner" />}
+                </div>
+              )}
             </div>
           </>
         )}
@@ -302,6 +311,9 @@ export function AppShell(props: {
       <section className={`detail-pane detail-pane--${props.activeSection}`}>
         {props.activeSection === "workspace" && (
           <div className="chat-main">
+            {props.sessionId && props.messages.length > 0 && (
+              <ChatHeader sessionId={props.sessionId} sessions={props.sessions} />
+            )}
             <div className={`chat-messages ${props.messagesSettling ? "chat-messages--settling" : ""}`} ref={props.messagesContainerRef}>
               {props.messages.length === 0 && (
                 <div className="chat-empty">
@@ -310,6 +322,7 @@ export function AppShell(props: {
                 </div>
               )}
               {props.messages.map((message) => {
+                if (!isMessageDisplayable(message)) return null;
                 if (message.role === "system" && message.markdown.startsWith("Run succeeded")) {
                   return (
                     <div key={message.id} className="chat-stat">
@@ -319,7 +332,6 @@ export function AppShell(props: {
                     </div>
                   );
                 }
-                if (message.role === "system") return null;
                 const isFocusedRun = Boolean(props.focusedRunId && message.runId === props.focusedRunId);
                 return (
                   <div key={message.id} className={`chat-bubble ${message.role} ${isFocusedRun ? "chat-bubble--focused-run" : ""}`} data-run-id={message.runId ?? undefined}>
@@ -646,4 +658,48 @@ function formatMessageTime(value?: string): string {
     minute: "2-digit",
     hour12: false,
   }).format(date);
+}
+
+function isMessageDisplayable(message: { role: string; markdown: string }): boolean {
+  if (message.role === "user") return true;
+  if (message.role === "system" && message.markdown.startsWith("Run succeeded")) return true;
+  if (message.role === "system") return false;
+  if (message.role === "agent" || message.role === "assistant") {
+    const content = message.markdown.trim();
+    if (!content) return false;
+    if (/^<thinking>[\s\S]*<\/thinking>$/.test(content)) return false;
+  }
+  return true;
+}
+
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, [text]);
+  return (
+    <button className="chat-header-copy" title={`复制${label}`} onClick={handleCopy}>
+      {copied ? <CheckCircle2 className="h-3.5 w-3.5 chat-header-copied" /> : <ClipboardCopy className="h-3.5 w-3.5" />}
+    </button>
+  );
+}
+
+function ChatHeader({ sessionId, sessions }: { sessionId: string; sessions: WorkspaceSnapshot["sessions"] }) {
+  const session = sessions.find((s) => s.id === sessionId);
+  const sessionName = session?.name ?? "未命名会话";
+  return (
+    <div className="chat-header">
+      <div className="chat-header-item">
+        <span className="chat-header-name" title={sessionName}>{sessionName}</span>
+        <CopyButton text={sessionName} label="会话名称" />
+      </div>
+      <div className="chat-header-item">
+        <code className="chat-header-id" title={sessionId}>{sessionId.length > 16 ? `${sessionId.slice(0, 8)}...${sessionId.slice(-4)}` : sessionId}</code>
+        <CopyButton text={sessionId} label="会话ID" />
+      </div>
+    </div>
+  );
 }

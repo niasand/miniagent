@@ -23,7 +23,7 @@ export class WorkspaceService {
   }
 
   getSnapshot(selectedSessionId?: string | null): WorkspaceSnapshot {
-    const sessions = this.sessions.listSessions();
+    const { sessions } = this.sessions.listSessionsFiltered({ excludeCronOnly: true, limit: 50 });
     const sessionId = selectedSessionId ?? sessions[0]?.id ?? null;
     const firstUserMessages = this.getFirstUserMessages(sessions.map((session) => session.id));
 
@@ -47,7 +47,7 @@ export class WorkspaceService {
     let keyEvents: Array<[string, string, string]> = [];
 
     if (sessionId) {
-      const msgs = this.messages.getLatestBySession(sessionId, 200);
+      const msgs = this.messages.getLatestBySession(sessionId, 1000);
       messages = msgs.map((m) => ({
         id: m.id,
         runId: m.runId,
@@ -111,6 +111,38 @@ export class WorkspaceService {
       keyEvents,
       contextBudget,
       runtime,
+    };
+  }
+
+  getSessionSummaries(options: {
+    page?: number;
+    limit?: number;
+  } = {}): { sessions: WorkspaceSessionSummary[]; total: number; page: number; hasMore: boolean } {
+    const page = options.page ?? 1;
+    const limit = options.limit ?? 50;
+    const offset = (page - 1) * limit;
+    const { sessions, total } = this.sessions.listSessionsFiltered({ excludeCronOnly: true, limit, offset });
+    const firstUserMessages = this.getFirstUserMessages(sessions.map((s) => s.id));
+
+    const sessionSummaries: WorkspaceSessionSummary[] = sessions.map((s) => ({
+      id: s.id,
+      name: getSessionName(s.name, s.title, s.agentType, firstUserMessages.get(s.id)),
+      title: s.title,
+      agentType: s.agentType as any,
+      agent: (s.agentType.charAt(0).toUpperCase() + s.agentType.slice(1)) as any,
+      initials: s.agentType.slice(0, 2).toUpperCase(),
+      workspace: s.workspacePath,
+      channelType: s.channelType as any,
+      status: this.mapSessionStatus(s.status),
+      updatedAt: s.updatedAt,
+      handoff: undefined,
+    }));
+
+    return {
+      sessions: sessionSummaries,
+      total,
+      page,
+      hasMore: offset + sessions.length < total,
     };
   }
 

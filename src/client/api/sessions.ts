@@ -16,6 +16,22 @@ export type UpdateSessionNameResponse = {
   workspace: WorkspaceSnapshot;
 };
 
+export type FetchSessionsResponse = {
+  sessions: WorkspaceSnapshot["sessions"];
+  total: number;
+  page: number;
+  hasMore: boolean;
+};
+
+export async function fetchSessions(page = 1, limit = 50): Promise<FetchSessionsResponse> {
+  const response = await fetch(`/api/sessions?page=${page}&limit=${limit}`);
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `Fetch sessions API failed: ${response.status}`);
+  }
+  return (await response.json()) as FetchSessionsResponse;
+}
+
 export async function createSession(request: CreateSessionRequest): Promise<CreateSessionResponse> {
   const response = await fetch("/api/sessions", {
     method: "POST",

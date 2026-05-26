@@ -150,6 +150,13 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
 
   // ── Sessions ──
 
+  app.get("/api/sessions", (c) => {
+    const page = Math.max(1, Number(c.req.query("page") ?? 1));
+    const limit = Math.min(100, Math.max(1, Number(c.req.query("limit") ?? 50)));
+    const workspaceService = new WorkspaceService(db, runtimeSupervisor);
+    return c.json(workspaceService.getSessionSummaries({ page, limit }));
+  });
+
   app.post("/api/sessions", async (c) => {
     const body = await c.req.json().catch(() => null);
     if (!body || typeof body !== "object" || Array.isArray(body)) {

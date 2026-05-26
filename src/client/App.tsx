@@ -4,7 +4,7 @@ import { fetchAgents, resolveAgentDefault, setAgentDefault } from "./api/agents.
 import { fetchChannels } from "./api/channels.js";
 import { sendSessionMessage } from "./api/messages.js";
 import { createSchedule, fetchScheduleRuns, fetchSchedules, previewSchedule, updateSchedule, updateScheduleStatus } from "./api/schedules.js";
-import { createSession, updateSessionName } from "./api/sessions.js";
+import { createSession, fetchSessions, updateSessionName } from "./api/sessions.js";
 import { fetchSkills } from "./api/skills.js";
 import type { AgentType, SkillMeta } from "./api/types.js";
 import { AppShell } from "./components/app-shell.js";
@@ -66,6 +66,11 @@ export default function App() {
   const lastGlobalSeqRef = useRef(0);
   const [providerError, setProviderError] = useState<string | null>(null);
   const stableSessionOrderRef = useRef<string[]>([]);
+  const [sessionsPage, setSessionsPage] = useState(1);
+  const [sessionsHasMore, setSessionsHasMore] = useState(true);
+  const [sessionsLoadingMore, setSessionsLoadingMore] = useState(false);
+  const [extraSessions, setExtraSessions] = useState<WorkspaceSnapshot["sessions"]>([]);
+  const sessionsSentinelRef = useRef<HTMLDivElement | null>(null);
 
   const { data: providerRuntimesData, error: providerRuntimesError } = useQuery({
     queryKey: ["agents"],
@@ -116,15 +121,20 @@ export default function App() {
 
   const sessions = snapshot?.sessions ?? [];
   const orderedSessions = useMemo(() => {
-    const nextIds = sessions.map((session) => session.id);
+    const allSessions = [...sessions];
+    const snapshotIds = new Set(sessions.map((s) => s.id));
+    for (const extra of extraSessions) {
+      if (!snapshotIds.has(extra.id)) allSessions.push(extra);
+    }
+    const nextIds = allSessions.map((session) => session.id);
     const existing = stableSessionOrderRef.current.filter((id) => nextIds.includes(id));
     const unseen = nextIds.filter((id) => !existing.includes(id));
     const nextOrder = [...existing, ...unseen];
     stableSessionOrderRef.current = nextOrder;
     return nextOrder
-      .map((id) => sessions.find((session) => session.id === id) ?? null)
+      .map((id) => allSessions.find((session) => session.id === id) ?? null)
       .filter((session): session is NonNullable<typeof session> => session !== null);
-  }, [sessions]);
+  }, [sessions, extraSessions]);
   const selectedSessionId = sessionId ?? snapshot?.selectedSessionId ?? null;
   const selectedSessionName = orderedSessions.find((session) => session.id === selectedSessionId)?.name ?? "当前会话";
 
@@ -230,6 +240,29 @@ export default function App() {
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   };
+
+  // Infinite scroll for session list
+  useEffect(() => {
+    const sentinel = sessionsSentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && sessionsHasMore && !sessionsLoadingMore) {
+          setSessionsLoadingMore(true);
+          const nextPage = sessionsPage + 1;
+          fetchSessions(nextPage).then((data) => {
+            setExtraSessions((prev) => [...prev, ...data.sessions]);
+            setSessionsPage(nextPage);
+            setSessionsHasMore(data.hasMore);
+            setSessionsLoadingMore(false);
+          }).catch(() => setSessionsLoadingMore(false));
+        }
+      },
+      { threshold: 0.1 },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [sessionsHasMore, sessionsLoadingMore, sessionsPage]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -429,6 +462,9 @@ export default function App() {
       setSessionId(data.sessionId);
       localStorage.setItem(SESSION_STORAGE_KEY, data.sessionId);
       queryClient.invalidateQueries({ queryKey: ["workspace", data.sessionId] });
+      setSessionsPage(1);
+      setExtraSessions([]);
+      setSessionsHasMore(true);
     },
   });
 
@@ -655,6 +691,9 @@ export default function App() {
       sessionsQuery={sessionsQuery}
       setSessionsQuery={setSessionsQuery}
       sessionsSearchRef={sessionsSearchRef}
+      sessionsHasMore={sessionsHasMore}
+      sessionsLoadingMore={sessionsLoadingMore}
+      sessionsSentinelRef={sessionsSentinelRef}
       editingSessionId={editingSessionId}
       editingSessionName={editingSessionName}
       setEditingSessionName={setEditingSessionName}
