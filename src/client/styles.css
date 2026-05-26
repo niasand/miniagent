@@ -110,12 +110,19 @@ button { cursor: pointer; }
 }
 
 .side-header {
-  display: grid;
+  display: flex;
+  align-items: baseline;
   gap: 3px;
   padding: 16px 14px 10px;
 }
 
+.side-header .side-eyebrow {
+  flex-shrink: 0;
+}
+
 .side-header h2 {
+  flex: 1;
+  margin: 0;
   margin: 0;
   color: var(--color-foreground);
   font-size: 16px;
@@ -1470,6 +1477,28 @@ button { cursor: pointer; }
 
 .chat-header-copied {
   color: #22c55e;
+}
+
+/* ── New session button ── */
+
+.session-new-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.session-new-btn:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+  border-color: var(--text-muted);
 }
 
 /* ── Session list sentinel ── */

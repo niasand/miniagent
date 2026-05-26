@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, CalendarClock, Check, CheckCircle2, ClipboardCopy, Clock, ExternalLink, Loader2, Pause, Pencil, Play, Search, SendHorizontal, Settings, Sparkles, Target, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, CalendarClock, Check, CheckCircle2, ClipboardCopy, Clock, ExternalLink, Loader2, Pause, Pencil, Play, Plus, Search, SendHorizontal, Settings, Sparkles, Target, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
@@ -27,6 +27,7 @@ export function AppShell(props: {
   sessionsHasMore: boolean;
   sessionsLoadingMore: boolean;
   sessionsSentinelRef: React.RefObject<HTMLDivElement | null>;
+  handleNewSession: () => void;
   editingSessionId: string | null;
   editingSessionName: string;
   setEditingSessionName: (value: string) => void;
@@ -144,6 +145,9 @@ export function AppShell(props: {
             <div className="side-header">
               <span className="side-eyebrow">工作台</span>
               <h2>会话列表</h2>
+              <button className="session-new-btn" title="新建对话" onClick={props.handleNewSession}>
+                <Plus className="h-4 w-4" />
+              </button>
             </div>
             <div className="side-search">
               <Search className="h-4 w-4 side-search-icon" />

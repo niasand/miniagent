@@ -638,6 +638,14 @@ export default function App() {
     queryClient.invalidateQueries({ queryKey: ["workspace", id] });
   };
 
+  const handleNewSession = () => {
+    setSessionId(null);
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+    setFocusedScheduleTarget(null);
+    setDraft("");
+    setActiveSection("workspace");
+  };
+
   const startSessionRename = (id: string, name: string) => {
     setEditingSessionId(id);
     setEditingSessionName(name);
@@ -694,6 +702,7 @@ export default function App() {
       sessionsHasMore={sessionsHasMore}
       sessionsLoadingMore={sessionsLoadingMore}
       sessionsSentinelRef={sessionsSentinelRef}
+      handleNewSession={handleNewSession}
       editingSessionId={editingSessionId}
       editingSessionName={editingSessionName}
       setEditingSessionName={setEditingSessionName}
