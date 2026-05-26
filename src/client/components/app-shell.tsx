@@ -338,18 +338,7 @@ export function AppShell(props: {
                 }
                 const isFocusedRun = Boolean(props.focusedRunId && message.runId === props.focusedRunId);
                 return (
-                  <div key={message.id} className={`chat-bubble ${message.role} ${isFocusedRun ? "chat-bubble--focused-run" : ""}`} data-run-id={message.runId ?? undefined}>
-                    <div className="chat-bubble-header">
-                      <strong>{message.author}</strong>
-                      {message.time && <span className="chat-time" title={message.createdAt ?? message.time}>{formatMessageTime(message.createdAt ?? message.time)}</span>}
-                      <button className="chat-bubble-copy" title="复制" onClick={() => navigator.clipboard.writeText(message.markdown)}>
-                        <Copy className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                    <div className="prose-mini">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{message.markdown}</ReactMarkdown>
-                    </div>
-                  </div>
+                  <MessageBubble key={message.id} message={message} isFocusedRun={isFocusedRun} />
                 );
               })}
               {(props.sendMessagePending || props.isStreaming || props.streamingText) && props.messages[props.messages.length - 1]?.role !== "agent" && (
@@ -677,6 +666,30 @@ function isMessageDisplayable(message: { role: string; markdown: string }): bool
     if (/^<thinking>[\s\S]*<\/thinking>$/.test(content)) return false;
   }
   return true;
+}
+
+function MessageBubble({ message, isFocusedRun }: { message: WorkspaceSnapshot["messages"][number]; isFocusedRun: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(message.markdown).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  return (
+    <div className={`chat-bubble ${message.role} ${isFocusedRun ? "chat-bubble--focused-run" : ""}`} data-run-id={message.runId ?? undefined}>
+      <div className="chat-bubble-header">
+        <strong>{message.author}</strong>
+        {message.time && <span className="chat-time" title={message.createdAt ?? message.time}>{formatMessageTime(message.createdAt ?? message.time)}</span>}
+        <button className={`chat-bubble-copy ${copied ? "chat-bubble-copy--done" : ""}`} title="复制" onClick={handleCopy}>
+          {copied ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+        </button>
+      </div>
+      <div className="prose-mini">
+        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{message.markdown}</ReactMarkdown>
+      </div>
+    </div>
+  );
 }
 
 function CopyButton({ text, label }: { text: string; label: string }) {

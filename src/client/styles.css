@@ -1635,6 +1635,12 @@ button { cursor: pointer; }
   background: var(--bg-hover);
 }
 
+.chat-bubble-copy--done {
+  opacity: 1;
+  color: #22c55e;
+  pointer-events: none;
+}
+
 .chat-typing { color: var(--color-muted-foreground); font-style: italic; }
 
 .chat-stat {
