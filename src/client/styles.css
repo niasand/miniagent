@@ -1610,6 +1610,31 @@ button { cursor: pointer; }
   font-variant-numeric: tabular-nums;
 }
 
+.chat-bubble-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  color: var(--text-muted);
+  border-radius: 4px;
+  flex-shrink: 0;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.chat-bubble:hover .chat-bubble-copy {
+  opacity: 1;
+}
+
+.chat-bubble-copy:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
 .chat-typing { color: var(--color-muted-foreground); font-style: italic; }
 
 .chat-stat {
