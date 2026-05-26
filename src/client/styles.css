@@ -549,7 +549,7 @@ button { cursor: pointer; }
   background: var(--color-muted-foreground);
 }
 
-.session-status--idle .session-dot { background: var(--color-muted-foreground); }
+.session-status--idle .session-dot { background: #22c55e; }
 .session-status--running .session-dot { background: #22c55e; }
 .session-status--failed .session-dot { background: #ef4444; }
 .session-status--compact .session-dot { background: #f59e0b; }
