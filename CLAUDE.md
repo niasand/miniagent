@@ -1,5 +1,23 @@
 @ARCHITECTURE.md
 
+## 启动方式
+
+需要两个终端，分别启动 API 和前端：
+
+```bash
+# Terminal 1 — API 服务（端口 7273）
+npm run db:migrate   # 首次或 schema 变更后执行
+npm run dev:api
+
+# Terminal 2 — 前端（端口 7272，/api 自动代理到 7273）
+npm run dev
+```
+
+- 前端访问：http://127.0.0.1:7272
+- API 端口可通过 `MINIAGENT_API_PORT` 环境变量覆盖
+- 重启服务：先 `Ctrl+C` 停止，再重新运行对应命令
+- 杀残留进程：`kill $(lsof -ti :7273)` 和 `kill $(lsof -ti :7272)`
+
 ## 项目规则
 
 ### 知识库（IMPORTANT）
