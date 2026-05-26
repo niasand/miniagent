@@ -5,27 +5,30 @@
   "userStories": [
     {
       "id": "US-001",
-      "title": "Add listSessionsFiltered method to filter out cron-only sessions",
-      "description": "As a developer, I need a backend method to list sessions excluding those that only have cron tasks, so the UI only shows user-initiated conversations.",
+      "title": "Add paginated listSessionsFiltered with cron-only exclusion and cursor",
+      "description": "As a developer, I need a backend method to list sessions excluding cron-only sessions, with cursor-based pagination (limit=50, offset), so the UI can load sessions page by page.",
       "acceptanceCriteria": [
-        "Add `listSessionsFiltered(options: { excludeCronOnly?: boolean })` method to SessionStore",
+        "Add `listSessionsFiltered(options: { excludeCronOnly?: boolean; limit?: number; offset?: number })` method to SessionStore",
         "A session is 'cron-only' if ALL its tasks have source_type = 'cron' (i.e. no web/feishu user messages)",
         "Use SQL subquery: exclude sessions where NOT EXISTS a task with source_type != 'cron'",
-        "Method still returns sessions ordered by updated_at DESC, with configurable limit (default 100)",
+        "Default limit=50, default offset=0. Returns `{ sessions: SessionRecord[]; total: number }`",
+        "Method still returns sessions ordered by updated_at DESC",
         "Existing `listSessions()` method remains unchanged for backward compatibility",
         "Typecheck passes",
         "Tests pass"
       ],
       "priority": 1,
       "passes": false,
-      "notes": "Key SQL pattern: WHERE NOT EXISTS (SELECT 1 FROM tasks t WHERE t.session_id = s.id AND t.source_type != 'cron' AND t.source_type IS NOT NULL) — sessions with zero tasks should still appear (new empty sessions)"
+      "notes": "SQL: WHERE status != 'archived' AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.session_id = s.id AND t.source_type != 'cron'). Use COUNT(*) OVER() window or a separate count query for total. Sessions with zero tasks should still appear (new empty sessions)."
     },
     {
       "id": "US-002",
-      "title": "Update WorkspaceService.getSnapshot to use filtered session list",
-      "description": "As a developer, I need the workspace snapshot to use the filtered session list so the web UI automatically shows only non-cron sessions.",
+      "title": "Add paginated sessions API endpoint and update snapshot",
+      "description": "As a developer, I need a dedicated API endpoint for paginated session listing and the workspace snapshot to use the filtered session list.",
       "acceptanceCriteria": [
-        "Update `WorkspaceService.getSnapshot()` to call `listSessionsFiltered({ excludeCronOnly: true })` instead of `listSessions()`",
+        "Add `GET /api/sessions?page=1&limit=50` endpoint returning `{ sessions: WorkspaceSessionSummary[]; total: number; page: number; hasMore: boolean }`",
+        "Endpoint uses `listSessionsFiltered({ excludeCronOnly: true, limit, offset })` internally",
+        "Update `WorkspaceService.getSnapshot()` to call `listSessionsFiltered({ excludeCronOnly: true })` for the initial snapshot (page 1, limit 50)",
         "The snapshot still includes all session fields (id, name, title, agentType, channelType, status, updatedAt)",
         "selectedSessionId fallback logic (pick first from filtered list) still works",
         "Typecheck passes",
@@ -33,7 +36,7 @@
       ],
       "priority": 2,
       "passes": false,
-      "notes": ""
+      "notes": "The workspace snapshot endpoint remains unchanged for backward compatibility. The new sessions endpoint is used by the frontend infinite scroll."
     },
     {
       "id": "US-003",
@@ -119,6 +122,27 @@
       "priority": 7,
       "passes": false,
       "notes": "Current code: `this.messages.getLatestBySession(sessionId, 200)`. The MessageStore.getLatestBySession already accepts a limit parameter. For MVP, just increase to 1000. For later, add cursor-based pagination."
+    },
+    {
+      "id": "US-008",
+      "title": "Implement infinite scroll pagination for session list sidebar",
+      "description": "As a user, I want the session list sidebar to show 50 sessions initially, and automatically load the next 50 when I scroll to the bottom, so the list stays performant even with many sessions.",
+      "acceptanceCriteria": [
+        "Add `fetchSessions(page: number)` client API function calling `GET /api/sessions?page=N&limit=50`",
+        "App component tracks `sessionsPage` state (starts at 1) and `sessionsHasMore` boolean",
+        "Session list sidebar uses `overflow-y: auto` with a scroll event listener or IntersectionObserver on a sentinel element at the bottom",
+        "When user scrolls to the last session item (or sentinel enters viewport), increment page and fetch next batch",
+        "Append new sessions to the existing list (do not replace)",
+        "Show a small loading indicator at the bottom while fetching the next page",
+        "Stop loading when `hasMore` is false (total sessions loaded >= total from API response)",
+        "Search/filter still works on the locally loaded sessions (no server-side search for MVP)",
+        "After sending a message or creating a new session, reset to page 1 and reload",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "Use IntersectionObserver on a sentinel div at the bottom of the session list for reliable detection. Avoid scroll event throttling complexity. The `filteredSessions` array used for search stays client-side over already-loaded sessions."
     }
   ]
 }
