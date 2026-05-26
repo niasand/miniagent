@@ -717,7 +717,7 @@ function ChatHeader({ sessionId, sessions }: { sessionId: string; sessions: Work
         <CopyButton text={sessionName} label="会话名称" />
       </div>
       <div className="chat-header-item">
-        <code className="chat-header-id" title={sessionId}>{sessionId.length > 16 ? `${sessionId.slice(0, 8)}...${sessionId.slice(-4)}` : sessionId}</code>
+        <code className="chat-header-id" title={sessionId}>{sessionId.length > 8 ? `...${sessionId.slice(-8)}` : sessionId}</code>
         <CopyButton text={sessionId} label="会话ID" />
       </div>
     </div>

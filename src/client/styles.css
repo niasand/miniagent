@@ -1425,7 +1425,7 @@ button { cursor: pointer; }
 .chat-header {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 24px;
   padding: 8px 16px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-elevated);
