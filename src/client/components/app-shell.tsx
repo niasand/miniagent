@@ -157,6 +157,7 @@ export function AppShell(props: {
                 className="side-search-input"
                 value={props.sessionsQuery}
                 onChange={(event) => props.setSessionsQuery(event.currentTarget.value)}
+                onKeyDown={(event) => { if (event.key === "Escape") props.setSessionsQuery(""); }}
                 placeholder="搜索会话..."
               />
             </div>
