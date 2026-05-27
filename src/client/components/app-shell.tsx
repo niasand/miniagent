@@ -113,8 +113,9 @@ export function AppShell(props: {
   handleKeyDown: (event: React.KeyboardEvent) => void;
   handleSend: () => void;
 }) {
-  const filteredSessions = props.sessionsQuery.trim()
-    ? props.sessions.filter((session) => session.name.toLowerCase().includes(props.sessionsQuery.trim().toLowerCase()))
+  const q = props.sessionsQuery.trim().toLowerCase();
+  const filteredSessions = q
+    ? props.sessions.filter((session) => session.name.toLowerCase().includes(q) || session.id.includes(q))
     : props.sessions;
 
   return (
