@@ -7,13 +7,14 @@ import { OutboxStore, type OutboxChannel, type OutboxKind } from "../stores/outb
 import { RuntimeAdapterRegistry } from "./registry.js";
 import { TextDeltaBatcher } from "./text-delta-batcher.js";
 import { ChildProcessFactory, type RuntimeProcess, type RuntimeProcessExit } from "./process.js";
+import { resolvePermissionPolicy } from "./permission-policy.js";
+import { ContextBudgetStore } from "../stores/context-budget-store.js";
 import type {
   RuntimeSessionDriver, RuntimeRunHandle, RuntimeInput,
   RuntimeEventDraft, RuntimeDriverCallbacks, RuntimeErrorClassification,
   RuntimeLaunchContext, RuntimePermissionResponseInput,
 } from "./types.js";
 import { nowIso } from "../../shared/time.js";
-import { estimateCost } from "../../shared/pricing.js";
 import { createId } from "../../shared/ids.js";
 import type { JsonObject, JsonValue } from "../../shared/json.js";
 
@@ -307,6 +308,32 @@ export class RuntimeSupervisor {
           options: draft.payload.options,
           toolCall: draft.payload.toolCall,
         });
+
+        // Auto-approve for non-interactive channels based on permission policy
+        const session = this.sessions.getSession(activeRun.sessionId);
+        if (session?.channelType && resolvePermissionPolicy(session.channelType) === "auto_approve") {
+          const allowOption = findAllowOption(draft.payload.options);
+          if (allowOption && activeRun.handle.respondPermission) {
+            activeRun.handle.respondPermission({
+              requestId: String(draft.payload.requestId),
+              outcome: "selected",
+              optionId: allowOption.optionId,
+            });
+            this.permissionRequests.respond(
+              activeRun.runId,
+              String(draft.payload.requestId),
+              "approved",
+              allowOption.optionId,
+            );
+            this.sessions.setRunStatus(activeRun.runId, "running");
+            console.log(
+              `[Runtime] Auto-approved permission for ${session.channelType} channel:`,
+              (draft.payload.toolCall as Record<string, unknown>)?.title ?? "unknown tool",
+            );
+            continue;
+          }
+        }
+
         this.sessions.setRunStatus(activeRun.runId, "waiting_permission");
       }
     }
@@ -325,15 +352,21 @@ export class RuntimeSupervisor {
       : null;
 
     const statsParts: string[] = [];
-    if (durationSec) statsParts.push(`⏱ ${durationSec}s`);
+    if (durationSec) statsParts.push(`${durationSec}s`);
     const hasTokens = activeRun.inputTokens > 0 || activeRun.outputTokens > 0;
     if (hasTokens) {
       const tokenParts: string[] = [];
       if (activeRun.inputTokens > 0) tokenParts.push(`in ${activeRun.inputTokens.toLocaleString()}`);
       if (activeRun.outputTokens > 0) tokenParts.push(`out ${activeRun.outputTokens.toLocaleString()}`);
       statsParts.push(tokenParts.join(" / "));
-      const cost = estimateCost(activeRun.inputTokens, activeRun.outputTokens, agentType);
-      if (cost > 0) statsParts.push(`$${cost.toFixed(4)}`);
+    }
+    const budget = new ContextBudgetStore(this.db).get(activeRun.sessionId);
+    if (budget) {
+      const pct = Math.round(budget.usageRatio * 100);
+      statsParts.push(`context: ${pct}%`);
+    } else if (activeRun.inputTokens > 0) {
+      const pct = Math.round((activeRun.inputTokens / 200_000) * 100);
+      statsParts.push(`context: ${pct}%`);
     }
     return statsParts.length > 0 ? `\n\n${statsParts.join(" · ")}` : "";
   }
@@ -442,4 +475,12 @@ function splitChunks(text: string, maxLen: number): string[] {
     rest = rest.slice(cut);
   }
   return chunks;
+}
+
+function findAllowOption(options: unknown): { optionId: string } | null {
+  if (!Array.isArray(options)) return null;
+  const allow = options.find(
+    (o: Record<string, unknown>) => o.kind === "allow_once" || o.optionId === "allow",
+  );
+  return allow ? { optionId: String(allow.optionId) } : null;
 }

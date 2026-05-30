@@ -62,7 +62,6 @@ export class QQChannel implements ChannelAdapter {
   async send(targetRef: string, content: string): Promise<SendResult> {
     const token = await this.getToken();
     const headers = { Authorization: `QQBot ${token}`, "Content-Type": "application/json" };
-
     if (targetRef.startsWith("c2c:")) {
       const openid = targetRef.slice(4);
       const res = await fetch(`${API_BASE}/v2/users/${openid}/messages`, {
