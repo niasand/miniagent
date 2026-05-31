@@ -127,16 +127,18 @@ src/
 
 ## 支持的渠道
 
-| 渠道 | 状态 |
-|------|------|
-| Web UI | ✅ MVP |
-| 飞书 / Lark | ✅ MVP |
-| QQ | 🔌 适配器就绪 |
-| Telegram | 🔌 适配器就绪 |
-| 微信 | 🔌 适配器就绪 |
-| 钉钉 | 🔌 适配器就绪 |
-| Discord | 🔌 适配器就绪 |
-| 企业微信 | 🔌 适配器就绪 |
+| 渠道 | 适配器 | 说明 |
+|------|--------|------|
+| Web UI | ✅ 内置 | SSE 流式推送，无需额外配置 |
+| 飞书 / Lark | ✅ WebSocket | App ID + Secret |
+| QQ | ✅ WebSocket | App ID + Secret |
+| Telegram | ✅ 长轮询 | Bot Token |
+| 微信 | ✅ 长轮询 | 扫码登录 |
+| 钉钉 | ✅ Webhook | Client ID + Secret |
+| Discord | ✅ WebSocket | Bot Token |
+| 企业微信 | ✅ Webhook | Bot ID + Secret |
+
+渠道状态实时反映：**已连接**（适配器运行中）、**已配置**（凭据已保存，未启动）、**可配置**（需要填写配置）。
 
 ## 开发
 

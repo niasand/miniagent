@@ -127,16 +127,18 @@ src/
 
 ## Supported Channels
 
-| Channel | Status |
-|---------|--------|
-| Web UI | ✅ MVP |
-| Feishu / Lark | ✅ MVP |
-| QQ | 🔌 Adapter ready |
-| Telegram | 🔌 Adapter ready |
-| WeChat | 🔌 Adapter ready |
-| DingTalk | 🔌 Adapter ready |
-| Discord | 🔌 Adapter ready |
-| WeCom | 🔌 Adapter ready |
+| Channel | Adapter | Notes |
+|---------|---------|-------|
+| Web UI | ✅ Built-in | SSE streaming, no extra config |
+| Feishu / Lark | ✅ WebSocket | App ID + Secret |
+| QQ | ✅ WebSocket | App ID + Secret |
+| Telegram | ✅ Long polling | Bot Token |
+| WeChat | ✅ Long polling | QR code login |
+| DingTalk | ✅ Webhook | Client ID + Secret |
+| Discord | ✅ WebSocket | Bot Token |
+| WeCom | ✅ Webhook | Bot ID + Secret |
+
+Channel status is reflected in real-time: **Connected** (adapter running), **Configured** (credentials saved, not started), or **Available** (needs configuration).
 
 ## Development
 
