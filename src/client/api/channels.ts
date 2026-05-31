@@ -1,7 +1,7 @@
 export type ChannelInfo = {
   id: string;
   label: string;
-  status: "connected" | "available" | "disconnected";
+  status: "connected" | "configured" | "available" | "disconnected";
   description: string;
   config?: Record<string, string>;
 };

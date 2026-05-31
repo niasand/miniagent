@@ -12,6 +12,7 @@ export function formatProviderStatus(status: WorkspaceAgentHealthStatus | "unkno
 
 export function formatChannelStatus(status: ChannelInfo["status"]): string {
   if (status === "connected") return "已连接";
+  if (status === "configured") return "已配置";
   if (status === "available") return "可配置";
   return "离线";
 }

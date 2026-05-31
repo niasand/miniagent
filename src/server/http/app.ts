@@ -678,13 +678,25 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
 
   app.get("/api/channels", (c) => {
     const configStore = new ChannelConfigStore(db);
-    const channels = configStore.listChannels().map((ch) => ({
-      id: ch.channelId,
-      label: ch.label,
-      status: (ch.channelId === "web" ? "connected" : ch.configured ? "connected" : "available") as "connected" | "available" | "disconnected",
-      description: `${ch.label} channel`,
-      config: ch.config,
-    }));
+    const channels = configStore.listChannels().map((ch) => {
+      let status: "connected" | "configured" | "available" | "disconnected";
+      if (ch.channelId === "web") {
+        status = "connected";
+      } else if (channelRegistry.get(ch.channelId)) {
+        status = "connected";
+      } else if (ch.configured) {
+        status = "configured";
+      } else {
+        status = "available";
+      }
+      return {
+        id: ch.channelId,
+        label: ch.label,
+        status,
+        description: `${ch.label} channel`,
+        config: ch.config,
+      };
+    });
     return c.json({ channels });
   });
 

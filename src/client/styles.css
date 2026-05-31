@@ -1069,6 +1069,13 @@ button { cursor: pointer; }
   color: #16a34a;
 }
 
+.channel-status--configured .channel-dot { background: #3b82f6; }
+.channel-status--configured {
+  border-color: color-mix(in srgb, #3b82f6 22%, transparent);
+  background: color-mix(in srgb, #3b82f6 8%, var(--color-surface));
+  color: #2563eb;
+}
+
 .channel-status--available .channel-dot { background: #d97706; }
 .channel-status--available {
   border-color: color-mix(in srgb, #d97706 22%, transparent);
