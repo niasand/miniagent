@@ -25,6 +25,8 @@ export class WeChatChannel implements ChannelAdapter {
       if (!res.ok) return { ok: false, message: `HTTP ${res.status}` };
       const data = await res.json().catch(() => null) as WeChatApiStatus | null;
       if (!data) return { ok: false, message: "Invalid WeChat response" };
+      // errcode=-14 means "session not established" — proves the token is accepted
+      if (data.errcode === -14) return { ok: true, message: "Connected" };
       const error = wechatApiError(data);
       if (error) return { ok: false, message: error };
       return { ok: true, message: "Connected" };
