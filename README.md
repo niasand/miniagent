@@ -2,6 +2,8 @@
 
 > Local control plane for CLI agents — run, manage, and bridge Codex CLI, Claude Code, and Trae CLI to Web UI and chat channels.
 
+[中文文档](./README.zh-CN.md)
+
 ## What It Does
 
 MiniAgent is **not** another AI agent. It's a **control plane** that orchestrates existing CLI agents (Codex CLI, Claude Code, Trae CLI) behind a unified interface:
@@ -84,10 +86,10 @@ src/
 ├── client/                  # React frontend
 │   ├── api/                 # API client hooks
 │   ├── components/          # UI components
-│   │   ├── ui/              # Primitive components (Button, Badge, Tabs)
+│   │   ├── ui/              # Primitives (Button, Badge, Tabs)
 │   │   ├── app-shell.tsx    # Main app layout
 │   │   ├── channel-card.tsx # Channel status cards
-│   │   └── controls.tsx    # Session controls
+│   │   └── controls.tsx     # Session controls
 │   └── App.tsx
 ├── server/
 │   ├── channels/            # Chat channel adapters
@@ -127,8 +129,8 @@ src/
 
 | Channel | Status |
 |---------|--------|
-| Feishu / Lark | ✅ MVP |
 | Web UI | ✅ MVP |
+| Feishu / Lark | ✅ MVP |
 | QQ | 🔌 Adapter ready |
 | Telegram | 🔌 Adapter ready |
 | WeChat | 🔌 Adapter ready |
