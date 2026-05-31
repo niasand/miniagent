@@ -138,7 +138,6 @@ export function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSave
             return;
           }
           if (status.status === "confirmed" && status.bot_token) {
-            setQrStatus("confirmed");
             setQrPolling(false);
             qrPollingRef.current = false;
             try {
@@ -148,6 +147,15 @@ export function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSave
               setError(saveError instanceof Error ? saveError.message : "保存配置失败");
               return;
             }
+            // Auto-test connection and clean up QR
+            try {
+              const result = await testChannel("wechat");
+              setTestResult(result);
+            } catch {
+              setTestResult({ ok: false, message: "测试连接失败" });
+            }
+            setQrUrl(null);
+            setQrStatus("");
             onSaved();
             return;
           }
