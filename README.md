@@ -161,4 +161,4 @@ npm run build
 
 ## License
 
-Private — not open source.
+[MIT](./LICENSE)
