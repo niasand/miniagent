@@ -480,11 +480,18 @@ function mapSessionUpdate(params: JsonValue): RuntimeEventDraft[] {
   const kind = readString(update, "sessionUpdate") ?? "unknown";
 
   if (kind === "agent_message_chunk") {
+    // Skip thinking blocks — internal reasoning should not be delivered to users
+    const content = asJsonObject(update.content);
+    if (typeof content.type === "string" && content.type !== "text") {
+      return [];
+    }
+    const text = readContentText(update.content);
+    if (!text) return [];
     return [
       {
         type: "text_delta",
         payload: {
-          text: readContentText(update.content),
+          text,
           receivedAt: nowIso(),
           protocol: "acp",
           sessionId,
