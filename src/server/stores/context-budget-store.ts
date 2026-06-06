@@ -62,6 +62,9 @@ export class ContextBudgetStore {
 
   setCompacted(sessionId: string, contextPackId: string, tokenEstimate: number): void {
     const now = nowIso();
+    if (!this.get(sessionId)) {
+      this.upsert({ sessionId, tokenEstimate });
+    }
     const budget = this.get(sessionId);
     const budgetTokens = budget?.budgetTokens ?? 200_000;
     const usageRatio = budgetTokens > 0 ? tokenEstimate / budgetTokens : 0;

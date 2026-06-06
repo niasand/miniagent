@@ -416,6 +416,10 @@ class AcpRunHandle implements RuntimeRunHandle {
       return;
     }
     this.finished = true;
+    for (const resolve of this.pendingPermissions.values()) {
+      resolve({ outcome: { outcome: "cancelled" } });
+    }
+    this.pendingPermissions.clear();
     this.callbacks.exit(exit);
   }
 
