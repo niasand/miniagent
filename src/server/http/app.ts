@@ -1083,7 +1083,8 @@ function handleScheduleStatusUpdate(
       action === "resume" ? schedulerService.resume(scheduleId) :
       schedulerService.cancel(scheduleId);
 
-    return c.json({ schedule: mapSchedule(schedule!) });
+    if (!schedule) return c.json({ error: "Schedule not found" }, 404);
+    return c.json({ schedule: mapSchedule(schedule) });
   } catch (error) {
     const message = error instanceof Error ? error.message : `Schedule ${action} failed`;
     return c.json({ error: message }, 500);
