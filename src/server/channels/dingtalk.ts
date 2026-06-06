@@ -1,4 +1,5 @@
-import type { ChannelAdapter, ChannelMessage, SendResult, TestResult } from "./types.js";
+import type { ChannelMessage, SendResult, TestResult } from "./types.js";
+import { BaseChannel } from "./base-channel.js";
 
 const TOKEN_URL = "https://oapi.dingtalk.com/gettoken";
 const C2C_SEND_URL = "https://api.dingtalk.com/v1.0/robot/oToMessages/batchSend";
@@ -7,28 +8,27 @@ const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
 type TokenInfo = { accessToken: string; expiresAt: number };
 
-export class DingTalkChannel implements ChannelAdapter {
+export class DingTalkChannel extends BaseChannel {
   readonly channelType = "dingtalk";
   private token: TokenInfo | null = null;
-  private stopped = false;
   // Cache senderStaffId for C2C replies (keyed by senderId)
   private senderStaffIds = new Map<string, string>();
 
-  constructor(private readonly config: Record<string, string>) {}
+  constructor(private readonly config: Record<string, string>) {
+    super();
+  }
 
   async test(): Promise<TestResult> {
     const { client_id, client_secret } = this.config;
     if (!client_id || !client_secret) return { ok: false, message: "client_id or client_secret is empty" };
-    try {
+    return this.safeTest(async () => {
       const url = `${TOKEN_URL}?appkey=${client_id}&appsecret=${client_secret}`;
       const res = await fetch(url);
       if (!res.ok) return { ok: false, message: `HTTP ${res.status}` };
       const data = await res.json() as { access_token?: string; errcode?: number };
       if (!data.access_token) return { ok: false, message: `Error code: ${data.errcode}` };
       return { ok: true, message: "Connected" };
-    } catch (e) {
-      return { ok: false, message: e instanceof Error ? e.message : "Connection failed" };
-    }
+    });
   }
 
   async start(onMessage: (msg: ChannelMessage) => void): Promise<void> {
@@ -44,9 +44,7 @@ export class DingTalkChannel implements ChannelAdapter {
     }
   }
 
-  stop(): void {
-    this.stopped = true;
-  }
+  // stop() inherited from BaseChannel
 
   async send(targetRef: string, content: string): Promise<SendResult> {
     const token = await this.getAccessToken();

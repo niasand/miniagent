@@ -1,4 +1,5 @@
-import type { ChannelAdapter, ChannelMessage, SendResult, TestResult } from "./types.js";
+import type { ChannelMessage, SendResult, TestResult } from "./types.js";
+import { BaseChannel } from "./base-channel.js";
 
 const TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken";
 const API_BASE = "https://api.sgroup.qq.com";
@@ -13,11 +14,12 @@ const OP_HEARTBEAT_ACK = 11;
 
 const INTENTS_PUBLIC_MESSAGES = 1 << 25;
 const REFRESH_BUFFER_MS = 300_000;
+const MAX_BACKOFF_MS = 30_000;
 
 type TokenInfo = { accessToken: string; expiresAt: number };
 type WsPayload = { op: number; d?: unknown; s?: number; t?: string };
 
-export class QQChannel implements ChannelAdapter {
+export class QQChannel extends BaseChannel {
   readonly channelType = "qq";
   private token: TokenInfo | null = null;
   private ws: WebSocket | null = null;
@@ -25,16 +27,16 @@ export class QQChannel implements ChannelAdapter {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private sessionId: string | null = null;
   private lastSeq: number | null = null;
-  private attempt = 0;
-  private stopped = false;
   private msgSeqCounters = new Map<string, number>();
 
-  constructor(private readonly config: Record<string, string>) {}
+  constructor(private readonly config: Record<string, string>) {
+    super();
+  }
 
   async test(): Promise<TestResult> {
     const { app_id, app_secret } = this.config;
     if (!app_id || !app_secret) return { ok: false, message: "app_id or app_secret is empty" };
-    try {
+    return this.safeTest(async () => {
       const res = await fetch(TOKEN_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -44,9 +46,7 @@ export class QQChannel implements ChannelAdapter {
       const data = await res.json() as { access_token?: string };
       if (!data.access_token) return { ok: false, message: "No access_token in response" };
       return { ok: true, message: "Connected" };
-    } catch (e) {
-      return { ok: false, message: e instanceof Error ? e.message : "Connection failed" };
-    }
+    });
   }
 
   async start(onMessage: (msg: ChannelMessage) => void): Promise<void> {
@@ -55,7 +55,7 @@ export class QQChannel implements ChannelAdapter {
   }
 
   stop(): void {
-    this.stopped = true;
+    super.stop();
     this.cleanup();
   }
 
@@ -204,8 +204,7 @@ export class QQChannel implements ChannelAdapter {
 
   private scheduleReconnect(onMessage: (msg: ChannelMessage) => void): void {
     if (this.stopped) return;
-    const delay = Math.min(1000 * 2 ** this.attempt, 30_000);
-    this.attempt++;
+    const delay = this.nextBackoffMs(MAX_BACKOFF_MS);
     console.log(`[QQ] Reconnecting in ${delay}ms (attempt ${this.attempt})`);
     this.reconnectTimer = setTimeout(() => this.connect(onMessage), delay);
   }

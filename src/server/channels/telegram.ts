@@ -1,18 +1,19 @@
-import type { ChannelAdapter, ChannelMessage, SendResult, TestResult } from "./types.js";
+import type { ChannelMessage, SendResult, TestResult } from "./types.js";
+import { BaseChannel } from "./base-channel.js";
 
 const API_BASE = "https://api.telegram.org";
 const POLL_TIMEOUT_S = 30;
 const MAX_BACKOFF_MS = 30_000;
 
-export class TelegramChannel implements ChannelAdapter {
+export class TelegramChannel extends BaseChannel {
   readonly channelType = "telegram";
-  private stopped = false;
   private abortController: AbortController | null = null;
   private offset = 0;
-  private attempt = 0;
   private botUsername: string | null = null;
 
-  constructor(private readonly config: Record<string, string>) {}
+  constructor(private readonly config: Record<string, string>) {
+    super();
+  }
 
   async start(onMessage: (msg: ChannelMessage) => void): Promise<void> {
     this.stopped = false;
@@ -35,19 +36,17 @@ export class TelegramChannel implements ChannelAdapter {
   async test(): Promise<TestResult> {
     const token = this.config.bot_token;
     if (!token) return { ok: false, message: "Bot token is empty" };
-    try {
+    return this.safeTest(async () => {
       const res = await fetch(`${API_BASE}/bot${token}/getMe`);
       if (!res.ok) return { ok: false, message: `HTTP ${res.status}` };
       const data = await res.json() as { result?: { username?: string; first_name?: string } };
       const name = data.result?.first_name ?? data.result?.username ?? "Bot";
       return { ok: true, message: `Connected: ${name} (@${data.result?.username})` };
-    } catch (e) {
-      return { ok: false, message: e instanceof Error ? e.message : "Network error" };
-    }
+    });
   }
 
   stop(): void {
-    this.stopped = true;
+    super.stop();
     this.abortController?.abort();
   }
 
@@ -82,7 +81,7 @@ export class TelegramChannel implements ChannelAdapter {
 
       if (res.status === 429) {
         const body = await res.json() as { parameters?: { retry_after?: number } };
-        await sleep((body.parameters?.retry_after ?? 1) * 1000);
+        await BaseChannel.sleep((body.parameters?.retry_after ?? 1) * 1000);
         continue;
       }
 
@@ -124,10 +123,9 @@ export class TelegramChannel implements ChannelAdapter {
       } catch (err) {
         if (this.stopped) break;
         if (err instanceof DOMException && err.name === "AbortError") break;
-        const delay = Math.min(1000 * 2 ** this.attempt, MAX_BACKOFF_MS);
-        this.attempt++;
+        const delay = this.nextBackoffMs(MAX_BACKOFF_MS);
         console.error(`[Telegram] Poll error, retrying in ${delay}ms:`, err instanceof Error ? err.message : err);
-        await sleep(delay);
+        await BaseChannel.sleep(delay);
       }
     }
   }
@@ -142,10 +140,6 @@ type TelegramUpdate = {
     text?: string;
   };
 };
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 /**
  * Convert agent markdown output to Telegram HTML.

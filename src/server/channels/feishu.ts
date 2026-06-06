@@ -1,5 +1,6 @@
 import * as lark from "@larksuiteoapi/node-sdk";
-import type { ChannelAdapter, ChannelMessage, SendResult, TestResult } from "./types.js";
+import type { ChannelMessage, SendResult, TestResult } from "./types.js";
+import { BaseChannel } from "./base-channel.js";
 
 type MessageListResult = {
   items?: Array<{
@@ -9,7 +10,7 @@ type MessageListResult = {
   }>;
 };
 
-export class FeishuChannel implements ChannelAdapter {
+export class FeishuChannel extends BaseChannel {
   readonly channelType = "feishu";
   private wsClient: lark.WSClient | null = null;
   private larkClient: lark.Client | null = null;
@@ -19,19 +20,19 @@ export class FeishuChannel implements ChannelAdapter {
   private onMessageRef: ((msg: ChannelMessage) => void) | null = null;
   private knownChats = new Set<string>(); // track chats we've seen
 
-  constructor(private readonly config: Record<string, string>) {}
+  constructor(private readonly config: Record<string, string>) {
+    super();
+  }
 
   async test(): Promise<TestResult> {
     const { app_id, app_secret } = this.config;
     if (!app_id || !app_secret) return { ok: false, message: "app_id or app_secret is empty" };
-    try {
+    return this.safeTest(async () => {
       const client = new lark.Client({ appId: app_id, appSecret: app_secret, appType: lark.AppType.SelfBuild });
       const res = await client.auth.tenantAccessToken.internal({ data: { app_id, app_secret } });
       if (res.code !== 0) return { ok: false, message: `Feishu error: ${res.msg}` };
       return { ok: true, message: "Connected" };
-    } catch (e) {
-      return { ok: false, message: e instanceof Error ? e.message : "Connection failed" };
-    }
+    });
   }
 
   async start(onMessage: (msg: ChannelMessage) => void): Promise<void> {
@@ -178,6 +179,7 @@ export class FeishuChannel implements ChannelAdapter {
   }
 
   stop(): void {
+    super.stop();
     if (this.backfillTimer) {
       clearInterval(this.backfillTimer);
       this.backfillTimer = null;

@@ -1,34 +1,33 @@
-import type { ChannelAdapter, ChannelMessage, SendResult, TestResult } from "./types.js";
+import type { ChannelMessage, SendResult, TestResult } from "./types.js";
+import { BaseChannel } from "./base-channel.js";
 
 const API_BASE = "https://discord.com/api/v10";
 const MAX_BACKOFF_MS = 30_000;
 
-export class DiscordChannel implements ChannelAdapter {
+export class DiscordChannel extends BaseChannel {
   readonly channelType = "discord";
   private ws: WebSocket | null = null;
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
-  private stopped = false;
-  private attempt = 0;
   private seq: number | null = null;
   private sessionId: string | null = null;
   private resumeUrl: string | null = null;
   private botUserId: string | null = null;
 
-  constructor(private readonly config: Record<string, string>) {}
+  constructor(private readonly config: Record<string, string>) {
+    super();
+  }
 
   async test(): Promise<TestResult> {
     const token = this.config.bot_token;
     if (!token) return { ok: false, message: "bot_token is empty" };
-    try {
+    return this.safeTest(async () => {
       const res = await fetch(`${API_BASE}/users/@me`, {
         headers: { Authorization: `Bot ${token}` },
       });
       if (!res.ok) return { ok: false, message: `HTTP ${res.status}` };
       const data = await res.json() as { username?: string };
       return { ok: true, message: `Connected: ${data.username}` };
-    } catch (e) {
-      return { ok: false, message: e instanceof Error ? e.message : "Connection failed" };
-    }
+    });
   }
 
   async start(onMessage: (msg: ChannelMessage) => void): Promise<void> {
@@ -37,7 +36,7 @@ export class DiscordChannel implements ChannelAdapter {
   }
 
   stop(): void {
-    this.stopped = true;
+    super.stop();
     if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
     if (this.ws) this.ws.close();
   }
@@ -52,7 +51,7 @@ export class DiscordChannel implements ChannelAdapter {
 
     if (res.status === 429) {
       const body = await res.json() as { retry_after?: number };
-      await sleep((body.retry_after ?? 1) * 1000);
+      await BaseChannel.sleep((body.retry_after ?? 1) * 1000);
       return this.send(targetRef, content); // retry
     }
 
@@ -78,8 +77,7 @@ export class DiscordChannel implements ChannelAdapter {
 
     this.ws.onclose = () => {
       if (!this.stopped) {
-        const delay = Math.min(1000 * 2 ** this.attempt, MAX_BACKOFF_MS);
-        this.attempt++;
+        const delay = this.nextBackoffMs(MAX_BACKOFF_MS);
         console.log(`[Discord] Reconnecting in ${delay}ms`);
         setTimeout(() => this.connect(onMessage), delay);
       }
@@ -161,7 +159,3 @@ export class DiscordChannel implements ChannelAdapter {
 
 type DiscordPayload = { op: number; t?: string; s?: number; d: unknown };
 type DiscordMessage = { id: string; channel_id: string; guild_id?: string; author: { id: string; bot?: boolean }; content: string };
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}

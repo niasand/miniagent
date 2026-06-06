@@ -1,4 +1,5 @@
-import type { ChannelAdapter, ChannelMessage, SendResult, TestResult } from "./types.js";
+import type { ChannelMessage, SendResult, TestResult } from "./types.js";
+import { BaseChannel } from "./base-channel.js";
 
 const DEFAULT_BASE_URL = "https://ilinkai.weixin.qq.com";
 const CHANNEL_VERSION = "2.0.0";
@@ -6,20 +7,19 @@ const MAX_BACKOFF_MS = 30_000;
 const MAX_TEXT_LEN = 2000;
 const POLL_TIMEOUT_MS = 40_000;
 
-export class WeChatChannel implements ChannelAdapter {
+export class WeChatChannel extends BaseChannel {
   readonly channelType = "wechat";
-  private stopped = false;
-  private attempt = 0;
   private uin: string;
   private contextTokens = new Map<string, string>(); // userId → context_token
 
   constructor(private readonly config: Record<string, string>) {
+    super();
     this.uin = btoa(String(Math.floor(Math.random() * 0xFFFFFFFF)));
   }
 
   async test(): Promise<TestResult> {
     if (!this.config.bot_token) return { ok: false, message: "bot_token is empty" };
-    try {
+    return this.safeTest(async () => {
       const url = `${this.baseUrl()}/ilink/bot/getupdates?timeout=1`;
       const res = await fetch(url, { headers: this.headers(), signal: AbortSignal.timeout(5000) });
       if (!res.ok) return { ok: false, message: `HTTP ${res.status}` };
@@ -30,18 +30,12 @@ export class WeChatChannel implements ChannelAdapter {
       const error = wechatApiError(data);
       if (error) return { ok: false, message: error };
       return { ok: true, message: "Connected" };
-    } catch (e) {
-      return { ok: false, message: e instanceof Error ? e.message : "Connection failed" };
-    }
+    });
   }
 
   async start(onMessage: (msg: ChannelMessage) => void): Promise<void> {
     this.stopped = false;
     this.pollLoop(onMessage);
-  }
-
-  stop(): void {
-    this.stopped = true;
   }
 
   async send(targetRef: string, content: string): Promise<SendResult> {
@@ -50,7 +44,7 @@ export class WeChatChannel implements ChannelAdapter {
     if (!contextToken) throw new Error(`No context_token for ${userId}`);
 
     const url = `${this.baseUrl()}/ilink/bot/sendmessage`;
-    const chunks = splitText(content, MAX_TEXT_LEN);
+    const chunks = BaseChannel.splitText(content, MAX_TEXT_LEN);
 
     for (const chunk of chunks) {
       const clientId = String(Math.floor(Math.random() * 0xFFFFFFFF));
@@ -142,10 +136,9 @@ export class WeChatChannel implements ChannelAdapter {
         }
       } catch (err) {
         if (this.stopped) break;
-        const delay = Math.min(1000 * 2 ** this.attempt, MAX_BACKOFF_MS);
-        this.attempt++;
+        const delay = this.nextBackoffMs(MAX_BACKOFF_MS);
         console.error(`[WeChat] Poll error, retrying in ${delay}ms:`, err instanceof Error ? err.message : err);
-        await sleep(delay);
+        await BaseChannel.sleep(delay);
       }
     }
   }
@@ -163,24 +156,6 @@ export class WeChatChannel implements ChannelAdapter {
       "Content-Type": "application/json",
     };
   }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function splitText(text: string, maxLen: number): string[] {
-  if (text.length <= maxLen) return [text];
-  const chunks: string[] = [];
-  let rest = text;
-  while (rest.length > 0) {
-    if (rest.length <= maxLen) { chunks.push(rest); break; }
-    let cut = rest.lastIndexOf("\n", maxLen);
-    if (cut < maxLen * 0.5) cut = maxLen;
-    chunks.push(rest.slice(0, cut));
-    rest = rest.slice(cut);
-  }
-  return chunks;
 }
 
 type WeChatUpdatesResponse = {

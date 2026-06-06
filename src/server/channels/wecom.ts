@@ -1,4 +1,5 @@
-import type { ChannelAdapter, ChannelMessage, SendResult, TestResult } from "./types.js";
+import type { ChannelMessage, SendResult, TestResult } from "./types.js";
+import { BaseChannel } from "./base-channel.js";
 
 const GATEWAY_URL = "wss://openws.work.weixin.qq.com";
 const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -6,22 +7,22 @@ const HEALTH_CHECK_MS = 90_000;
 const MAX_BACKOFF_MS = 5 * 60 * 1000;
 const MAX_TEXT_LEN = 4096;
 
-export class WeComChannel implements ChannelAdapter {
+export class WeComChannel extends BaseChannel {
   readonly channelType = "wecom";
   private ws: WebSocket | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private healthTimer: ReturnType<typeof setTimeout> | null = null;
-  private stopped = false;
-  private attempt = 0;
   private lastPongAt = 0;
   private pendingRequests = new Map<string, string>(); // req_id → from userid
 
-  constructor(private readonly config: Record<string, string>) {}
+  constructor(private readonly config: Record<string, string>) {
+    super();
+  }
 
   async test(): Promise<TestResult> {
     const { bot_id, secret } = this.config;
     if (!bot_id || !secret) return { ok: false, message: "bot_id or secret is empty" };
-    try {
+    return this.safeTest(async () => {
       await new Promise<void>((resolve, reject) => {
         const ws = new WebSocket(GATEWAY_URL);
         const timer = setTimeout(() => { ws.close(); reject(new Error("Timeout")); }, 5000);
@@ -33,9 +34,7 @@ export class WeComChannel implements ChannelAdapter {
         ws.addEventListener("error", (e) => { clearTimeout(timer); reject(e); });
       });
       return { ok: true, message: "Gateway reachable" };
-    } catch (e) {
-      return { ok: false, message: e instanceof Error ? e.message : "Connection failed" };
-    }
+    });
   }
 
   async start(onMessage: (msg: ChannelMessage) => void): Promise<void> {
@@ -44,7 +43,7 @@ export class WeComChannel implements ChannelAdapter {
   }
 
   stop(): void {
-    this.stopped = true;
+    super.stop();
     this.cleanup();
   }
 
@@ -58,7 +57,7 @@ export class WeComChannel implements ChannelAdapter {
       return { providerMessageId: "" };
     }
 
-    const chunks = splitText(content, MAX_TEXT_LEN);
+    const chunks = BaseChannel.splitText(content, MAX_TEXT_LEN);
     for (const chunk of chunks) {
       this.sendWs({
         cmd: "aibot_respond_msg",
@@ -186,8 +185,7 @@ export class WeComChannel implements ChannelAdapter {
 
   private scheduleReconnect(onMessage: (msg: ChannelMessage) => void): void {
     if (this.stopped) return;
-    const delay = Math.min(5000 * 2 ** this.attempt, MAX_BACKOFF_MS);
-    this.attempt++;
+    const delay = this.nextBackoffMs(MAX_BACKOFF_MS);
     console.log(`[WeCom] Reconnecting in ${delay}ms (attempt ${this.attempt})`);
     setTimeout(() => this.connect(onMessage), delay);
   }
@@ -197,20 +195,6 @@ export class WeComChannel implements ChannelAdapter {
     if (this.healthTimer) { clearTimeout(this.healthTimer); this.healthTimer = null; }
     if (this.ws) { try { this.ws.close(); } catch { /* ignore */ } this.ws = null; }
   }
-}
-
-function splitText(text: string, maxLen: number): string[] {
-  if (text.length <= maxLen) return [text];
-  const chunks: string[] = [];
-  let rest = text;
-  while (rest.length > 0) {
-    if (rest.length <= maxLen) { chunks.push(rest); break; }
-    let cut = rest.lastIndexOf("\n", maxLen);
-    if (cut < maxLen * 0.5) cut = maxLen;
-    chunks.push(rest.slice(0, cut));
-    rest = rest.slice(cut);
-  }
-  return chunks;
 }
 
 type WeComPayload = {
