@@ -62,7 +62,7 @@ export class WorkspaceService {
       // Get run stats from latest run
       const latestRun = this.getLatestRun(sessionId);
       if (latestRun) {
-        const firstSeq = latestRun.first_global_seq ?? latestRun.firstGlobalSeq ?? 0;
+        const firstSeq = latestRun.first_global_seq || latestRun.firstGlobalSeq || 0;
         const events = this.events.listAfterGlobalSeq({ sessionId, afterGlobalSeq: firstSeq - 1, limit: 500 });
         const textDeltas = events.filter((e) => e.type === "text_delta");
         let tokensUsed = 0;

@@ -33,6 +33,10 @@ export function initFileLogging(projectRoot: string): void {
 
 function formatLine(args: unknown[]): string {
   return args
-    .map((a) => (typeof a === "string" ? a : JSON.stringify(a)))
+    .map((a) => {
+      if (typeof a === "string") return a;
+      if (a instanceof Error) return a.stack ?? a.message;
+      return JSON.stringify(a);
+    })
     .join(" ");
 }
