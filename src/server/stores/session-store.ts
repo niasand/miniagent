@@ -222,9 +222,7 @@ export class SessionStore {
     });
 
     const count = tx();
-    if (count > 0) {
-      console.log(`[Recovery] Cleaned ${count} zombie run(s) from previous API instance`);
-    }
+    console.log(`[Recovery] Zombie run check: ${count} cleaned`);
     return count;
   }
 

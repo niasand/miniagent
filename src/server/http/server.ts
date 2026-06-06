@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import { migrate, openDatabase } from "../db/migrate.js";
 import { createApp } from "./app.js";
+import { initFileLogging } from "../log.js";
 import { WorkspacePolicy } from "../security/workspace-policy.js";
 import { RuntimeAdapterRegistry } from "../runtime/registry.js";
 import { RuntimeSupervisor } from "../runtime/supervisor.js";
@@ -14,6 +15,8 @@ import { SessionStore } from "../stores/session-store.js";
 import { EventStore } from "../stores/event-store.js";
 
 const port = Number(process.env.MINIAGENT_API_PORT ?? 7273);
+initFileLogging(process.cwd());
+
 const db = openDatabase();
 migrate(db);
 

@@ -63,6 +63,7 @@ export class RuntimeSupervisor {
   private readonly cancelKillTimeoutMs: number;
   private readonly outbox: OutboxStore | null;
   private readonly activeRuns = new Map<string, ActiveRun>();
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: RuntimeSupervisorOptions) {
     this.db = options.db;
@@ -75,6 +76,37 @@ export class RuntimeSupervisor {
     this.maxTextDeltaBytes = options.maxTextDeltaBytes ?? 4_096;
     this.cancelKillTimeoutMs = options.cancelKillTimeoutMs ?? 5_000;
     this.outbox = options.outboxStore ?? null;
+    this.startHeartbeat();
+  }
+
+  /** Periodically check that child processes are still alive. */
+  private startHeartbeat(intervalMs = 10_000): void {
+    this.heartbeatTimer = setInterval(() => {
+      for (const [runId, activeRun] of this.activeRuns) {
+        const pid = activeRun.process.pid;
+        if (!pid) continue;
+        try {
+          // kill(pid, 0) checks process existence without sending a signal
+          process.kill(pid, 0);
+        } catch {
+          // Process is gone — clean up the zombie run
+          console.warn(`[Runtime] Heartbeat detected dead process (pid=${pid}) for run ${runId}`);
+          this.handleExit(runId, {
+            exitCode: -1,
+            signal: null,
+            message: "Process disappeared (heartbeat detected)",
+            exitedAt: nowIso(),
+          });
+        }
+      }
+    }, intervalMs);
+  }
+
+  destroy(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
   }
 
   startTask(input: StartRuntimeTaskInput): StartedRuntimeRun {
