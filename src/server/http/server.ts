@@ -10,10 +10,15 @@ import { DeliveryWorker } from "../services/delivery.js";
 import { InboundService } from "../services/inbound.js";
 import { SchedulerService } from "../services/scheduler.js";
 import { OutboxStore } from "../stores/outbox-store.js";
+import { SessionStore } from "../stores/session-store.js";
+import { EventStore } from "../stores/event-store.js";
 
 const port = Number(process.env.MINIAGENT_API_PORT ?? 7273);
 const db = openDatabase();
 migrate(db);
+
+// Recover zombie runs left by the previous API instance (process crash / restart)
+new SessionStore(db, new EventStore(db)).recoverZombieRuns();
 
 const workspacePolicy = new WorkspacePolicy([process.cwd()]);
 const runtimeRegistry = new RuntimeAdapterRegistry();

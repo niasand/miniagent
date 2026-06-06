@@ -172,6 +172,62 @@ export class SessionStore {
     this.events = events ?? new EventStore(db);
   }
 
+  // ── Startup recovery ──
+
+  /** Mark orphaned "running" runs as failed (process died with the old API instance). */
+  recoverZombieRuns(): number {
+    const timestamp = nowIso();
+    const tx = this.db.transaction(() => {
+      // 1. Find all runs still marked as running
+      const zombieRuns = this.db.prepare(
+        "SELECT id, session_id, task_id FROM agent_runs WHERE status = 'running'"
+      ).all() as Array<{ id: string; session_id: string; task_id: string | null }>;
+
+      for (const run of zombieRuns) {
+        // Append a run_failed event so the event log stays consistent
+        this.events.append({
+          sessionId: run.session_id, runId: run.id, taskId: run.task_id,
+          type: "run_failed",
+          payload: {
+            status: "failed",
+            exitCode: -1,
+            stopReason: "api_restart",
+            errorClass: null,
+            inputTokens: null,
+            outputTokens: null,
+          },
+          createdAt: timestamp,
+        });
+
+        // Mark run as failed
+        this.db.prepare(
+          `UPDATE agent_runs SET status = 'failed', stopped_at = @ts, exit_code = -1,
+            stop_reason = 'api_restart', updated_at = @ts WHERE id = @id`
+        ).run({ id: run.id, ts: timestamp });
+
+        // Mark its task as failed
+        if (run.task_id) {
+          this.db.prepare(
+            "UPDATE tasks SET status = 'failed', finished_at = @ts, updated_at = @ts WHERE id = @id"
+          ).run({ id: run.task_id, ts: timestamp });
+        }
+
+        // Clear session's active_run_id and reset to idle
+        this.db.prepare(
+          `UPDATE sessions SET status = 'idle', active_run_id = NULL, updated_at = @ts WHERE id = @id`
+        ).run({ id: run.session_id, ts: timestamp });
+      }
+
+      return zombieRuns.length;
+    });
+
+    const count = tx();
+    if (count > 0) {
+      console.log(`[Recovery] Cleaned ${count} zombie run(s) from previous API instance`);
+    }
+    return count;
+  }
+
   // ── Session CRUD ──
 
   createSession(input: CreateSessionInput): SessionRecord {
