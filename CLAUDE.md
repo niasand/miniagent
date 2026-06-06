@@ -8,15 +8,17 @@
 # 首次或 schema 变更后先执行
 npm run db:migrate
 
-# 启动 API
-nohup npx tsx src/server/http/server.ts > /tmp/miniagent-api.log 2>&1 &
+# 启动 API（日志自动写入 logs/api-out.log 和 logs/api-error.log）
+nohup npx tsx src/server/http/server.ts &
 
 # 启动前端
-nohup npx vite --host 127.0.0.1 > /tmp/miniagent-web.log 2>&1 &
+nohup npx vite --host 127.0.0.1 &
 ```
 
 - 前端访问：http://127.0.0.1:7272
 - API 端口可通过 `MINIAGENT_API_PORT` 环境变量覆盖
+- API 日志：`logs/api-out.log`（stdout）、`logs/api-error.log`（stderr）
+- 启动时自动恢复上次未完成的 zombie run（`[Recovery]` 日志）
 
 ### 重启
 
@@ -25,8 +27,8 @@ kill $(lsof -ti :7273) 2>/dev/null
 kill $(lsof -ti :7272) 2>/dev/null
 
 # 重新启动（同上）
-nohup npx tsx src/server/http/server.ts > /tmp/miniagent-api.log 2>&1 &
-nohup npx vite --host 127.0.0.1 > /tmp/miniagent-web.log 2>&1 &
+nohup npx tsx src/server/http/server.ts &
+nohup npx vite --host 127.0.0.1 &
 ```
 
 ## 项目规则
