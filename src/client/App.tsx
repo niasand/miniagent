@@ -10,6 +10,7 @@ import type { AgentType, SkillMeta } from "./api/types.js";
 import { AppShell } from "./components/app-shell.js";
 import { createChatScrollController, type ChatScrollController } from "./lib/chat-scroll.js";
 import { localizeAppErrorMessage, localizeProviderErrorMessage } from "./lib/error-messages.js";
+import { defaultRunAtInput, formatSessionChannel, formatSessionUpdatedAt, formatZonedTime, renderHighlightedSessionName, toDateTimeInput } from "./lib/formatters.js";
 import type { WorkspaceSchedule, WorkspaceScheduleKind, WorkspaceScheduleRun, WorkspaceSnapshot } from "../shared/workspace.js";
 
 type AppSection = "workspace" | "skills" | "tasks" | "settings";
@@ -794,90 +795,6 @@ export default function App() {
       handleSend={handleSend}
     />
   );
-}
-
-function formatZonedTime(value: string, timezone: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-
-  return new Intl.DateTimeFormat(undefined, {
-    timeZone: timezone,
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZoneName: "short",
-  }).format(date);
-}
-
-function formatSessionUpdatedAt(value?: string): string {
-  return formatMessageTime(value);
-}
-
-function formatSessionChannel(channelType: WorkspaceSnapshot["sessions"][number]["channelType"]): string {
-  if (channelType === "feishu") return "Feishu";
-  if (channelType === "qq") return "QQ";
-  if (channelType === "telegram") return "Telegram";
-  if (channelType === "discord") return "Discord";
-  if (channelType === "wechat") return "WeChat";
-  if (channelType === "wecom") return "WeCom";
-  if (channelType === "dingtalk") return "DingTalk";
-  if (channelType === "web") return "网页";
-  return "本地";
-}
-
-function formatMessageTime(value?: string): string {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-
-  const sameDay = date.toDateString() === new Date().toDateString();
-  return new Intl.DateTimeFormat(undefined, {
-    month: sameDay ? undefined : "short",
-    day: sameDay ? undefined : "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(date);
-}
-
-function defaultRunAtInput(): string {
-  const date = new Date(Date.now() + 60 * 60 * 1000);
-  return toDateTimeInput(date);
-}
-
-function toDateTimeInput(value?: string | Date): string {
-  const date = value instanceof Date ? value : value ? new Date(value) : new Date();
-  if (Number.isNaN(date.getTime())) return defaultRunAtInput();
-  const pad = (input: number) => String(input).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function renderHighlightedSessionName(text: string, query: string) {
-  const needle = query.trim();
-  if (!needle) return text;
-
-  const lowerText = text.toLowerCase();
-  const lowerNeedle = needle.toLowerCase();
-  const parts = [];
-  let cursor = 0;
-  let matchIndex = lowerText.indexOf(lowerNeedle);
-
-  while (matchIndex !== -1) {
-    if (matchIndex > cursor) parts.push(text.slice(cursor, matchIndex));
-    const end = matchIndex + needle.length;
-    parts.push(
-      <mark key={`${matchIndex}-${end}`} className="session-highlight">
-        {text.slice(matchIndex, end)}
-      </mark>,
-    );
-    cursor = end;
-    matchIndex = lowerText.indexOf(lowerNeedle, cursor);
-  }
-
-  if (cursor < text.length) parts.push(text.slice(cursor));
-  return parts.length > 0 ? parts : text;
 }
 
 function readStoredSessionId(): string | null {

@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import type { WorkspaceSnapshot } from "../../shared/workspace.js";
 
 /**
@@ -65,7 +66,7 @@ export function renderHighlightedSessionName(text: string, query: string) {
 
   const lowerText = text.toLowerCase();
   const lowerNeedle = needle.toLowerCase();
-  const parts: (string | React.ReactElement)[] = [];
+  const parts: (string | ReactElement)[] = [];
   let cursor = 0;
   let matchIndex = lowerText.indexOf(lowerNeedle);
 

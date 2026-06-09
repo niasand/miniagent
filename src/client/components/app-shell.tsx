@@ -1,12 +1,14 @@
-import { ArrowDown, ArrowUp, CalendarClock, Check, CheckCircle2, ClipboardCopy, Clock, Copy, ExternalLink, Loader2, Pause, Pencil, Play, Plus, Search, SendHorizontal, Settings, Sparkles, Target, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowDown, ArrowUp, CalendarClock, Check, Clock, ExternalLink, Loader2, Pause, Pencil, Play, Plus, Search, SendHorizontal, Settings, Sparkles, Target, Trash2, X } from "lucide-react";
+import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import type { AgentType, SkillMeta } from "../api/types.js";
 import type { ChannelInfo } from "../api/channels.js";
 import type { WorkspaceAgentRuntime, WorkspaceSchedule, WorkspaceScheduleKind, WorkspaceScheduleRun, WorkspaceSnapshot } from "../../shared/workspace.js";
+import { ChatHeader, formatMessageTime, isMessageDisplayable, MessageBubble } from "./chat/index.js";
 import { ChannelCard } from "./channel-card.js";
+import { CopyButton } from "./ui/copy-button.js";
 import { ProviderSelect, TimezoneSelect } from "./controls.js";
 import { localizeProviderErrorMessage } from "../lib/error-messages.js";
 import { formatCapabilityAvailability, formatCapabilityName, formatProviderStatus, formatScheduleKind, formatScheduleRunStatus, formatScheduleStatus } from "../lib/status-labels.js";
@@ -413,13 +415,7 @@ export function AppShell(props: {
                   <h2>路径</h2>
                   <div className="skill-path-row">
                     <code className="inline-code skill-path-code">{props.selectedSkill.path}</code>
-                    <button
-                      className="copy-path-btn"
-                      title="复制路径"
-                      onClick={() => { navigator.clipboard.writeText(props.selectedSkill!.path); }}
-                    >
-                      <ClipboardCopy className="h-4 w-4" />
-                    </button>
+                    <CopyButton text={props.selectedSkill!.path} label="路径" className="copy-path-btn" size="md" />
                   </div>
                 </div>
               </>
@@ -640,88 +636,5 @@ export function AppShell(props: {
         )}
       </section>
     </main>
-  );
-}
-
-function formatMessageTime(value?: string): string {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-
-  const sameDay = date.toDateString() === new Date().toDateString();
-  return new Intl.DateTimeFormat(undefined, {
-    month: sameDay ? undefined : "short",
-    day: sameDay ? undefined : "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(date);
-}
-
-function isMessageDisplayable(message: { role: string; markdown: string }): boolean {
-  if (message.role === "user") return true;
-  if (message.role === "system" && message.markdown.startsWith("Run succeeded")) return true;
-  if (message.role === "system") return false;
-  if (message.role === "agent" || message.role === "assistant") {
-    const content = message.markdown.trim();
-    if (!content) return false;
-    if (/^<thinking>[\s\S]*<\/thinking>$/.test(content)) return false;
-  }
-  return true;
-}
-
-function MessageBubble({ message, isFocusedRun }: { message: WorkspaceSnapshot["messages"][number]; isFocusedRun: boolean }) {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = () => {
-    navigator.clipboard.writeText(message.markdown).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  };
-  return (
-    <div className={`chat-bubble ${message.role} ${isFocusedRun ? "chat-bubble--focused-run" : ""}`} data-run-id={message.runId ?? undefined}>
-      <div className="chat-bubble-header">
-        <strong>{message.author}</strong>
-        {message.time && <span className="chat-time" title={message.createdAt ?? message.time}>{formatMessageTime(message.createdAt ?? message.time)}</span>}
-        <button className={`chat-bubble-copy ${copied ? "chat-bubble-copy--done" : ""}`} title="复制" onClick={handleCopy}>
-          {copied ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-        </button>
-      </div>
-      <div className="prose-mini">
-        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{message.markdown}</ReactMarkdown>
-      </div>
-    </div>
-  );
-}
-
-function CopyButton({ text, label }: { text: string; label: string }) {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  }, [text]);
-  return (
-    <button className="chat-header-copy" title={`复制${label}`} onClick={handleCopy}>
-      {copied ? <CheckCircle2 className="h-3.5 w-3.5 chat-header-copied" /> : <Copy className="h-3.5 w-3.5" />}
-    </button>
-  );
-}
-
-function ChatHeader({ sessionId, sessions }: { sessionId: string; sessions: WorkspaceSnapshot["sessions"] }) {
-  const session = sessions.find((s) => s.id === sessionId);
-  const sessionName = session?.name ?? "未命名会话";
-  return (
-    <div className="chat-header">
-      <div className="chat-header-item">
-        <span className="chat-header-name" title={sessionName}>{sessionName}</span>
-        <CopyButton text={sessionName} label="会话名称" />
-      </div>
-      <div className="chat-header-item">
-        <code className="chat-header-id" title={sessionId}>{sessionId.length > 8 ? `...${sessionId.slice(-8)}` : sessionId}</code>
-        <CopyButton text={sessionId} label="会话ID" />
-      </div>
-    </div>
   );
 }
