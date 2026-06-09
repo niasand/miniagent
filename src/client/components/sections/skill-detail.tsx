@@ -16,7 +16,10 @@ export function SkillDetail({ selectedSkill, useSkillInWorkspace }: SkillDetailP
           <div className="detail-header">
             <div>
               <span className="side-eyebrow">技能详情</span>
-              <h1>{selectedSkill.name}</h1>
+              <div className="skill-name-row">
+                <h1>{selectedSkill.name}</h1>
+                <CopyButton text={selectedSkill!.name} label="技能名称" size="sm" />
+              </div>
             </div>
             <Button variant="primary" onClick={() => useSkillInWorkspace(selectedSkill!)}>
               <Sparkles className="h-4 w-4" />

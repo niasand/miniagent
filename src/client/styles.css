@@ -328,6 +328,12 @@ button { cursor: pointer; }
   font-size: 13px;
 }
 
+.skill-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .skill-path-row {
   display: flex;
   align-items: center;
