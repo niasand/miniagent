@@ -1,49 +1,11 @@
-import { ArrowDown, ArrowUp, CalendarClock, Check, Clock, ExternalLink, Loader2, Pause, Pencil, Play, Plus, Search, SendHorizontal, Settings, Sparkles, Target, Trash2, X } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import rehypeHighlight from "rehype-highlight";
-import remarkGfm from "remark-gfm";
 import type { AgentType, SkillMeta } from "../api/types.js";
 import type { ChannelInfo } from "../api/channels.js";
 import type { WorkspaceAgentRuntime, WorkspaceSchedule, WorkspaceScheduleKind, WorkspaceScheduleRun, WorkspaceSnapshot } from "../../shared/workspace.js";
-import { ChatHeader, formatMessageTime, isMessageDisplayable, MessageBubble } from "./chat/index.js";
-import { ChannelCard } from "./channel-card.js";
-import { Badge } from "./ui/badge.js";
-import { Button } from "./ui/button.js";
-import { CopyButton } from "./ui/copy-button.js";
-import { ProviderSelect, TimezoneSelect } from "./controls.js";
-import { localizeProviderErrorMessage } from "../lib/error-messages.js";
-import { formatCapabilityAvailability, formatCapabilityName, formatProviderStatus, formatScheduleKind, formatScheduleRunStatus, formatScheduleStatus } from "../lib/status-labels.js";
+import { NavBar } from "./nav-bar.js";
+import { ChatView, ScheduleDetail, ScheduleList, SessionList, SettingsDetail, SettingsList, SkillDetail, SkillList } from "./sections/index.js";
 
 type AppSection = "workspace" | "skills" | "tasks" | "settings";
 type SettingsSection = "channels" | "provider";
-
-/** Map schedule/run status strings to Badge tone — avoids TS narrowing in nested ternaries */
-function scheduleStatusTone(status: string): "success" | "warning" | "error" | "muted" | "info" | "default" {
-  if (status === "active" || status === "succeeded") return "success";
-  if (status === "paused") return "warning";
-  if (status === "failed") return "error";
-  if (status === "cancelled") return "muted";
-  if (status === "running" || status === "scheduled" || status === "queued") return "info";
-  return "default";
-}
-
-/** Map session status to Badge tone */
-function sessionStatusTone(status: string): "success" | "warning" | "error" | "info" | "default" {
-  if (status === "idle" || status === "running") return "success";
-  if (status === "compact") return "warning";
-  if (status === "failed") return "error";
-  if (status === "queued") return "info";
-  return "default";
-}
-
-/** Map provider status to Badge tone */
-function providerStatusTone(status: string): "success" | "warning" | "error" | "violet" | "muted" {
-  if (status === "healthy") return "success";
-  if (status === "missing") return "warning";
-  if (status === "failed") return "error";
-  if (status === "auth_required") return "violet";
-  return "muted";
-}
 
 export function AppShell(props: {
   activeSection: AppSection;
@@ -144,522 +106,149 @@ export function AppShell(props: {
   handleKeyDown: (event: React.KeyboardEvent) => void;
   handleSend: () => void;
 }) {
-  const q = props.sessionsQuery.trim().toLowerCase();
-  const filteredSessions = q
-    ? props.sessions.filter((session) => session.name.toLowerCase().includes(q) || session.id.includes(q))
-    : props.sessions;
-
   return (
     <main className="app-root">
-      <nav className="app-nav" aria-label="Primary">
-        <div className="app-brand">MiniAgent</div>
-        <button className={`nav-item ${props.activeSection === "workspace" ? "active" : ""}`} onClick={() => props.setActiveSection("workspace")}>
-          <Clock className="h-4 w-4" />
-          <span>工作台</span>
-        </button>
-        <button className={`nav-item ${props.activeSection === "skills" ? "active" : ""}`} onClick={() => props.setActiveSection("skills")}>
-          <Sparkles className="h-4 w-4" />
-          <span>技能</span>
-        </button>
-        <button className={`nav-item ${props.activeSection === "tasks" ? "active" : ""}`} onClick={() => props.setActiveSection("tasks")}>
-          <CalendarClock className="h-4 w-4" />
-          <span>任务</span>
-        </button>
-        <button className={`nav-item ${props.activeSection === "settings" ? "active" : ""}`} onClick={() => props.setActiveSection("settings")}>
-          <Settings className="h-4 w-4" />
-          <span>设置</span>
-        </button>
-      </nav>
+      <NavBar activeSection={props.activeSection} setActiveSection={props.setActiveSection} />
 
       <aside className="side-pane">
         {props.activeSection === "workspace" && (
-          <>
-            <div className="side-header">
-              <span className="side-eyebrow">工作台</span>
-              <h2>会话列表</h2>
-              <Button variant="ghost" size="xs" title="新建对话" onClick={props.handleNewSession}>
-                <Plus className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="side-search">
-              <Search className="h-4 w-4 side-search-icon" />
-              <input
-                ref={props.sessionsSearchRef}
-                className="side-search-input"
-                value={props.sessionsQuery}
-                onChange={(event) => props.setSessionsQuery(event.currentTarget.value)}
-                onKeyDown={(event) => { if (event.key === "Escape") props.setSessionsQuery(""); }}
-                placeholder="搜索会话..."
-              />
-            </div>
-            <div className="context-list">
-              {props.sessions.length === 0 && <div className="side-empty">暂无会话</div>}
-              {props.sessions.length > 0 && filteredSessions.length === 0 && <div className="side-empty">没有匹配的会话</div>}
-              {filteredSessions.map((session) => {
-                const sessionName = session.name || session.title || "未命名会话";
-                const isEditing = props.editingSessionId === session.id;
-                return (
-                  <div key={session.id} className={`session-item ${session.id === props.sessionId ? "session-item--active" : ""}`}>
-                    {isEditing ? (
-                      <form className="session-edit" onSubmit={(event) => { event.preventDefault(); props.submitSessionRename(session.id); }}>
-                        <div className="session-edit-row">
-                          <input
-                            className="session-name-input"
-                            value={props.editingSessionName}
-                            onChange={(event) => props.setEditingSessionName(event.currentTarget.value)}
-                            onKeyDown={(event) => {
-                              if (event.key === "Escape") props.cancelSessionRename();
-                            }}
-                            aria-label="会话名称"
-                            aria-invalid={props.renameSessionError ? "true" : "false"}
-                            aria-describedby={props.renameSessionError ? `session-rename-error-${session.id}` : undefined}
-                            autoFocus
-                          />
-                          <button className="session-edit-btn" type="submit" title="保存" aria-label="保存会话名称" disabled={props.renameSessionPending}>
-                            <Check className="h-4 w-4" />
-                          </button>
-                          <button className="session-edit-btn" type="button" title="取消" aria-label="取消重命名" onClick={props.cancelSessionRename}>
-                            <X className="h-4 w-4" />
-                          </button>
-                        </div>
-                        {props.renameSessionError && (
-                          <div id={`session-rename-error-${session.id}`} className="session-edit-error" role="alert">
-                            {props.renameSessionError}
-                          </div>
-                        )}
-                      </form>
-                    ) : (
-                      <>
-                        <button className="session-select" onClick={() => props.selectSession(session.id)}>
-                          <span className="session-title" title={sessionName}>{props.renderHighlightedSessionName(sessionName, props.sessionsQuery)}</span>
-                          <span className="session-meta">
-                            <span>{props.formatSessionChannel(session.channelType)}</span>
-                            <span>{props.formatSessionUpdatedAt(session.updatedAt)}</span>
-                          </span>
-                        </button>
-                        <button className="session-action" title="重命名" aria-label={`重命名 ${sessionName}`} onClick={() => props.startSessionRename(session.id, sessionName)}>
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <Badge shape="dot" tone={session.status === "idle" || session.status === "running" ? "success" : session.status === "failed" ? "error" : session.status === "compact" ? "warning" : session.status === "queued" ? "info" : "default"} />
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-              {props.sessionsHasMore && (
-                <div ref={props.sessionsSentinelRef} className="session-sentinel">
-                  {props.sessionsLoadingMore && <Loader2 className="h-4 w-4 session-sentinel-spinner" />}
-                </div>
-              )}
-            </div>
-          </>
+          <SessionList
+            sessions={props.sessions}
+            sessionId={props.sessionId}
+            sessionsQuery={props.sessionsQuery}
+            setSessionsQuery={props.setSessionsQuery}
+            sessionsSearchRef={props.sessionsSearchRef}
+            sessionsHasMore={props.sessionsHasMore}
+            sessionsLoadingMore={props.sessionsLoadingMore}
+            sessionsSentinelRef={props.sessionsSentinelRef}
+            handleNewSession={props.handleNewSession}
+            editingSessionId={props.editingSessionId}
+            editingSessionName={props.editingSessionName}
+            setEditingSessionName={props.setEditingSessionName}
+            renameSessionError={props.renameSessionError}
+            renameSessionPending={props.renameSessionPending}
+            startSessionRename={props.startSessionRename}
+            submitSessionRename={props.submitSessionRename}
+            cancelSessionRename={props.cancelSessionRename}
+            selectSession={props.selectSession}
+            renderHighlightedSessionName={props.renderHighlightedSessionName}
+            formatSessionUpdatedAt={props.formatSessionUpdatedAt}
+            formatSessionChannel={props.formatSessionChannel}
+          />
         )}
-
         {props.activeSection === "skills" && (
-          <>
-            <div className="side-header">
-              <span className="side-eyebrow">技能</span>
-              <h2>技能列表</h2>
-            </div>
-            <div className="side-search">
-              <Search className="h-4 w-4 side-search-icon" />
-              <input
-                ref={props.skillsSearchRef}
-                className="side-search-input"
-                value={props.skillsQuery}
-                onChange={(event) => props.setSkillsQuery(event.currentTarget.value)}
-                placeholder="搜索技能..."
-              />
-            </div>
-            <div className="context-list">
-              {props.filteredSkills.length === 0 && <div className="side-empty">没有匹配的技能</div>}
-              {props.filteredSkills.map((skill) => (
-                <button
-                  key={skill.name}
-                  className={`context-item ${props.selectedSkill?.name === skill.name ? "context-item--active" : ""}`}
-                  onClick={() => props.handleSkillSelect(skill)}
-                >
-                  <strong>{skill.name}</strong>
-                  {skill.description && <span>{skill.description}</span>}
-                </button>
-              ))}
-            </div>
-          </>
+          <SkillList
+            skillsQuery={props.skillsQuery}
+            setSkillsQuery={props.setSkillsQuery}
+            skillsSearchRef={props.skillsSearchRef}
+            filteredSkills={props.filteredSkills}
+            selectedSkill={props.selectedSkill}
+            handleSkillSelect={props.handleSkillSelect}
+          />
         )}
-
         {props.activeSection === "tasks" && (
-          <>
-            <div className="side-header">
-              <span className="side-eyebrow">任务</span>
-              <h2>定时任务列表</h2>
-            </div>
-            <div className="context-list">
-              <button className={`context-item context-item--create ${!props.selectedSchedule ? "context-item--active" : ""}`} onClick={props.startNewSchedule}>
-                <strong>新建任务</strong>
-                <span title={props.selectedSessionName}>{props.selectedSessionName}</span>
-              </button>
-              {props.schedules.length === 0 && <div className="side-empty">暂无任务</div>}
-              {props.schedules.map((schedule) => (
-                <button
-                  key={schedule.id}
-                  className={`schedule-item schedule-item--button ${props.selectedSchedule?.id === schedule.id ? "schedule-item--active" : ""}`}
-                  onClick={() => {
-                    props.setSelectedScheduleId(schedule.id);
-                    props.setEditingScheduleId(null);
-                  }}
-                >
-                  <span className="schedule-item-title">
-                    <Badge tone={schedule.status === "active" || schedule.status === "succeeded" ? "success" : schedule.status === "paused" ? "warning" : schedule.status === "failed" ? "error" : schedule.status === "cancelled" ? "muted" : "info"}>{formatScheduleStatus(schedule.status)}</Badge>
-                    <span>{schedule.kind === "once" ? formatScheduleKind(schedule.kind) : schedule.cronExpr}</span>
-                  </span>
-                  <span className="schedule-item-meta">
-                    <span>{schedule.nextRunAt ? `下次执行 ${props.formatZonedTime(schedule.nextRunAt, schedule.timezone)}` : "暂无下次执行"}</span>
-                    <span>{schedule.timezone}</span>
-                  </span>
-                  {schedule.payloadSummary && <span className="schedule-item-summary" title={schedule.payloadText ?? schedule.payloadSummary}>{schedule.payloadSummary}</span>}
-                </button>
-              ))}
-            </div>
-          </>
+          <ScheduleList
+            schedules={props.schedules}
+            selectedSchedule={props.selectedSchedule}
+            setSelectedScheduleId={props.setSelectedScheduleId}
+            setEditingScheduleId={props.setEditingScheduleId}
+            startNewSchedule={props.startNewSchedule}
+            selectedSessionName={props.selectedSessionName}
+            formatZonedTime={props.formatZonedTime}
+          />
         )}
-
         {props.activeSection === "settings" && (
-          <>
-            <div className="side-header">
-              <span className="side-eyebrow">设置</span>
-              <h2>设置项</h2>
-            </div>
-            <div className="context-list">
-              <button className={`context-item ${props.settingsSection === "channels" ? "context-item--active" : ""}`} onClick={() => props.setSettingsSection("channels")}>
-                <strong>消息通道</strong>
-                <span>Feishu, QQ, Telegram, WeChat</span>
-              </button>
-              <button className={`context-item ${props.settingsSection === "provider" ? "context-item--active" : ""}`} onClick={() => props.setSettingsSection("provider")}>
-                <strong>提供方</strong>
-                <span>默认 {props.agentType}</span>
-              </button>
-            </div>
-          </>
+          <SettingsList
+            settingsSection={props.settingsSection}
+            setSettingsSection={props.setSettingsSection}
+            agentType={props.agentType}
+          />
         )}
       </aside>
 
       <section className={`detail-pane detail-pane--${props.activeSection}`}>
         {props.activeSection === "workspace" && (
-          <div className="chat-main">
-            {props.sessionId && props.messages.length > 0 && (
-              <ChatHeader sessionId={props.sessionId} sessions={props.sessions} />
-            )}
-            <div className={`chat-messages ${props.messagesSettling ? "chat-messages--settling" : ""}`} ref={props.messagesContainerRef}>
-              {props.messages.length === 0 && (
-                <div className="chat-empty">
-                  <Sparkles className="chat-empty-icon" />
-                  <p>发送消息开始对话</p>
-                </div>
-              )}
-              {props.messages.map((message) => {
-                if (!isMessageDisplayable(message)) return null;
-                if (message.role === "system" && message.markdown.startsWith("Run succeeded")) {
-                  return (
-                    <div key={message.id} className="chat-stat">
-                      {props.runStats.durationSeconds !== null && <span>{props.runStats.durationSeconds}s</span>}
-                      {props.runStats.tokensUsed !== null && <span>{props.runStats.tokensUsed.toLocaleString()} tokens</span>}
-                      <span>完成</span>
-                    </div>
-                  );
-                }
-                const isFocusedRun = Boolean(props.focusedRunId && message.runId === props.focusedRunId);
-                return (
-                  <MessageBubble key={message.id} message={message} isFocusedRun={isFocusedRun} />
-                );
-              })}
-              {(props.sendMessagePending || props.isStreaming || props.streamingText) && props.messages[props.messages.length - 1]?.role !== "agent" && (
-                <div className="chat-bubble agent">
-                  <div className="chat-bubble-header"><strong>Agent</strong></div>
-                  {props.streamingText ? (
-                    <div className="prose-mini">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{props.streamingText}</ReactMarkdown>
-                    </div>
-                  ) : (
-                    <div className="chat-typing">
-                      <span className="typing-dots"><span /><span /><span /></span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {props.messages.length > 0 && (
-              <div className="chat-scroll-controls">
-                <Button variant="outline" size="xs" className="chat-scroll-btn" onClick={props.scrollMessagesToTop} title="回到顶部" aria-label="回到顶部">
-                  <ArrowUp className="h-4 w-4" />
-                </Button>
-                <Button variant="outline" size="xs" className="chat-scroll-btn" onClick={() => props.scrollMessagesToBottom("smooth")} title="回到底部" aria-label="回到底部">
-                  <ArrowDown className="h-4 w-4" />
-                </Button>
-              </div>
-            )}
-
-            <div className="chat-bar">
-              <textarea
-                ref={props.draftInputRef}
-                className="chat-input"
-                value={props.draft}
-                onChange={(event) => props.setDraft(event.currentTarget.value)}
-                onKeyDown={props.handleKeyDown}
-                placeholder="输入消息..."
-                rows={1}
-              />
-              <Button variant="primary" size="lg" onClick={props.handleSend} disabled={props.sendMessagePending || !props.draft.trim()}>
-                <SendHorizontal className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
+          <ChatView
+            sessionId={props.sessionId}
+            sessions={props.sessions}
+            messages={props.messages}
+            messagesSettling={props.messagesSettling}
+            messagesContainerRef={props.messagesContainerRef}
+            runStats={props.runStats}
+            focusedRunId={props.focusedRunId}
+            sendMessagePending={props.sendMessagePending}
+            isStreaming={props.isStreaming}
+            streamingText={props.streamingText}
+            scrollMessagesToTop={props.scrollMessagesToTop}
+            scrollMessagesToBottom={props.scrollMessagesToBottom}
+            draftInputRef={props.draftInputRef}
+            draft={props.draft}
+            setDraft={props.setDraft}
+            handleKeyDown={props.handleKeyDown}
+            handleSend={props.handleSend}
+          />
         )}
-
         {props.activeSection === "skills" && (
-          <div className="detail-scroll">
-            {props.selectedSkill ? (
-              <>
-                <div className="detail-header">
-                  <div>
-                    <span className="side-eyebrow">技能详情</span>
-                    <h1>{props.selectedSkill.name}</h1>
-                  </div>
-                  <Button variant="primary" onClick={() => props.useSkillInWorkspace(props.selectedSkill!)}>
-                    <Sparkles className="h-4 w-4" />
-                    使用技能
-                  </Button>
-                </div>
-                <div className="detail-section">
-                  <h2>说明</h2>
-                  <p>{props.selectedSkill.description || "暂无说明。"}</p>
-                </div>
-                <div className="detail-section">
-                  <h2>调用方式</h2>
-                  <code className="inline-code">/{props.selectedSkill.name}</code>
-                </div>
-                <div className="detail-section">
-                  <h2>路径</h2>
-                  <div className="skill-path-row">
-                    <code className="inline-code skill-path-code">{props.selectedSkill.path}</code>
-                    <CopyButton text={props.selectedSkill!.path} label="路径" className="copy-path-btn" size="md" />
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="detail-empty">尚未选择技能</div>
-            )}
-          </div>
+          <SkillDetail
+            selectedSkill={props.selectedSkill}
+            useSkillInWorkspace={props.useSkillInWorkspace}
+          />
         )}
-
         {props.activeSection === "tasks" && (
-          <div className="detail-scroll">
-            {!props.selectedSchedule ? (
-              <>
-                <div className="detail-header">
-                  <div>
-                    <span className="side-eyebrow">定时任务详情</span>
-                    <h1>新建任务</h1>
-                  </div>
-                </div>
-                <div className="schedule-form schedule-form--detail">
-                  <div className="segmented-control" role="group" aria-label="任务类型">
-                    <button className={`segmented-btn ${props.scheduleKind === "once" ? "active" : ""}`} onClick={() => props.setScheduleKind("once")}>单次</button>
-                    <button className={`segmented-btn ${props.scheduleKind === "cron" ? "active" : ""}`} onClick={() => props.setScheduleKind("cron")}>周期</button>
-                  </div>
-                  {props.scheduleKind === "once"
-                    ? <input className="schedule-input" type="datetime-local" value={props.scheduleRunAt} onChange={(event) => props.setScheduleRunAt(event.currentTarget.value)} aria-label="执行时间" />
-                    : <input className="schedule-input" value={props.scheduleCronExpr} onChange={(event) => props.setScheduleCronExpr(event.currentTarget.value)} placeholder="0 9 * * 1-5" aria-label="Cron 表达式" />}
-                  <TimezoneSelect value={props.scheduleTimezone} onChange={props.setScheduleTimezone} label="时区" />
-                  {props.scheduleKind === "cron" && (
-                    <div className={`schedule-preview ${props.schedulePreviewError instanceof Error ? "schedule-preview--error" : ""}`}>
-                      {props.schedulePreviewError instanceof Error
-                        ? props.schedulePreviewError.message
-                        : props.schedulePreview
-                          ? `下次执行 ${props.formatZonedTime(props.schedulePreview.nextRunAt, props.scheduleTimezone)}`
-                          : "正在计算下次执行时间..."}
-                    </div>
-                  )}
-                  <textarea className="schedule-textarea" value={props.scheduleText} onChange={(event) => props.setScheduleText(event.currentTarget.value)} placeholder="输入要发送的消息..." rows={4} />
-                  {props.scheduleError && <div className="schedule-error" role="alert">{props.scheduleError}</div>}
-                  <Button variant="primary" onClick={props.handleCreateSchedule} disabled={!props.selectedSessionId || props.createSchedulePending}>
-                    <CalendarClock className="h-4 w-4" />
-                    创建
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="detail-header">
-                  <div>
-                    <span className="side-eyebrow">定时任务详情</span>
-                    <h1>{props.selectedSchedule.kind === "once" ? "单次任务" : props.selectedSchedule.cronExpr}</h1>
-                  </div>
-                  <div className="detail-actions">
-                    {props.selectedSchedule.status !== "cancelled" && (
-                      <Button variant="default" onClick={() => props.startScheduleEdit(props.selectedSchedule!)}>
-                        <Pencil className="h-4 w-4" />
-                        编辑
-                      </Button>
-                    )}
-                    {props.selectedSchedule.status === "active"
-                      ? (
-                        <Button variant="default" onClick={() => props.updateSchedule({ id: props.selectedSchedule!.id, action: "pause" })}>
-                          <Pause className="h-4 w-4" />
-                          暂停
-                        </Button>
-                        )
-                      : props.selectedSchedule.status === "paused"
-                        ? (
-                          <Button variant="default" onClick={() => props.updateSchedule({ id: props.selectedSchedule!.id, action: "resume" })}>
-                            <Play className="h-4 w-4" />
-                            恢复
-                          </Button>
-                          )
-                        : null}
-                    {props.selectedSchedule.status !== "cancelled" && (
-                      <Button variant="destructive" onClick={() => props.updateSchedule({ id: props.selectedSchedule!.id, action: "cancel" })}>
-                        <Trash2 className="h-4 w-4" />
-                        取消
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                <div className="detail-section detail-grid">
-                  <div><span>状态</span><strong>{formatScheduleStatus(props.selectedSchedule.status)}</strong></div>
-                  <div><span>时区</span><strong>{props.selectedSchedule.timezone}</strong></div>
-                  <div><span>下次执行</span><strong>{props.selectedSchedule.nextRunAt ? props.formatZonedTime(props.selectedSchedule.nextRunAt, props.selectedSchedule.timezone) : "暂无下次执行"}</strong></div>
-                  <div><span>会话</span><strong>{props.selectedSessionName}</strong></div>
-                </div>
-                {props.selectedSchedule.payloadSummary && (
-                  <div className="detail-section">
-                    <h2>消息内容</h2>
-                    <p>{props.selectedSchedule.payloadText ?? props.selectedSchedule.payloadSummary}</p>
-                  </div>
-                )}
-                {props.editingScheduleId === props.selectedSchedule.id && (
-                  <div className="detail-section">
-                    <h2>编辑任务</h2>
-                    <div className="schedule-edit-form schedule-edit-form--detail">
-                      <div className="segmented-control" role="group" aria-label="编辑任务类型">
-                        <button className={`segmented-btn ${props.editScheduleKind === "once" ? "active" : ""}`} onClick={() => props.setEditScheduleKind("once")}>单次</button>
-                        <button className={`segmented-btn ${props.editScheduleKind === "cron" ? "active" : ""}`} onClick={() => props.setEditScheduleKind("cron")}>周期</button>
-                      </div>
-                      {props.editScheduleKind === "once"
-                        ? <input className="schedule-input" type="datetime-local" value={props.editScheduleRunAt} onChange={(event) => props.setEditScheduleRunAt(event.currentTarget.value)} aria-label="编辑执行时间" />
-                        : <input className="schedule-input" value={props.editScheduleCronExpr} onChange={(event) => props.setEditScheduleCronExpr(event.currentTarget.value)} aria-label="编辑 Cron 表达式" />}
-                      <TimezoneSelect value={props.editScheduleTimezone} onChange={props.setEditScheduleTimezone} label="编辑时区" />
-                      {props.editScheduleKind === "cron" && (
-                        <div className={`schedule-preview ${props.editSchedulePreviewError instanceof Error ? "schedule-preview--error" : ""}`}>
-                          {props.editSchedulePreviewError instanceof Error
-                            ? props.editSchedulePreviewError.message
-                            : props.editSchedulePreview
-                              ? `下次执行 ${props.formatZonedTime(props.editSchedulePreview.nextRunAt, props.editScheduleTimezone)}`
-                              : "正在计算下次执行时间..."}
-                        </div>
-                      )}
-                      <textarea className="schedule-textarea" value={props.editScheduleText} onChange={(event) => props.setEditScheduleText(event.currentTarget.value)} aria-label="编辑消息" rows={4} />
-                      {props.editScheduleError && <div className="schedule-error" role="alert">{props.editScheduleError}</div>}
-                      <div className="schedule-edit-actions">
-                        <Button variant="default" onClick={() => props.setEditingScheduleId(null)}>取消</Button>
-                        <Button variant="primary" onClick={props.submitScheduleEdit} disabled={props.editSchedulePending}>
-                          <Check className="h-4 w-4" />
-                          保存
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                <div className="detail-section">
-                  <h2>运行记录</h2>
-                  <div className="schedule-run-list schedule-run-list--detail">
-                    {props.scheduleRuns.length === 0 && <div className="schedule-run-empty">暂无执行记录</div>}
-                    {props.scheduleRuns.map((run) => (
-                      <div key={run.id} className="schedule-run-item">
-                        <div className="schedule-run-main">
-                          <Badge tone={run.status === "succeeded" ? "success" : run.status === "failed" ? "error" : run.status === "queued" || run.status === "scheduled" || run.status === "running" ? "info" : "default"}>{formatScheduleRunStatus(run.status)}</Badge>
-                          <span>{props.formatZonedTime(run.scheduledFor ?? run.createdAt, props.selectedSchedule!.timezone)}</span>
-                          {run.payloadSummary && <span title={run.payloadSummary}>{run.payloadSummary}</span>}
-                          {run.taskId && <span title={run.taskId}>{run.taskId}</span>}
-                          {run.error && <span title={run.error}>{run.error}</span>}
-                        </div>
-                        <div className="schedule-run-actions">
-                          <Button variant="ghost" size="xs" title="打开会话" aria-label={`打开会话 ${run.taskId ?? run.id}`} onClick={() => props.openScheduleRun(run, false)}>
-                            <ExternalLink className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost" size="xs"
-                            title={run.runId ? "打开任务输出" : "任务输出暂不可用"}
-                            aria-label={run.runId ? `打开任务输出 ${run.taskId ?? run.id}` : `任务输出暂不可用 ${run.taskId ?? run.id}`}
-                            disabled={!run.runId}
-                            onClick={() => props.openScheduleRun(run, true)}
-                          >
-                            <Target className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
+          <ScheduleDetail
+            selectedSchedule={props.selectedSchedule}
+            selectedSessionName={props.selectedSessionName}
+            startScheduleEdit={props.startScheduleEdit}
+            updateSchedule={props.updateSchedule}
+            openScheduleRun={props.openScheduleRun}
+            formatZonedTime={props.formatZonedTime}
+            editingScheduleId={props.editingScheduleId}
+            editScheduleKind={props.editScheduleKind}
+            setEditScheduleKind={props.setEditScheduleKind}
+            editScheduleRunAt={props.editScheduleRunAt}
+            setEditScheduleRunAt={props.setEditScheduleRunAt}
+            editScheduleCronExpr={props.editScheduleCronExpr}
+            setEditScheduleCronExpr={props.setEditScheduleCronExpr}
+            editScheduleTimezone={props.editScheduleTimezone}
+            setEditScheduleTimezone={props.setEditScheduleTimezone}
+            editSchedulePreview={props.editSchedulePreview}
+            editSchedulePreviewError={props.editSchedulePreviewError}
+            editScheduleText={props.editScheduleText}
+            setEditScheduleText={props.setEditScheduleText}
+            editScheduleError={props.editScheduleError}
+            editSchedulePending={props.editSchedulePending}
+            submitScheduleEdit={props.submitScheduleEdit}
+            setEditingScheduleId={props.setEditingScheduleId}
+            scheduleRuns={props.scheduleRuns}
+            selectedSessionId={props.selectedSessionId}
+            scheduleKind={props.scheduleKind}
+            setScheduleKind={props.setScheduleKind}
+            scheduleRunAt={props.scheduleRunAt}
+            setScheduleRunAt={props.setScheduleRunAt}
+            scheduleCronExpr={props.scheduleCronExpr}
+            setScheduleCronExpr={props.setScheduleCronExpr}
+            scheduleTimezone={props.scheduleTimezone}
+            setScheduleTimezone={props.setScheduleTimezone}
+            schedulePreview={props.schedulePreview}
+            schedulePreviewError={props.schedulePreviewError}
+            scheduleText={props.scheduleText}
+            setScheduleText={props.setScheduleText}
+            scheduleError={props.scheduleError}
+            createSchedulePending={props.createSchedulePending}
+            handleCreateSchedule={props.handleCreateSchedule}
+          />
         )}
-
         {props.activeSection === "settings" && (
-          <div className="detail-scroll">
-            <div className="detail-header">
-              <div>
-                <span className="side-eyebrow">设置</span>
-                <h1>{props.settingsSection === "channels" ? "消息通道详情" : "提供方详情"}</h1>
-              </div>
-            </div>
-            {props.settingsSection === "channels" ? (
-              <div className="settings-channel-grid">
-                {props.channels.length === 0 && <div className="detail-empty">暂无可用通道</div>}
-                {props.channels.map((channel) => (
-                  <ChannelCard key={channel.id} channel={channel} onSaved={props.onChannelsSaved} />
-                ))}
-              </div>
-            ) : (
-              <div className="detail-section">
-                <h2>默认提供方</h2>
-                <ProviderSelect
-                  value={props.agentType}
-                  onChange={props.setAgentType}
-                  agents={props.providerRuntimes}
-                  saving={props.providerSavePending}
-                />
-                {props.providerError && <p className="provider-error" role="alert">{props.providerError}</p>}
-              </div>
-            )}
-            {props.settingsSection === "provider" && (
-              <div className="detail-section">
-                <h2>提供方能力</h2>
-                <div className="provider-capability-grid">
-                  {props.providerRuntimes.map((runtime) => (
-                    <div key={runtime.agentType} className={`provider-capability-card ${runtime.agentType === props.agentType ? "provider-capability-card--active" : ""}`}>
-                      <div className="provider-capability-header">
-                        <div>
-                          <strong>{runtime.label}</strong>
-                          <p>{runtime.command}</p>
-                        </div>
-                        <Badge tone={runtime.status === "healthy" ? "success" : runtime.status === "missing" ? "warning" : runtime.status === "failed" ? "error" : runtime.status === "auth_required" ? "violet" : "muted"}>{formatProviderStatus(runtime.status)}</Badge>
-                      </div>
-                      {runtime.message && <p className="provider-capability-message">{localizeProviderErrorMessage(runtime.message)}</p>}
-                      <div className="provider-capability-list">
-                        {Object.entries(runtime.capabilities).map(([name, enabled]) => (
-                          <Badge key={name} tone={enabled ? "success" : "muted"} shape="pill" className="text-[10px]">
-                            {formatCapabilityName(name)}：{formatCapabilityAvailability(enabled)}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+          <SettingsDetail
+            settingsSection={props.settingsSection}
+            channels={props.channels}
+            onChannelsSaved={props.onChannelsSaved}
+            agentType={props.agentType}
+            setAgentType={props.setAgentType}
+            providerRuntimes={props.providerRuntimes}
+            providerSavePending={props.providerSavePending}
+            providerError={props.providerError}
+          />
         )}
       </section>
     </main>
