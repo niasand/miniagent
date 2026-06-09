@@ -64,6 +64,9 @@ function readErrorCode(error: Error): string | undefined {
 // AcpRuntimeDriver
 // ---------------------------------------------------------------------------
 
+/** session/prompt can take minutes (LLM calls + tool execution). Use 10min. */
+const PROMPT_TIMEOUT_MS = 10 * 60 * 1000;
+
 type AcpRuntimeDriverOptions = {
   agentType: AgentType;
   displayName: string;
@@ -315,7 +318,7 @@ class AcpRunHandle implements RuntimeRunHandle {
     const result = await this.connection.sendRequest("session/prompt", {
       sessionId: this.externalSessionId,
       prompt: toPromptBlocks(input.input),
-    });
+    }, PROMPT_TIMEOUT_MS);
 
     // Capture token usage from ACP response if available
     const usage = extractUsage(result);

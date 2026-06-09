@@ -48,13 +48,14 @@ export class AcpJsonRpcConnection {
     });
   }
 
-  sendRequest(method: string, params: JsonValue = {}): Promise<JsonValue> {
+  sendRequest(method: string, params: JsonValue = {}, timeoutMs?: number): Promise<JsonValue> {
     const id = this.nextId++;
+    const effectiveTimeout = timeoutMs ?? this.requestTimeoutMs;
     const pending = new Promise<JsonValue>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`ACP request timed out: ${method}`));
-      }, this.requestTimeoutMs);
+      }, effectiveTimeout);
       this.pending.set(id, { method, resolve, reject, timer });
     });
     this.write({ jsonrpc: "2.0", id, method, params });
