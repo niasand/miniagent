@@ -17,6 +17,34 @@ import { formatCapabilityAvailability, formatCapabilityName, formatProviderStatu
 type AppSection = "workspace" | "skills" | "tasks" | "settings";
 type SettingsSection = "channels" | "provider";
 
+/** Map schedule/run status strings to Badge tone — avoids TS narrowing in nested ternaries */
+function scheduleStatusTone(status: string): "success" | "warning" | "error" | "muted" | "info" | "default" {
+  if (status === "active" || status === "succeeded") return "success";
+  if (status === "paused") return "warning";
+  if (status === "failed") return "error";
+  if (status === "cancelled") return "muted";
+  if (status === "running" || status === "scheduled" || status === "queued") return "info";
+  return "default";
+}
+
+/** Map session status to Badge tone */
+function sessionStatusTone(status: string): "success" | "warning" | "error" | "info" | "default" {
+  if (status === "idle" || status === "running") return "success";
+  if (status === "compact") return "warning";
+  if (status === "failed") return "error";
+  if (status === "queued") return "info";
+  return "default";
+}
+
+/** Map provider status to Badge tone */
+function providerStatusTone(status: string): "success" | "warning" | "error" | "violet" | "muted" {
+  if (status === "healthy") return "success";
+  if (status === "missing") return "warning";
+  if (status === "failed") return "error";
+  if (status === "auth_required") return "violet";
+  return "muted";
+}
+
 export function AppShell(props: {
   activeSection: AppSection;
   setActiveSection: (section: AppSection) => void;
