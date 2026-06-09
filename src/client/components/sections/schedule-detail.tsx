@@ -2,6 +2,7 @@ import { CalendarClock, Check, ExternalLink, Pencil, Pause, Play, Target, Trash2
 import type { WorkspaceSchedule, WorkspaceScheduleKind, WorkspaceScheduleRun } from "../../../shared/workspace.js";
 import { Badge } from "../ui/badge.js";
 import { Button } from "../ui/button.js";
+import { Input, Textarea } from "../ui/input.js";
 import { TimezoneSelect } from "../controls.js";
 import { formatScheduleRunStatus, formatScheduleStatus } from "../../lib/status-labels.js";
 
@@ -116,8 +117,8 @@ export function ScheduleDetail({
               <button className={`segmented-btn ${scheduleKind === "cron" ? "active" : ""}`} onClick={() => setScheduleKind("cron")}>周期</button>
             </div>
             {scheduleKind === "once"
-              ? <input className="schedule-input" type="datetime-local" value={scheduleRunAt} onChange={(event) => setScheduleRunAt(event.currentTarget.value)} aria-label="执行时间" />
-              : <input className="schedule-input" value={scheduleCronExpr} onChange={(event) => setScheduleCronExpr(event.currentTarget.value)} placeholder="0 9 * * 1-5" aria-label="Cron 表达式" />}
+              ? <Input inputSize="md" type="datetime-local" value={scheduleRunAt} onChange={(event) => setScheduleRunAt(event.currentTarget.value)} aria-label="执行时间" />
+              : <Input inputSize="md" value={scheduleCronExpr} onChange={(event) => setScheduleCronExpr(event.currentTarget.value)} placeholder="0 9 * * 1-5" aria-label="Cron 表达式" />}
             <TimezoneSelect value={scheduleTimezone} onChange={setScheduleTimezone} label="时区" />
             {scheduleKind === "cron" && (
               <div className={`schedule-preview ${schedulePreviewError instanceof Error ? "schedule-preview--error" : ""}`}>
@@ -128,7 +129,7 @@ export function ScheduleDetail({
                     : "正在计算下次执行时间..."}
               </div>
             )}
-            <textarea className="schedule-textarea" value={scheduleText} onChange={(event) => setScheduleText(event.currentTarget.value)} placeholder="输入要发送的消息..." rows={4} />
+            <Textarea inputSize="lg" value={scheduleText} onChange={(event) => setScheduleText(event.currentTarget.value)} placeholder="输入要发送的消息..." rows={4} />
             {scheduleError && <div className="schedule-error" role="alert">{scheduleError}</div>}
             <Button variant="primary" onClick={handleCreateSchedule} disabled={!selectedSessionId || createSchedulePending}>
               <CalendarClock className="h-4 w-4" />
@@ -194,8 +195,8 @@ export function ScheduleDetail({
                   <button className={`segmented-btn ${editScheduleKind === "cron" ? "active" : ""}`} onClick={() => setEditScheduleKind("cron")}>周期</button>
                 </div>
                 {editScheduleKind === "once"
-                  ? <input className="schedule-input" type="datetime-local" value={editScheduleRunAt} onChange={(event) => setEditScheduleRunAt(event.currentTarget.value)} aria-label="编辑执行时间" />
-                  : <input className="schedule-input" value={editScheduleCronExpr} onChange={(event) => setEditScheduleCronExpr(event.currentTarget.value)} aria-label="编辑 Cron 表达式" />}
+                  ? <Input inputSize="md" type="datetime-local" value={editScheduleRunAt} onChange={(event) => setEditScheduleRunAt(event.currentTarget.value)} aria-label="编辑执行时间" />
+                  : <Input inputSize="md" value={editScheduleCronExpr} onChange={(event) => setEditScheduleCronExpr(event.currentTarget.value)} aria-label="编辑 Cron 表达式" />}
                 <TimezoneSelect value={editScheduleTimezone} onChange={setEditScheduleTimezone} label="编辑时区" />
                 {editScheduleKind === "cron" && (
                   <div className={`schedule-preview ${editSchedulePreviewError instanceof Error ? "schedule-preview--error" : ""}`}>
@@ -206,7 +207,7 @@ export function ScheduleDetail({
                         : "正在计算下次执行时间..."}
                   </div>
                 )}
-                <textarea className="schedule-textarea" value={editScheduleText} onChange={(event) => setEditScheduleText(event.currentTarget.value)} aria-label="编辑消息" rows={4} />
+                <Textarea inputSize="lg" value={editScheduleText} onChange={(event) => setEditScheduleText(event.currentTarget.value)} aria-label="编辑消息" rows={4} />
                 {editScheduleError && <div className="schedule-error" role="alert">{editScheduleError}</div>}
                 <div className="schedule-edit-actions">
                   <Button variant="default" onClick={() => setEditingScheduleId(null)}>取消</Button>

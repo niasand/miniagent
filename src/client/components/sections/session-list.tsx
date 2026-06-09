@@ -2,6 +2,7 @@ import { Check, Loader2, Pencil, Plus, Search, X } from "lucide-react";
 import type { WorkspaceSnapshot } from "../../../shared/workspace.js";
 import { Badge } from "../ui/badge.js";
 import { Button } from "../ui/button.js";
+import { Input } from "../ui/input.js";
 
 /** Map session status to Badge tone */
 function sessionStatusTone(status: string): "success" | "warning" | "error" | "info" | "default" {
@@ -75,7 +76,7 @@ export function SessionList({
       </div>
       <div className="side-search">
         <Search className="h-4 w-4 side-search-icon" />
-        <input
+        <Input
           ref={sessionsSearchRef}
           className="side-search-input"
           value={sessionsQuery}
@@ -95,8 +96,8 @@ export function SessionList({
               {isEditing ? (
                 <form className="session-edit" onSubmit={(event) => { event.preventDefault(); submitSessionRename(session.id); }}>
                   <div className="session-edit-row">
-                    <input
-                      className="session-name-input"
+                    <Input
+                      inputSize="sm"
                       value={editingSessionName}
                       onChange={(event) => setEditingSessionName(event.currentTarget.value)}
                       onKeyDown={(event) => {

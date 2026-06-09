@@ -1,4 +1,5 @@
 import { cva, type VariantProps } from "class-variance-authority";
+import { forwardRef } from "react";
 import type { InputHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { cn } from "../../lib/utils.js";
 
@@ -28,25 +29,27 @@ const inputVariants = cva(
 export type InputProps = InputHTMLAttributes<HTMLInputElement> &
   VariantProps<typeof inputVariants>;
 
-export function Input({ className, variant, inputSize, ...props }: InputProps) {
-  return (
+export const Input = forwardRef<HTMLInputElement, InputProps>(
+  ({ className, variant, inputSize, ...props }, ref) => (
     <input
+      ref={ref}
       className={cn(inputVariants({ variant, inputSize }), className)}
       {...props}
     />
-  );
-}
+  ),
+);
 
 export type TextareaProps = TextareaHTMLAttributes<HTMLTextAreaElement> &
   VariantProps<typeof inputVariants>;
 
-export function Textarea({ className, variant, inputSize, ...props }: TextareaProps) {
-  return (
+export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
+  ({ className, variant, inputSize, ...props }, ref) => (
     <textarea
+      ref={ref}
       className={cn(inputVariants({ variant, inputSize }), className)}
       {...props}
     />
-  );
-}
+  ),
+);
 
 export { inputVariants };
