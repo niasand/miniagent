@@ -280,16 +280,30 @@ class AcpRunHandle implements RuntimeRunHandle {
     });
 
     const existingSessionId = readExternalSessionId(this.context.task?.input);
-    const method = existingSessionId ? "session/resume" : "session/new";
     const sessionParams: JsonObject = {
       cwd: this.context.session.workspacePath,
       mcpServers: [],
     };
+
+    let method: string;
+    let response: JsonValue;
+
     if (existingSessionId) {
       sessionParams.sessionId = existingSessionId;
+      try {
+        response = await this.connection.sendRequest("session/resume", sessionParams);
+        method = "session/resume";
+      } catch (err) {
+        console.warn(`[ACP] session/resume failed, falling back to session/new:`, err instanceof Error ? err.message : err);
+        delete sessionParams.sessionId;
+        response = await this.connection.sendRequest("session/new", sessionParams);
+        method = "session/new";
+      }
+    } else {
+      response = await this.connection.sendRequest("session/new", sessionParams);
+      method = "session/new";
     }
 
-    const response = await this.connection.sendRequest(method, sessionParams);
     const sessionId = readString(response, "sessionId") ?? existingSessionId;
     if (!sessionId) {
       throw new Error(`${method} did not return a sessionId`);

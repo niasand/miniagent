@@ -8,6 +8,7 @@ import { RuntimeAdapterRegistry } from "./registry.js";
 import { TextDeltaBatcher } from "./text-delta-batcher.js";
 import { ChildProcessFactory, type RuntimeProcess, type RuntimeProcessExit } from "./process.js";
 import { resolvePermissionPolicy } from "./permission-policy.js";
+import { ContextService } from "../services/context.js";
 import { ContextBudgetStore } from "../stores/context-budget-store.js";
 import type {
   RuntimeSessionDriver, RuntimeRunHandle, RuntimeInput,
@@ -297,6 +298,7 @@ export class RuntimeSupervisor {
     if (activeRun.cancelTimer) clearTimeout(activeRun.cancelTimer);
 
     const classification = classifyExit(activeRun.driver, exit);
+    const isOverflow = classification.class === "context_overflow";
     this.sessions.finishRun({
       runId,
       status: exit.exitCode === 0 && !exit.signal ? "succeeded" : mapClassificationToRunStatus(classification),
@@ -311,7 +313,38 @@ export class RuntimeSupervisor {
     this.persistAgentMessage(activeRun);
     this.enqueueRunReply(activeRun);
 
+    if (isOverflow) {
+      this.handleContextOverflow(activeRun);
+    } else if (exit.exitCode === 0) {
+      this.checkContextBudget(activeRun);
+    }
+
     this.activeRuns.delete(runId);
+  }
+
+  private handleContextOverflow(activeRun: ActiveRun): void {
+    try {
+      const context = new ContextService(this.db);
+      context.compact(activeRun.sessionId);
+      context.restart(activeRun.sessionId);
+      console.log(`[Supervisor] Context overflow detected, auto-compact + restart for session ${activeRun.sessionId}`);
+    } catch (err) {
+      console.error(`[Supervisor] Failed to auto-recover from context overflow:`, err instanceof Error ? err.message : err);
+    }
+  }
+
+  private checkContextBudget(activeRun: ActiveRun): void {
+    const budget = new ContextBudgetStore(this.db).get(activeRun.sessionId);
+    if (!budget) return;
+    const pct = Math.round(budget.usageRatio * 100);
+    if (pct < 85) return;
+    try {
+      const context = new ContextService(this.db);
+      context.compact(activeRun.sessionId);
+      console.log(`[Supervisor] Context at ${pct}%, auto-compact for session ${activeRun.sessionId}`);
+    } catch (err) {
+      console.error(`[Supervisor] Failed to auto-compact at ${pct}%:`, err instanceof Error ? err.message : err);
+    }
   }
 
   private appendDrafts(activeRun: ActiveRun, drafts: RuntimeEventDraft[]): void {
@@ -395,10 +428,12 @@ export class RuntimeSupervisor {
     const budget = new ContextBudgetStore(this.db).get(activeRun.sessionId);
     if (budget) {
       const pct = Math.round(budget.usageRatio * 100);
-      statsParts.push(`context: ${pct}%`);
+      const warning = pct >= 85 ? " ⚠️" : pct >= 70 ? " ⚡" : "";
+      statsParts.push(`context: ${pct}%${warning}`);
     } else if (activeRun.inputTokens > 0) {
       const pct = Math.round((activeRun.inputTokens / 200_000) * 100);
-      statsParts.push(`context: ${pct}%`);
+      const warning = pct >= 85 ? " ⚠️" : pct >= 70 ? " ⚡" : "";
+      statsParts.push(`context: ${pct}%${warning}`);
     }
     return statsParts.length > 0 ? `\n\n${statsParts.join(" · ")}` : "";
   }
