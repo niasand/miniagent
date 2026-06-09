@@ -208,7 +208,7 @@ export function AppShell(props: {
                             <span>{props.formatSessionChannel(session.channelType)}</span>
                             <span>{props.formatSessionUpdatedAt(session.updatedAt)}</span>
                           </span>
-                        </Button>
+                        </button>
                         <button className="session-action" title="重命名" aria-label={`重命名 ${sessionName}`} onClick={() => props.startSessionRename(session.id, sessionName)}>
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
@@ -253,7 +253,7 @@ export function AppShell(props: {
                 >
                   <strong>{skill.name}</strong>
                   {skill.description && <span>{skill.description}</span>}
-                </Button>
+                </button>
               ))}
             </div>
           </>
@@ -269,7 +269,7 @@ export function AppShell(props: {
               <button className={`context-item context-item--create ${!props.selectedSchedule ? "context-item--active" : ""}`} onClick={props.startNewSchedule}>
                 <strong>新建任务</strong>
                 <span title={props.selectedSessionName}>{props.selectedSessionName}</span>
-              </Button>
+              </button>
               {props.schedules.length === 0 && <div className="side-empty">暂无任务</div>}
               {props.schedules.map((schedule) => (
                 <button
@@ -289,7 +289,7 @@ export function AppShell(props: {
                     <span>{schedule.timezone}</span>
                   </span>
                   {schedule.payloadSummary && <span className="schedule-item-summary" title={schedule.payloadText ?? schedule.payloadSummary}>{schedule.payloadSummary}</span>}
-                </Button>
+                </button>
               ))}
             </div>
           </>
@@ -305,11 +305,11 @@ export function AppShell(props: {
               <button className={`context-item ${props.settingsSection === "channels" ? "context-item--active" : ""}`} onClick={() => props.setSettingsSection("channels")}>
                 <strong>消息通道</strong>
                 <span>Feishu, QQ, Telegram, WeChat</span>
-              </Button>
+              </button>
               <button className={`context-item ${props.settingsSection === "provider" ? "context-item--active" : ""}`} onClick={() => props.setSettingsSection("provider")}>
                 <strong>提供方</strong>
                 <span>默认 {props.agentType}</span>
-              </Button>
+              </button>
             </div>
           </>
         )}
@@ -436,7 +436,7 @@ export function AppShell(props: {
                 </div>
                 <div className="schedule-form schedule-form--detail">
                   <div className="segmented-control" role="group" aria-label="任务类型">
-                    <button className={`segmented-btn ${props.scheduleKind === "once" ? "active" : ""}`} onClick={() => props.setScheduleKind("once")}>单次</Button>
+                    <button className={`segmented-btn ${props.scheduleKind === "once" ? "active" : ""}`} onClick={() => props.setScheduleKind("once")}>单次</button>
                     <button className={`segmented-btn ${props.scheduleKind === "cron" ? "active" : ""}`} onClick={() => props.setScheduleKind("cron")}>周期</button>
                   </div>
                   {props.scheduleKind === "once"
@@ -514,7 +514,7 @@ export function AppShell(props: {
                     <h2>编辑任务</h2>
                     <div className="schedule-edit-form schedule-edit-form--detail">
                       <div className="segmented-control" role="group" aria-label="编辑任务类型">
-                        <button className={`segmented-btn ${props.editScheduleKind === "once" ? "active" : ""}`} onClick={() => props.setEditScheduleKind("once")}>单次</Button>
+                        <button className={`segmented-btn ${props.editScheduleKind === "once" ? "active" : ""}`} onClick={() => props.setEditScheduleKind("once")}>单次</button>
                         <button className={`segmented-btn ${props.editScheduleKind === "cron" ? "active" : ""}`} onClick={() => props.setEditScheduleKind("cron")}>周期</button>
                       </div>
                       {props.editScheduleKind === "once"
@@ -559,8 +559,8 @@ export function AppShell(props: {
                           <Button variant="ghost" size="xs" title="打开会话" aria-label={`打开会话 ${run.taskId ?? run.id}`} onClick={() => props.openScheduleRun(run, false)}>
                             <ExternalLink className="h-3.5 w-3.5" />
                           </Button>
-                          <button
-                            className="schedule-run-action"
+                          <Button
+                            variant="ghost" size="xs"
                             title={run.runId ? "打开任务输出" : "任务输出暂不可用"}
                             aria-label={run.runId ? `打开任务输出 ${run.taskId ?? run.id}` : `任务输出暂不可用 ${run.taskId ?? run.id}`}
                             disabled={!run.runId}
