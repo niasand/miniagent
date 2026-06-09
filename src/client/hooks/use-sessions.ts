@@ -29,6 +29,7 @@ export function useSessions({ activeSection, agentType, onNewSession }: UseSessi
   const [sessionsPage, setSessionsPage] = useState(1);
   const [sessionsHasMore, setSessionsHasMore] = useState(true);
   const [sessionsLoadingMore, setSessionsLoadingMore] = useState(false);
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [extraSessions, setExtraSessions] = useState<WorkspaceSnapshot["sessions"]>([]);
   const sessionsSearchRef = useRef<HTMLInputElement>(null);
   const sessionsSentinelRef = useRef<HTMLDivElement | null>(null);
@@ -130,14 +131,20 @@ export function useSessions({ activeSection, agentType, onNewSession }: UseSessi
   };
 
   const handleNewSession = async () => {
-    const res = await createSession({ agentType });
-    setSessionId(res.sessionId);
-    localStorage.setItem(SESSION_STORAGE_KEY, res.sessionId);
-    setSessionsPage(1);
-    setExtraSessions([]);
-    setSessionsHasMore(true);
-    queryClient.invalidateQueries({ queryKey: ["workspace"] });
-    onNewSession?.();
+    if (isCreatingSession) return;
+    setIsCreatingSession(true);
+    try {
+      const res = await createSession({ agentType });
+      setSessionId(res.sessionId);
+      localStorage.setItem(SESSION_STORAGE_KEY, res.sessionId);
+      setSessionsPage(1);
+      setExtraSessions([]);
+      setSessionsHasMore(true);
+      queryClient.invalidateQueries({ queryKey: ["workspace"] });
+      onNewSession?.();
+    } finally {
+      setIsCreatingSession(false);
+    }
   };
 
   const startSessionRename = (id: string, name: string) => {
@@ -181,6 +188,7 @@ export function useSessions({ activeSection, agentType, onNewSession }: UseSessi
     sessionsLoadingMore,
     sessionsSentinelRef,
     handleNewSession,
+    isCreatingSession,
     resetInfiniteScroll,
     editingSessionId,
     editingSessionName,

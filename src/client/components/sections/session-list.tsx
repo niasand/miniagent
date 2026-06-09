@@ -23,6 +23,7 @@ interface SessionListProps {
   sessionsLoadingMore: boolean;
   sessionsSentinelRef: React.RefObject<HTMLDivElement | null>;
   handleNewSession: () => void;
+  isCreatingSession: boolean;
   editingSessionId: string | null;
   editingSessionName: string;
   setEditingSessionName: (value: string) => void;
@@ -47,6 +48,7 @@ export function SessionList({
   sessionsLoadingMore,
   sessionsSentinelRef,
   handleNewSession,
+  isCreatingSession,
   editingSessionId,
   editingSessionName,
   setEditingSessionName,
@@ -70,7 +72,7 @@ export function SessionList({
       <div className="side-header">
         <span className="side-eyebrow">工作台</span>
         <h2>会话列表</h2>
-        <Button variant="ghost" size="xs" title="新建对话" onClick={handleNewSession}>
+        <Button variant="ghost" size="xs" title="新建对话" onClick={handleNewSession} disabled={isCreatingSession}>
           <Plus className="h-4 w-4" />
         </Button>
       </div>

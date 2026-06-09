@@ -21,6 +21,7 @@ export function AppShell(props: {
   sessionsLoadingMore: boolean;
   sessionsSentinelRef: React.RefObject<HTMLDivElement | null>;
   handleNewSession: () => void;
+  isCreatingSession: boolean;
   editingSessionId: string | null;
   editingSessionName: string;
   setEditingSessionName: (value: string) => void;
@@ -122,6 +123,7 @@ export function AppShell(props: {
             sessionsLoadingMore={props.sessionsLoadingMore}
             sessionsSentinelRef={props.sessionsSentinelRef}
             handleNewSession={props.handleNewSession}
+            isCreatingSession={props.isCreatingSession}
             editingSessionId={props.editingSessionId}
             editingSessionName={props.editingSessionName}
             setEditingSessionName={props.setEditingSessionName}

@@ -30,6 +30,7 @@ export default function App() {
     sessionId, setSessionId, orderedSessions, sessionsQuery, setSessionsQuery,
     sessionsSearchRef, sessionsHasMore, sessionsLoadingMore, sessionsSentinelRef,
     handleNewSession: rawHandleNewSession,
+    isCreatingSession,
     resetInfiniteScroll,
     editingSessionId, editingSessionName, setEditingSessionName,
     renameSessionError, renameSessionPending, startSessionRename, submitSessionRename, cancelSessionRename,
@@ -134,6 +135,7 @@ export default function App() {
       sessionsLoadingMore={sessionsLoadingMore}
       sessionsSentinelRef={sessionsSentinelRef}
       handleNewSession={handleNewSession}
+      isCreatingSession={isCreatingSession}
       editingSessionId={editingSessionId}
       editingSessionName={editingSessionName}
       setEditingSessionName={setEditingSessionName}
