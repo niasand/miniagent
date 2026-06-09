@@ -477,8 +477,8 @@ function asJsonObject(value: JsonValue): JsonObject {
   return {};
 }
 
-function resolveResumeInput(input: JsonValue, taskType: string, externalSessionId: string | null): JsonValue {
-  if (taskType !== "resume" || !externalSessionId) return input;
+function resolveResumeInput(input: JsonValue, _taskType: string, externalSessionId: string | null): JsonValue {
+  if (!externalSessionId) return input;
   const object = asJsonObject(input);
   if (typeof object.externalSessionId === "string") return input;
   return { ...object, externalSessionId };
