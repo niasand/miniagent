@@ -3,6 +3,8 @@ import { useRef, useState } from "react";
 import { pollWechatQRStatus, requestWechatQRCode, saveChannelConfig, testChannel, type ChannelInfo } from "../api/channels.js";
 import { localizeChannelErrorMessage } from "../lib/error-messages.js";
 import { formatChannelStatus } from "../lib/status-labels.js";
+import { Badge } from "./ui/badge.js";
+import { Button } from "./ui/button.js";
 
 const CHANNEL_FIELDS: Record<string, Array<{ key: string; label: string }>> = {
   feishu: [
@@ -183,21 +185,18 @@ export function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSave
     <div className="channel-card">
       <div className="channel-card-header">
         <strong>{channel.label}</strong>
-        <span className={`channel-status channel-status--${channel.status}`}>
-          <span className="channel-dot" />
-          {formatChannelStatus(channel.status)}
-        </span>
+        <Badge shape="dot" tone={channel.status === "connected" ? "success" : channel.status === "configured" ? "info" : channel.status === "available" ? "warning" : channel.status === "disconnected" ? "error" : "default"}>{formatChannelStatus(channel.status)}</Badge>
       </div>
       <p className="channel-card-desc">{channel.description}</p>
 
       {channel.id === "wechat" && !editing && (
         <div className="channel-actions">
-          <button className="channel-config-btn" onClick={handleWechatQRLogin} disabled={qrPolling}>
+          <Button variant="accent" size="sm" onClick={handleWechatQRLogin} disabled={qrPolling}>
             {qrPolling ? "等待扫码中..." : "扫码登录"}
-          </button>
-          <button className="channel-test-btn" onClick={handleTest} disabled={testing}>
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleTest} disabled={testing}>
             {testing ? "测试中..." : "测试连接"}
-          </button>
+          </Button>
         </div>
       )}
       {channel.id === "wechat" && qrUrl && (
@@ -214,18 +213,18 @@ export function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSave
 
       {configurable && channel.id !== "wechat" && !editing && (
         <div className="channel-actions">
-          <button className="channel-config-btn" onClick={startEdit}>
+          <Button variant="accent" size="sm" onClick={startEdit}>
             配置
-          </button>
-          <button className="channel-test-btn" onClick={handleTest} disabled={testing}>
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleTest} disabled={testing}>
             {testing ? "测试中..." : "测试连接"}
-          </button>
+          </Button>
         </div>
       )}
       {testResult && (
-        <p className={`channel-test-result ${testResult.ok ? "channel-test-ok" : "channel-test-fail"}`}>
+        <Badge shape="block" tone={testResult.ok ? "success" : "error"} className="mt-1.5">
           {testResult.ok ? "✓" : "✗"} {testResult.message}
-        </p>
+        </Badge>
       )}
 
       {configurable && editing && (
@@ -246,10 +245,10 @@ export function ChannelCard({ channel, onSaved }: { channel: ChannelInfo; onSave
           ))}
           {error && <p className="channel-form-error">{error}</p>}
           <div className="channel-form-actions">
-            <button className="channel-form-cancel" onClick={handleCancel}>取消</button>
-            <button className="channel-form-save" onClick={handleSave} disabled={saving}>
+            <Button variant="outline" size="sm" onClick={handleCancel}>取消</Button>
+            <Button variant="primary" size="sm" onClick={handleSave} disabled={saving}>
               {saving ? "保存中..." : "保存"}
-            </button>
+            </Button>
           </div>
         </div>
       )}

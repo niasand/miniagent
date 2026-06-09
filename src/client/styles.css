@@ -318,39 +318,6 @@ button { cursor: pointer; }
   white-space: nowrap;
 }
 
-.primary-action,
-.secondary-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 36px;
-  border-radius: 8px;
-  padding: 0 12px;
-  font-size: 13px;
-  font-weight: 750;
-}
-
-.primary-action {
-  border: 0;
-  background: var(--color-primary);
-  color: var(--color-primary-foreground);
-}
-
-.secondary-action {
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-foreground);
-}
-
-.secondary-action:hover {
-  background: var(--color-muted);
-}
-
-.secondary-action--danger {
-  color: #dc2626;
-}
-
 .inline-code {
   width: fit-content;
   border: 1px solid var(--color-border);
@@ -534,26 +501,6 @@ button { cursor: pointer; }
   color: inherit;
   padding: 0 1px;
 }
-
-.session-status {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-}
-
-.session-dot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--color-muted-foreground);
-}
-
-.session-status--idle .session-dot { background: #22c55e; }
-.session-status--running .session-dot { background: #22c55e; }
-.session-status--failed .session-dot { background: #ef4444; }
-.session-status--compact .session-dot { background: #f59e0b; }
-.session-status--queued .session-dot { background: #3b82f6; }
 
 /* Schedules */
 
@@ -765,25 +712,6 @@ button { cursor: pointer; }
   white-space: nowrap;
 }
 
-.schedule-create-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 36px;
-  border: 0;
-  border-radius: 8px;
-  background: var(--color-primary);
-  color: white;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.schedule-create-btn:disabled {
-  cursor: default;
-  opacity: 0.55;
-}
-
 .schedule-list {
   padding-top: 0;
 }
@@ -856,48 +784,6 @@ button { cursor: pointer; }
   white-space: nowrap;
 }
 
-.schedule-status {
-  flex-shrink: 0;
-  border-radius: 999px;
-  padding: 1px 6px;
-  background: var(--color-muted);
-  color: var(--color-muted-foreground);
-  font-size: 10px;
-  text-transform: uppercase;
-}
-
-.schedule-status--active {
-  background: color-mix(in srgb, #22c55e 14%, var(--color-surface));
-  color: #15803d;
-}
-
-.schedule-status--paused {
-  background: color-mix(in srgb, #f59e0b 16%, var(--color-surface));
-  color: #b45309;
-}
-
-.schedule-status--cancelled {
-  background: color-mix(in srgb, #94a3b8 18%, var(--color-surface));
-  color: #64748b;
-}
-
-.schedule-status--running,
-.schedule-status--scheduled,
-.schedule-status--queued {
-  background: color-mix(in srgb, #3b82f6 13%, var(--color-surface));
-  color: #1d4ed8;
-}
-
-.schedule-status--succeeded {
-  background: color-mix(in srgb, #22c55e 14%, var(--color-surface));
-  color: #15803d;
-}
-
-.schedule-status--failed {
-  background: color-mix(in srgb, #ef4444 12%, var(--color-surface));
-  color: #dc2626;
-}
-
 .schedule-actions {
   display: inline-flex;
   flex-shrink: 0;
@@ -924,21 +810,6 @@ button { cursor: pointer; }
   display: flex;
   justify-content: flex-end;
   gap: 6px;
-}
-
-.schedule-secondary-btn {
-  height: 36px;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-background);
-  padding: 0 12px;
-  color: var(--color-foreground);
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.schedule-secondary-btn:hover {
-  background: var(--color-muted);
 }
 
 .schedule-run-list {
@@ -989,27 +860,6 @@ button { cursor: pointer; }
   gap: 2px;
 }
 
-.schedule-run-action {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--color-muted-foreground);
-}
-
-.schedule-run-action:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--color-muted) 80%, transparent);
-  color: var(--color-foreground);
-}
-
-.schedule-run-action:disabled {
-  cursor: not-allowed;
-  opacity: 0.35;
-}
-
 /* Channel cards */
 
 .channel-card {
@@ -1045,104 +895,12 @@ button { cursor: pointer; }
   overflow-wrap: anywhere;
 }
 
-.channel-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  padding: 2px 6px;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.channel-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-}
-
-.channel-status--connected .channel-dot { background: #16a34a; }
-.channel-status--connected {
-  border-color: color-mix(in srgb, #16a34a 22%, transparent);
-  background: color-mix(in srgb, #16a34a 8%, var(--color-surface));
-  color: #16a34a;
-}
-
-.channel-status--configured .channel-dot { background: #3b82f6; }
-.channel-status--configured {
-  border-color: color-mix(in srgb, #3b82f6 22%, transparent);
-  background: color-mix(in srgb, #3b82f6 8%, var(--color-surface));
-  color: #2563eb;
-}
-
-.channel-status--available .channel-dot { background: #d97706; }
-.channel-status--available {
-  border-color: color-mix(in srgb, #d97706 22%, transparent);
-  background: color-mix(in srgb, #d97706 8%, var(--color-surface));
-  color: #b45309;
-}
-
-.channel-status--disconnected .channel-dot { background: #ef4444; }
-.channel-status--disconnected {
-  border-color: color-mix(in srgb, #ef4444 22%, transparent);
-  background: color-mix(in srgb, #ef4444 8%, var(--color-surface));
-  color: #dc2626;
-}
-
-.channel-config-btn {
-  height: 30px;
-  border: 1px solid color-mix(in srgb, var(--color-primary) 24%, var(--color-border));
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
-  padding: 0 14px;
-  color: var(--color-primary);
-  font-size: 12px;
-  font-weight: 600;
-  transition: background 120ms, border-color 120ms;
-}
-
-.channel-config-btn:hover {
-  border-color: color-mix(in srgb, var(--color-primary) 40%, var(--color-border));
-  background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface));
-}
-
 .channel-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 8px;
 }
-
-.channel-test-btn {
-  height: 30px;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: transparent;
-  padding: 0 14px;
-  color: var(--color-muted-foreground);
-  font-size: 12px;
-  font-weight: 600;
-  transition: background 120ms, color 120ms;
-}
-
-.channel-test-btn:hover:not(:disabled) {
-  background: var(--color-muted);
-  color: var(--color-foreground);
-}
-
-.channel-test-btn:disabled { opacity: 0.4; }
-
-.channel-test-result {
-  margin: 6px 0 0;
-  font-size: 12px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  overflow-wrap: anywhere;
-}
-
-.channel-test-ok { color: #22c55e; background: color-mix(in srgb, #22c55e 10%, transparent); }
-.channel-test-fail { color: #ef4444; background: color-mix(in srgb, #ef4444 10%, transparent); }
 
 .channel-form {
   display: grid;
@@ -1192,35 +950,6 @@ button { cursor: pointer; }
   gap: 8px;
   justify-content: flex-end;
 }
-
-.channel-form-cancel,
-.channel-form-save {
-  height: 30px;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  padding: 0 16px;
-  font-size: 12px;
-  font-weight: 600;
-  transition: background 120ms;
-}
-
-.channel-form-cancel {
-  background: var(--color-muted);
-  color: var(--color-foreground);
-}
-
-.channel-form-cancel:hover {
-  background: color-mix(in srgb, var(--color-foreground) 10%, var(--color-muted));
-}
-
-.channel-form-save {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: var(--color-primary-foreground);
-}
-
-.channel-form-save:hover:not(:disabled) { opacity: 0.88; }
-.channel-form-save:disabled { opacity: 0.4; }
 
 .provider-select {
   display: grid;
@@ -1286,45 +1015,6 @@ button { cursor: pointer; }
   font-weight: 600;
 }
 
-.provider-toggle-status {
-  border-radius: 999px;
-  padding: 2px 8px;
-  font-size: 11px;
-  font-weight: 700;
-  background: color-mix(in srgb, var(--color-muted) 60%, var(--color-background));
-  color: var(--color-muted-foreground);
-}
-
-.provider-toggle-status--healthy,
-.provider-status-badge--healthy {
-  background: color-mix(in srgb, #10b981 18%, white);
-  color: #047857;
-}
-
-.provider-toggle-status--missing,
-.provider-status-badge--missing {
-  background: color-mix(in srgb, #f59e0b 18%, white);
-  color: #b45309;
-}
-
-.provider-toggle-status--failed,
-.provider-status-badge--failed {
-  background: color-mix(in srgb, #ef4444 18%, white);
-  color: #b91c1c;
-}
-
-.provider-toggle-status--auth_required,
-.provider-status-badge--auth_required {
-  background: color-mix(in srgb, #8b5cf6 18%, white);
-  color: #6d28d9;
-}
-
-.provider-toggle-status--unknown,
-.provider-status-badge--unknown {
-  background: color-mix(in srgb, var(--color-muted) 75%, white);
-  color: var(--color-muted-foreground);
-}
-
 .provider-toggle-reason,
 .provider-capability-message,
 .provider-error {
@@ -1378,15 +1068,6 @@ button { cursor: pointer; }
   color: var(--color-muted-foreground);
   font-size: 12px;
   overflow-wrap: anywhere;
-}
-
-.provider-status-badge {
-  flex-shrink: 0;
-  border-radius: 999px;
-  padding: 4px 8px;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: capitalize;
 }
 
 .provider-capability-list {
@@ -1462,50 +1143,6 @@ button { cursor: pointer; }
   font-size: 11px;
   color: var(--text-muted);
   flex-shrink: 0;
-}
-
-.chat-header-copy {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 2px;
-  color: var(--text-muted);
-  border-radius: 4px;
-  flex-shrink: 0;
-}
-
-.chat-header-copy:hover {
-  color: var(--text);
-  background: var(--bg-hover);
-}
-
-.chat-header-copied {
-  color: #22c55e;
-}
-
-/* ── New session button ── */
-
-.session-new-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: 1px solid var(--border);
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 6px;
-  color: var(--text-muted);
-  flex-shrink: 0;
-  margin-left: auto;
-}
-
-.session-new-btn:hover {
-  color: var(--text);
-  background: var(--bg-hover);
-  border-color: var(--text-muted);
 }
 
 /* ── Session list sentinel ── */
@@ -1615,37 +1252,6 @@ button { cursor: pointer; }
   color: var(--color-muted-foreground);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
-}
-
-.chat-bubble-copy {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 2px;
-  color: var(--text-muted);
-  border-radius: 4px;
-  flex-shrink: 0;
-  margin-left: auto;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-
-.chat-bubble:hover .chat-bubble-copy {
-  opacity: 1;
-}
-
-.chat-bubble-copy:hover {
-  color: var(--text);
-  background: var(--bg-hover);
-}
-
-.chat-bubble-copy--done {
-  opacity: 1;
-  color: #22c55e;
-  pointer-events: none;
 }
 
 .chat-typing { color: var(--color-muted-foreground); font-style: italic; }
@@ -1767,21 +1373,6 @@ button { cursor: pointer; }
   border-color: var(--color-ring);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-ring) 16%, transparent);
 }
-
-.send-btn {
-  display: grid;
-  width: 56px;
-  height: 56px;
-  place-items: center;
-  border: 0;
-  border-radius: 10px;
-  background: var(--color-primary);
-  color: var(--color-primary-foreground);
-  transition: opacity 120ms;
-}
-
-.send-btn:disabled { opacity: 0.4; }
-.send-btn:hover:not(:disabled) { opacity: 0.88; }
 
 /* ── Dropdown (agent) ── */
 
