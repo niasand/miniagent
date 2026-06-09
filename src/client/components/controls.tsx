@@ -4,6 +4,7 @@ import type { AgentType } from "../api/types.js";
 import type { WorkspaceAgentRuntime } from "../../shared/workspace.js";
 import { localizeProviderErrorMessage } from "../lib/error-messages.js";
 import { formatProviderStatus, formatProviderSubtitle } from "../lib/status-labels.js";
+import { Badge } from "./ui/badge.js";
 
 export const AGENT_OPTIONS: Array<{ value: AgentType; label: string }> = [
   { value: "codex", label: "Codex" },
@@ -138,7 +139,7 @@ export function ProviderSelect({
                 <strong>{option.label}</strong>
                 <small>{option.subtitle}</small>
               </span>
-              <span className={`provider-toggle-status provider-toggle-status--${option.status}`}>{formatProviderStatus(option.status)}</span>
+              <Badge tone={option.status === "healthy" ? "success" : option.status === "missing" ? "warning" : option.status === "failed" ? "error" : option.status === "auth_required" ? "violet" : "muted"} className="provider-toggle-status">{formatProviderStatus(option.status)}</Badge>
               {selected && <Check className="h-3.5 w-3.5" />}
             </button>
             {option.reason && <p className="provider-toggle-reason">{option.reason}</p>}
