@@ -90,6 +90,25 @@ export class TelegramChannel extends BaseChannel {
     throw new Error("Telegram send failed after retries");
   }
 
+  async react(targetRef: string, providerMessageId: string, emoji: string): Promise<void> {
+    const chatId = targetRef.replace(/^(private|group|supergroup):/, "");
+    const url = `${API_BASE}/bot${this.config.bot_token}/setMessageReaction`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_id: Number(providerMessageId),
+        reaction: [{ type: "emoji", emoji }],
+        is_big: true,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      console.error(`[Telegram] setMessageReaction failed (${res.status}):`, body);
+    }
+  }
+
   private async poll(onMessage: (msg: ChannelMessage) => void): Promise<void> {
     while (!this.stopped) {
       try {
@@ -116,6 +135,7 @@ export class TelegramChannel extends BaseChannel {
               text,
               chatType: msg.chat.type === "private" ? "private" : "group",
               isMentioned,
+              providerMessageId: String(msg.message_id),
             });
           }
         }

@@ -41,6 +41,15 @@ const channelRegistry = new ChannelRegistry(db, (channelType, msg) => {
     const inbound = new InboundService(db, channelType, { workspacePolicy });
     const result = inbound.receiveMessage(msg);
     if (result.action === "message" && result.taskId) {
+      // React 👀 to user message to indicate processing
+      if (msg.providerMessageId && result.session.channelRef) {
+        const adapter = channelRegistry.get(channelType);
+        if (adapter?.react) {
+          adapter.react(result.session.channelRef, msg.providerMessageId, "👀").catch((err) => {
+            console.error(`[${channelType}] Reaction 👀 failed:`, err instanceof Error ? err.message : err);
+          });
+        }
+      }
       try { runtimeService.startNextQueuedTask(result.session.id); } catch { /* already active */ }
     }
   } catch (err) {

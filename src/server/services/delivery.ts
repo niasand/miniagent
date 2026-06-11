@@ -46,10 +46,31 @@ export class DeliveryWorker {
           resourceId: item.id,
           payload: { channelType: item.channelType, targetRef: item.targetRef },
         });
+        // React ✅ on the user's original message after successful delivery
+        await this.reactOnOriginalMessage(channel, item.sessionId);
       } catch (err) {
         this.outbox.markFailed(item.id, err instanceof Error ? err.message : String(err));
       }
     }
+  }
+
+  /** Find the latest user message in this session and react ✅ to it */
+  private async reactOnOriginalMessage(channel: ChannelAdapter, sessionId: string): Promise<void> {
+    if (!channel.react) return;
+    // Get session's channel_ref and latest user message's providerMessageId
+    const row = this.db.prepare(
+      `SELECT s.channel_ref, m.metadata_json
+       FROM sessions s, messages m
+       WHERE s.id = ? AND m.session_id = s.id AND m.role = 'user'
+       ORDER BY m.created_at DESC LIMIT 1`
+    ).get(sessionId) as { channel_ref: string | null; metadata_json: string } | undefined;
+    if (!row?.channel_ref) return;
+    try {
+      const meta = JSON.parse(row.metadata_json) as { providerMessageId?: string };
+      if (meta.providerMessageId) {
+        await channel.react(row.channel_ref, meta.providerMessageId, "✅");
+      }
+    } catch { /* ignore parse errors */ }
   }
 
   private startQueuedTasks(): void {

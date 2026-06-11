@@ -5,6 +5,7 @@ export type ChannelMessage = {
   text: string;
   chatType: "private" | "group";
   isMentioned?: boolean; // true if bot was @mentioned in group chat
+  providerMessageId?: string; // platform-native message ID (e.g. Telegram message_id)
 };
 
 export type SendResult = {
@@ -19,4 +20,5 @@ export interface ChannelAdapter {
   stop(): void;
   send(targetRef: string, content: string): Promise<SendResult>;
   test?(): Promise<TestResult>;
+  react?(targetRef: string, providerMessageId: string, emoji: string): Promise<void>;
 }

@@ -18,6 +18,7 @@ export type InboundMessage = {
   text: string;
   chatType: "private" | "group";
   isMentioned?: boolean;
+  providerMessageId?: string;
 };
 
 export type InboundResult = {
@@ -71,7 +72,7 @@ export class InboundService {
 
   receiveOnSession(
     session: SessionRecord,
-    msg: { messageId: string; userId: string; text: string },
+    msg: { messageId: string; userId: string; text: string; providerMessageId?: string },
   ): InboundResult {
     const trimmed = msg.text.trim();
     if (!trimmed) return { action: "ignored", session };
@@ -93,7 +94,7 @@ export class InboundService {
       sessionId: session.id,
       role: "user",
       content: trimmed,
-      metadata: { userId: msg.userId, sourceType, messageId: msg.messageId },
+      metadata: { userId: msg.userId, sourceType, messageId: msg.messageId, ...(msg.providerMessageId ? { providerMessageId: msg.providerMessageId } : {}) },
       sourceEventId: event.id,
     });
     this.persistInitialSessionName(session.id);
@@ -139,7 +140,7 @@ export class InboundService {
       sessionId: session.id,
       role: "user",
       content: text,
-      metadata: { userId: msg.userId, sourceType, messageId: msg.messageId },
+      metadata: { userId: msg.userId, sourceType, messageId: msg.messageId, ...(msg.providerMessageId ? { providerMessageId: msg.providerMessageId } : {}) },
       sourceEventId: event.id,
     });
     this.persistInitialSessionName(session.id);
