@@ -33,6 +33,7 @@ export default function App() {
     handleNewSession: rawHandleNewSession,
     isCreatingSession,
     resetInfiniteScroll,
+    selectionMode, setSelectionMode, selectedIds, toggleSelected, exitSelectionMode, deleteSelected, deleting,
     editingSessionId, editingSessionName, setEditingSessionName,
     renameSessionError, renameSessionPending, startSessionRename, submitSessionRename, cancelSessionRename,
     selectSession, selectedSessionId, selectedSessionName, snapshot,
@@ -152,6 +153,13 @@ export default function App() {
       sessionsSentinelRef={sessionsSentinelRef}
       handleNewSession={handleNewSession}
       isCreatingSession={isCreatingSession}
+      selectionMode={selectionMode}
+      setSelectionMode={setSelectionMode}
+      selectedIds={selectedIds}
+      toggleSelected={toggleSelected}
+      exitSelectionMode={exitSelectionMode}
+      deleteSelected={deleteSelected}
+      deleting={deleting}
       editingSessionId={editingSessionId}
       editingSessionName={editingSessionName}
       setEditingSessionName={setEditingSessionName}

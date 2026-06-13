@@ -1,4 +1,4 @@
-import { Check, Loader2, Pencil, Plus, Search, X } from "lucide-react";
+import { CheckSquare, Loader2, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import type { WorkspaceSnapshot } from "../../../shared/workspace.js";
 import { Badge } from "../ui/badge.js";
 import { Button } from "../ui/button.js";
@@ -24,6 +24,13 @@ interface SessionListProps {
   sessionsSentinelRef: React.RefObject<HTMLDivElement | null>;
   handleNewSession: () => void;
   isCreatingSession: boolean;
+  selectionMode: boolean;
+  setSelectionMode: (mode: boolean) => void;
+  selectedIds: Set<string>;
+  toggleSelected: (id: string) => void;
+  exitSelectionMode: () => void;
+  deleteSelected: () => Promise<void> | void;
+  deleting: boolean;
   editingSessionId: string | null;
   editingSessionName: string;
   setEditingSessionName: (value: string) => void;
@@ -49,6 +56,13 @@ export function SessionList({
   sessionsSentinelRef,
   handleNewSession,
   isCreatingSession,
+  selectionMode,
+  setSelectionMode,
+  selectedIds,
+  toggleSelected,
+  exitSelectionMode,
+  deleteSelected,
+  deleting,
   editingSessionId,
   editingSessionName,
   setEditingSessionName,
@@ -72,7 +86,16 @@ export function SessionList({
       <div className="side-header">
         <span className="side-eyebrow">工作台</span>
         <h2>会话列表</h2>
-        <Button variant="ghost" size="xs" title="新建对话" onClick={handleNewSession} disabled={isCreatingSession}>
+        <Button
+          variant="ghost"
+          size="xs"
+          title={selectionMode ? "取消选择" : "选择会话"}
+          aria-label={selectionMode ? "取消选择" : "选择会话"}
+          onClick={() => (selectionMode ? exitSelectionMode() : setSelectionMode(true))}
+        >
+          {selectionMode ? <X className="h-4 w-4" /> : <CheckSquare className="h-4 w-4" />}
+        </Button>
+        <Button variant="ghost" size="xs" title="新建对话" aria-label="新建对话" onClick={handleNewSession} disabled={isCreatingSession || selectionMode}>
           <Plus className="h-4 w-4" />
         </Button>
       </div>
@@ -103,6 +126,7 @@ export function SessionList({
                       inputSize="sm"
                       value={editingSessionName}
                       onChange={(event) => setEditingSessionName(event.currentTarget.value)}
+                      onBlur={() => submitSessionRename(session.id)}
                       onKeyDown={(event) => {
                         if (event.key === "Escape") cancelSessionRename();
                       }}
@@ -111,12 +135,6 @@ export function SessionList({
                       aria-describedby={renameSessionError ? `session-rename-error-${session.id}` : undefined}
                       autoFocus
                     />
-                    <button className="session-edit-btn" type="submit" title="保存" aria-label="保存会话名称" disabled={renameSessionPending}>
-                      <Check className="h-4 w-4" />
-                    </button>
-                    <button className="session-edit-btn" type="button" title="取消" aria-label="取消重命名" onClick={cancelSessionRename}>
-                      <X className="h-4 w-4" />
-                    </button>
                   </div>
                   {renameSessionError && (
                     <div id={`session-rename-error-${session.id}`} className="session-edit-error" role="alert">
@@ -126,16 +144,27 @@ export function SessionList({
                 </form>
               ) : (
                 <>
-                  <button className="session-select" onClick={() => selectSession(session.id)}>
+                  {selectionMode && (
+                    <input
+                      type="checkbox"
+                      className="session-check"
+                      checked={selectedIds.has(session.id)}
+                      onChange={() => toggleSelected(session.id)}
+                      aria-label={`选择 ${sessionName}`}
+                    />
+                  )}
+                  <button className="session-select" onClick={() => (selectionMode ? toggleSelected(session.id) : selectSession(session.id))}>
                     <span className="session-title" title={sessionName}>{renderHighlightedSessionName(sessionName, sessionsQuery)}</span>
                     <span className="session-meta">
                       <span>{formatSessionChannel(session.channelType)}</span>
                       <span>{formatSessionUpdatedAt(session.updatedAt)}</span>
                     </span>
                   </button>
-                  <button className="session-action" title="重命名" aria-label={`重命名 ${sessionName}`} onClick={() => startSessionRename(session.id, sessionName)}>
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
+                  {!selectionMode && (
+                    <button className="session-action" title="重命名" aria-label={`重命名 ${sessionName}`} onClick={() => startSessionRename(session.id, sessionName)}>
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                   <Badge shape="dot" tone={sessionStatusTone(session.status)} />
                 </>
               )}
@@ -148,6 +177,26 @@ export function SessionList({
           </div>
         )}
       </div>
+      {selectionMode && (
+        <div className="session-bulk-bar">
+          <span className="session-bulk-count">已选 {selectedIds.size} 个</span>
+          <Button
+            variant="primary"
+            size="sm"
+            title="删除选中会话"
+            disabled={selectedIds.size === 0 || deleting}
+            onClick={() => {
+              if (selectedIds.size === 0) return;
+              if (window.confirm(`确认删除选中的 ${selectedIds.size} 个会话？`)) {
+                void deleteSelected();
+              }
+            }}
+          >
+            <Trash2 className="h-4 w-4" />
+            {deleting ? "删除中…" : `删除选中(${selectedIds.size})`}
+          </Button>
+        </div>
+      )}
     </>
   );
 }

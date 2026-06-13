@@ -270,6 +270,34 @@ export class SessionStore {
     return this.requireSession(sessionId);
   }
 
+  /** Soft-delete: archive a session so it disappears from all active queries. */
+  archiveSession(sessionId: string): void {
+    const now = nowIso();
+    const result = this.db.prepare(
+      "UPDATE sessions SET status = 'archived', archived_at = @archivedAt, updated_at = @updatedAt WHERE id = @sessionId"
+    ).run({ sessionId, archivedAt: now, updatedAt: now });
+    if (result.changes === 0) throw new Error(`Session not found: ${sessionId}`);
+  }
+
+  /** Soft-delete many sessions in a single transaction. Returns ids actually archived. */
+  archiveSessions(sessionIds: string[]): string[] {
+    const unique = Array.from(new Set(sessionIds));
+    if (unique.length === 0) return [];
+    const now = nowIso();
+    const stmt = this.db.prepare(
+      "UPDATE sessions SET status = 'archived', archived_at = @archivedAt, updated_at = @updatedAt WHERE id = @sessionId"
+    );
+    const archived: string[] = [];
+    const tx = this.db.transaction((ids: string[]) => {
+      for (const id of ids) {
+        const r = stmt.run({ sessionId: id, archivedAt: now, updatedAt: now });
+        if (r.changes > 0) archived.push(id);
+      }
+    });
+    tx(unique);
+    return archived;
+  }
+
   setSessionNameIfEmpty(sessionId: string, name: string): SessionRecord {
     const cleanName = normalizeSessionName(name);
     if (!cleanName) return this.requireSession(sessionId);

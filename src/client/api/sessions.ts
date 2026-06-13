@@ -57,3 +57,28 @@ export async function updateSessionName(sessionId: string, name: string): Promis
   }
   return (await response.json()) as UpdateSessionNameResponse;
 }
+
+export async function deleteSession(sessionId: string): Promise<void> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "DELETE",
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `Delete session API failed: ${response.status}`);
+  }
+}
+
+export async function batchDeleteSessions(sessionIds: string[]): Promise<string[]> {
+  const response = await fetch("/api/sessions/batch-archive", {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionIds }),
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `Batch delete sessions API failed: ${response.status}`);
+  }
+  const data = (await response.json()) as { archived: string[] };
+  return data.archived;
+}

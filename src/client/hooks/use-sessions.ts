@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createSession, fetchSessions, updateSessionName } from "../api/sessions.js";
+import { batchDeleteSessions, createSession, fetchSessions, updateSessionName } from "../api/sessions.js";
 import type { AgentType } from "../api/types.js";
 import { localizeAppErrorMessage } from "../lib/error-messages.js";
 import type { AppSection } from "./use-navigation.js";
@@ -63,7 +63,11 @@ export function useSessions({ activeSection, agentType, onNewSession }: UseSessi
     const nextIds = allSessions.map((session) => session.id);
     const existing = stableSessionOrderRef.current.filter((id) => nextIds.includes(id));
     const unseen = nextIds.filter((id) => !existing.includes(id));
-    const nextOrder = [...existing, ...unseen];
+    // New sessions (unseen) go to the TOP — snapshot already returns them in
+    // updated_at DESC order, so the newest lands first. existing keeps its
+    // relative order to stop list items jittering on 3s poll. Reversing the
+    // old [...existing, ...unseen] (which buried new sessions at the bottom).
+    const nextOrder = [...unseen, ...existing];
     stableSessionOrderRef.current = nextOrder;
     return nextOrder
       .map((id) => allSessions.find((session) => session.id === id) ?? null)
@@ -127,6 +131,44 @@ export function useSessions({ activeSection, agentType, onNewSession }: UseSessi
       setRenameSessionError(localizeAppErrorMessage(error instanceof Error ? error.message : "Rename failed"));
     },
   });
+
+  // ── Multi-select & batch delete ──
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [deleting, setDeleting] = useState(false);
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  };
+
+  const deleteSelected = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0 || deleting) return;
+    setDeleting(true);
+    try {
+      await batchDeleteSessions(ids);
+      // If the currently open session was archived, drop it so the view falls
+      // back to server-selected (or empty) instead of a now-hidden session.
+      if (sessionId && ids.includes(sessionId)) {
+        setSessionId(null);
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+      }
+      exitSelectionMode();
+      queryClient.invalidateQueries({ queryKey: ["workspace"] });
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const selectSession = (id: string) => {
     setSessionId(id);
@@ -194,6 +236,13 @@ export function useSessions({ activeSection, agentType, onNewSession }: UseSessi
     handleNewSession,
     isCreatingSession,
     resetInfiniteScroll,
+    selectionMode,
+    setSelectionMode,
+    selectedIds,
+    toggleSelected,
+    exitSelectionMode,
+    deleteSelected,
+    deleting,
     editingSessionId,
     editingSessionName,
     setEditingSessionName,

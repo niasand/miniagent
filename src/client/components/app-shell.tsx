@@ -22,6 +22,13 @@ export function AppShell(props: {
   sessionsSentinelRef: React.RefObject<HTMLDivElement | null>;
   handleNewSession: () => void;
   isCreatingSession: boolean;
+  selectionMode: boolean;
+  setSelectionMode: (mode: boolean) => void;
+  selectedIds: Set<string>;
+  toggleSelected: (id: string) => void;
+  exitSelectionMode: () => void;
+  deleteSelected: () => Promise<void> | void;
+  deleting: boolean;
   editingSessionId: string | null;
   editingSessionName: string;
   setEditingSessionName: (value: string) => void;
@@ -127,6 +134,13 @@ export function AppShell(props: {
             sessionsSentinelRef={props.sessionsSentinelRef}
             handleNewSession={props.handleNewSession}
             isCreatingSession={props.isCreatingSession}
+            selectionMode={props.selectionMode}
+            setSelectionMode={props.setSelectionMode}
+            selectedIds={props.selectedIds}
+            toggleSelected={props.toggleSelected}
+            exitSelectionMode={props.exitSelectionMode}
+            deleteSelected={props.deleteSelected}
+            deleting={props.deleting}
             editingSessionId={props.editingSessionId}
             editingSessionName={props.editingSessionName}
             setEditingSessionName={props.setEditingSessionName}

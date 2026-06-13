@@ -565,6 +565,30 @@ button { cursor: pointer; }
   white-space: nowrap;
 }
 
+.session-check {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  margin: 0 4px 0 2px;
+  cursor: pointer;
+  accent-color: var(--color-primary, #2563eb);
+}
+
+.session-bulk-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--color-border, rgba(0, 0, 0, 0.08));
+  background: var(--color-muted, rgba(0, 0, 0, 0.03));
+}
+
+.session-bulk-count {
+  font-size: 12px;
+  color: var(--color-muted-foreground, #6b7280);
+}
+
 .session-highlight {
   border-radius: 3px;
   background: color-mix(in srgb, var(--color-primary) 22%, transparent);

@@ -223,6 +223,24 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
     );
   });
 
+  // Static path BEFORE /:sessionId param routes so Hono matches it first.
+  app.post("/api/sessions/batch-archive", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return c.json({ error: "Request body must be valid JSON" }, 400);
+    }
+    const raw = (body as Record<string, unknown>).sessionIds;
+    if (!Array.isArray(raw) || raw.length === 0) {
+      return c.json({ error: "sessionIds must be a non-empty array" }, 400);
+    }
+    const sessionIds = raw.filter((id): id is string => typeof id === "string" && id.length > 0);
+    if (sessionIds.length === 0) {
+      return c.json({ error: "sessionIds must contain at least one valid id" }, 400);
+    }
+    const archived = sessionStore.archiveSessions(sessionIds);
+    return c.json({ archived, count: archived.length }, 200);
+  });
+
   app.patch("/api/sessions/:sessionId", async (c) => {
     const body = await c.req.json().catch(() => null);
     if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -246,6 +264,21 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Session update failed";
+      if (message.startsWith("Session not found")) {
+        return c.json({ error: message }, 404);
+      }
+      return c.json({ error: message }, 500);
+    }
+  });
+
+  // Soft-delete (archive) a single session.
+  app.delete("/api/sessions/:sessionId", (c) => {
+    const sessionId = c.req.param("sessionId");
+    try {
+      sessionStore.archiveSession(sessionId);
+      return c.json({ archived: [sessionId], count: 1 }, 200);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Session delete failed";
       if (message.startsWith("Session not found")) {
         return c.json({ error: message }, 404);
       }
