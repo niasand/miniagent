@@ -208,6 +208,7 @@ test("history shows the session name and truncates long labels", async ({ page }
   await page.goto("/");
   const search = page.getByPlaceholder("搜索会话...");
   await expect(search).toBeFocused();
+  await expect(search).toHaveCSS("border-top-width", "0px");
 
   const title = page.locator(".session-title").first();
   await expect(title).toHaveText(longName);

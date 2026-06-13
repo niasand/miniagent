@@ -80,6 +80,7 @@ export function SessionList({
         <Search className="h-4 w-4 side-search-icon" />
         <Input
           ref={sessionsSearchRef}
+          variant="ghost"
           className="side-search-input"
           value={sessionsQuery}
           onChange={(event) => setSessionsQuery(event.currentTarget.value)}
