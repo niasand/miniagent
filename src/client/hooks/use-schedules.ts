@@ -21,6 +21,8 @@ export function useSchedules({ selectedSessionId, activeSection }: UseSchedulesO
   const [scheduleCronExpr, setScheduleCronExpr] = useState("0 9 * * 1-5");
   const [scheduleTimezone, setScheduleTimezone] = useState("Asia/Shanghai");
   const [scheduleText, setScheduleText] = useState("");
+  const [scheduleQqTargetRef, setScheduleQqTargetRef] = useState("");
+  const [scheduleTelegramTargetRef, setScheduleTelegramTargetRef] = useState("");
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
   const [editScheduleKind, setEditScheduleKind] = useState<WorkspaceScheduleKind>("once");
@@ -28,6 +30,8 @@ export function useSchedules({ selectedSessionId, activeSection }: UseSchedulesO
   const [editScheduleCronExpr, setEditScheduleCronExpr] = useState("");
   const [editScheduleTimezone, setEditScheduleTimezone] = useState("Asia/Shanghai");
   const [editScheduleText, setEditScheduleText] = useState("");
+  const [editScheduleQqTargetRef, setEditScheduleQqTargetRef] = useState("");
+  const [editScheduleTelegramTargetRef, setEditScheduleTelegramTargetRef] = useState("");
   const [editScheduleError, setEditScheduleError] = useState<string | null>(null);
 
   // Schedule list query
@@ -91,7 +95,10 @@ export function useSchedules({ selectedSessionId, activeSection }: UseSchedulesO
         runAt: scheduleKind === "once" ? new Date(scheduleRunAt).toISOString() : null,
         cronExpr: scheduleKind === "cron" ? scheduleCronExpr.trim() : null,
         timezone: scheduleTimezone,
-        payload: { text },
+        payload: {
+          text,
+          notificationTargets: buildNotificationTargets(scheduleQqTargetRef, scheduleTelegramTargetRef),
+        },
         actorType: "web_user",
       });
     },
@@ -100,6 +107,8 @@ export function useSchedules({ selectedSessionId, activeSection }: UseSchedulesO
     },
     onSuccess: (data) => {
       setScheduleText("");
+      setScheduleQqTargetRef("");
+      setScheduleTelegramTargetRef("");
       setScheduleRunAt(defaultRunAtInput());
       setSelectedScheduleId(data.schedule.id);
       queryClient.invalidateQueries({ queryKey: ["schedules", selectedSessionId] });
@@ -132,7 +141,10 @@ export function useSchedules({ selectedSessionId, activeSection }: UseSchedulesO
         runAt: editScheduleKind === "once" ? new Date(editScheduleRunAt).toISOString() : null,
         cronExpr: editScheduleKind === "cron" ? editScheduleCronExpr.trim() : null,
         timezone: editScheduleTimezone,
-        payload: { text },
+        payload: {
+          text,
+          notificationTargets: buildNotificationTargets(editScheduleQqTargetRef, editScheduleTelegramTargetRef),
+        },
         actorType: "web_user",
       });
     },
@@ -169,6 +181,8 @@ export function useSchedules({ selectedSessionId, activeSection }: UseSchedulesO
     setEditScheduleCronExpr(schedule.cronExpr ?? "");
     setEditScheduleTimezone(schedule.timezone);
     setEditScheduleText(schedule.payloadText ?? "");
+    setEditScheduleQqTargetRef(schedule.notificationTargets.find((target) => target.channelType === "qq")?.targetRef ?? "");
+    setEditScheduleTelegramTargetRef(schedule.notificationTargets.find((target) => target.channelType === "telegram")?.targetRef ?? "");
     setEditScheduleError(null);
   };
 
@@ -196,6 +210,10 @@ export function useSchedules({ selectedSessionId, activeSection }: UseSchedulesO
     schedulePreviewError,
     scheduleText,
     setScheduleText,
+    scheduleQqTargetRef,
+    setScheduleQqTargetRef,
+    scheduleTelegramTargetRef,
+    setScheduleTelegramTargetRef,
     scheduleError,
     createSchedulePending: createScheduleMutation.isPending,
     handleCreateSchedule,
@@ -212,6 +230,10 @@ export function useSchedules({ selectedSessionId, activeSection }: UseSchedulesO
     editSchedulePreviewError,
     editScheduleText,
     setEditScheduleText,
+    editScheduleQqTargetRef,
+    setEditScheduleQqTargetRef,
+    editScheduleTelegramTargetRef,
+    setEditScheduleTelegramTargetRef,
     editScheduleError,
     editSchedulePending: editScheduleMutation.isPending,
     submitScheduleEdit,
@@ -219,4 +241,11 @@ export function useSchedules({ selectedSessionId, activeSection }: UseSchedulesO
     scheduleRuns,
     updateSchedule: (input: { id: string; action: "pause" | "resume" | "cancel" }) => updateScheduleMutation.mutate(input),
   } as const;
+}
+
+function buildNotificationTargets(qqTargetRef: string, telegramTargetRef: string) {
+  return [
+    qqTargetRef.trim() ? { channelType: "qq" as const, targetRef: qqTargetRef.trim() } : null,
+    telegramTargetRef.trim() ? { channelType: "telegram" as const, targetRef: telegramTargetRef.trim() } : null,
+  ].filter((target): target is { channelType: "qq" | "telegram"; targetRef: string } => target !== null);
 }

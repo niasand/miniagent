@@ -247,8 +247,14 @@ export type WorkspaceSchedule = {
   timezone: string;
   payloadText: string | null;
   payloadSummary: string | null;
+  notificationTargets: WorkspaceScheduleNotificationTarget[];
   nextRunAt: string | null;
   lastRunAt: string | null;
+};
+
+export type WorkspaceScheduleNotificationTarget = {
+  channelType: "qq" | "telegram";
+  targetRef: string;
 };
 
 export type WorkspaceScheduleRun = {
@@ -279,7 +285,9 @@ export type CreateScheduleRequest = {
   cronExpr?: string | null;
   runAt?: string | null;
   timezone?: string;
-  payload?: Record<string, unknown>;
+  payload?: Record<string, unknown> & {
+    notificationTargets?: WorkspaceScheduleNotificationTarget[];
+  };
   actorType?: WorkspaceActorType;
   actorRef?: string | null;
 };
@@ -305,7 +313,9 @@ export type UpdateScheduleRequest = {
   cronExpr?: string | null;
   runAt?: string | null;
   timezone?: string;
-  payload?: Record<string, unknown>;
+  payload?: Record<string, unknown> & {
+    notificationTargets?: WorkspaceScheduleNotificationTarget[];
+  };
   actorType?: WorkspaceActorType;
   actorRef?: string | null;
 };

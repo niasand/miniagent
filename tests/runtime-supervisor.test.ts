@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { createTestDb, disposeTestDb, type SqliteDatabase } from "./helpers.js";
-import { SessionStore } from "../src/server/stores/session-store.js";
+import { createTestDb, disposeTestDb } from "./helpers.js";
+import type { SqliteDatabase } from "../src/server/db/migrate.js";
+import { SessionStore, type SourceType } from "../src/server/stores/session-store.js";
 import { EventStore } from "../src/server/stores/event-store.js";
 import { MessageStore } from "../src/server/stores/message-store.js";
 import { PermissionRequestStore } from "../src/server/stores/permission-request-store.js";
@@ -20,10 +21,8 @@ import type {
   RuntimeLaunchSpec,
   RuntimeCapabilities,
   RuntimeInput,
-  RuntimeProcess,
-  RuntimeProcessExit,
-  RuntimeProcessFactory,
 } from "../src/server/runtime/types.js";
+import type { RuntimeProcess, RuntimeProcessExit } from "../src/server/runtime/process.js";
 
 // ── Fakes ────────────────────────────────────────────────────────────────
 
@@ -101,6 +100,10 @@ class FakeDriver implements RuntimeSessionDriver {
     this.callbacks!.emit(drafts);
   }
 
+  exit(exit: RuntimeProcessExit = { exitCode: 0, signal: null, message: null, exitedAt: new Date().toISOString() }): void {
+    this.callbacks!.exit(exit);
+  }
+
   get respondPermissionCalls(): RuntimePermissionResponseInput[] {
     return this.handle?.respondPermissionCalls ?? [];
   }
@@ -152,7 +155,7 @@ function createSessionAndTask(
 
   const { task } = sessions.createTask({
     sessionId: session.id,
-    sourceType: channelType ?? "web",
+    sourceType: (channelType ?? "web") as SourceType,
     type: "message",
     input: { text: "hello" },
   });
@@ -284,5 +287,44 @@ describe("RuntimeSupervisor permission auto-approve", () => {
 
     const run = sessions.getRun(sessions.getSession(session.id)!.activeRunId!)!;
     expect(run.status).toBe("waiting_permission");
+  });
+
+  it("sends scheduled web run output to configured QQ and Telegram notification targets", () => {
+    const { supervisor, fakeDriver } = setupSupervisor(db);
+    const session = sessions.createSession({
+      title: "Scheduled web session",
+      agentType: "claude",
+      workspacePath: "/tmp/test",
+      channelType: "web",
+      channelRef: "web-session",
+    });
+    const { task } = sessions.createTask({
+      sessionId: session.id,
+      sourceType: "cron",
+      type: "schedule_run",
+      input: {
+        text: "scheduled prompt",
+        notificationTargets: [
+          { channelType: "qq", targetRef: "group:123" },
+          { channelType: "telegram", targetRef: "private:456" },
+        ],
+      },
+    });
+    const outbox = new OutboxStore(db);
+
+    supervisor.startTask({ sessionId: session.id, taskId: task.id });
+    fakeDriver.emit({
+      type: "text_delta",
+      payload: { text: "Scheduled result", receivedAt: new Date().toISOString() },
+    });
+    fakeDriver.exit();
+
+    const items = outbox.claimDue({ workerId: "test", limit: 10 });
+    expect(items).toHaveLength(2);
+    expect(items.map((item) => [item.channelType, item.targetRef])).toEqual([
+      ["qq", "group:123"],
+      ["telegram", "private:456"],
+    ]);
+    expect(items.every((item) => (item.viewModel as { text?: string }).text?.includes("Scheduled result"))).toBe(true);
   });
 });

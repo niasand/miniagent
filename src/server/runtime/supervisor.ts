@@ -472,21 +472,70 @@ export class RuntimeSupervisor {
     const stats = this.formatStats(activeRun, session.agentType);
     const fullText = text + stats;
 
-    const channelType = session.channelType as OutboxChannel;
-    const kind = `${channelType}_markdown` as OutboxKind;
-    const maxLen = CHANNEL_MAX_CONTENT[channelType] ?? 4096;
-    const chunks = splitChunks(fullText, maxLen);
-
-    for (let i = 0; i < chunks.length; i++) {
-      this.outbox.enqueue({
+    const targets = [
+      ...getPrimaryReplyTarget(session.channelType, session.channelRef),
+      ...this.getExtraReplyTargets(activeRun),
+    ];
+    const seen = new Set<string>();
+    for (const target of targets) {
+      const channelType = target.channelType;
+      const targetRef = target.targetRef;
+      const targetKey = `${channelType}:${targetRef}`;
+      if (seen.has(targetKey)) continue;
+      seen.add(targetKey);
+      this.enqueueReplyChunks({
         sessionId: session.id,
+        runId: activeRun.runId,
         channelType,
-        targetRef: session.channelRef,
-        kind,
-        viewModel: { text: chunks[i], chunkIndex: i, totalChunks: chunks.length },
-        idempotencyKey: `${activeRun.runId}:reply:${i}`,
+        targetRef,
+        fullText,
+        idempotencyPrefix: targetKey,
       });
     }
+  }
+
+  private enqueueReplyChunks(input: {
+    sessionId: string;
+    runId: string;
+    channelType: Exclude<OutboxChannel, "web">;
+    targetRef: string;
+    fullText: string;
+    idempotencyPrefix: string;
+  }): void {
+    const kind = `${input.channelType}_markdown` as OutboxKind;
+    const maxLen = CHANNEL_MAX_CONTENT[input.channelType] ?? 4096;
+    const chunks = splitChunks(input.fullText, maxLen);
+
+    for (let i = 0; i < chunks.length; i++) {
+      this.outbox?.enqueue({
+        sessionId: input.sessionId,
+        channelType: input.channelType,
+        targetRef: input.targetRef,
+        kind,
+        viewModel: { text: chunks[i], chunkIndex: i, totalChunks: chunks.length },
+        idempotencyKey: `${input.runId}:reply:${input.idempotencyPrefix}:${i}`,
+      });
+    }
+  }
+
+  private getExtraReplyTargets(activeRun: ActiveRun): Array<{ channelType: "qq" | "telegram"; targetRef: string }> {
+    const task = this.sessions.getTask(activeRun.taskId);
+    if (task?.type !== "schedule_run") return [];
+    const input = asJsonObject(task.input);
+    const rawTargets = input.notificationTargets;
+    if (!Array.isArray(rawTargets)) return [];
+
+    const targets: Array<{ channelType: "qq" | "telegram"; targetRef: string }> = [];
+    for (const rawTarget of rawTargets) {
+      if (!rawTarget || typeof rawTarget !== "object" || Array.isArray(rawTarget)) continue;
+      const target = rawTarget as Record<string, unknown>;
+      const channelType = target.channelType;
+      const targetRef = target.targetRef;
+      if ((channelType === "qq" || channelType === "telegram") && typeof targetRef === "string" && targetRef.trim()) {
+        targets.push({ channelType, targetRef: targetRef.trim() });
+      }
+    }
+    return targets;
   }
 }
 
@@ -529,6 +578,25 @@ const CHANNEL_MAX_CONTENT: Record<string, number> = {
   dingtalk: 4096,
   web: 1_000_000,
 };
+
+function getPrimaryReplyTarget(
+  channelType: string,
+  targetRef: string,
+): Array<{ channelType: Exclude<OutboxChannel, "web">; targetRef: string }> {
+  if (channelType === "web") return [];
+  if (
+    channelType === "feishu" ||
+    channelType === "qq" ||
+    channelType === "telegram" ||
+    channelType === "discord" ||
+    channelType === "wechat" ||
+    channelType === "wecom" ||
+    channelType === "dingtalk"
+  ) {
+    return [{ channelType, targetRef }];
+  }
+  return [];
+}
 
 function splitChunks(text: string, maxLen: number): string[] {
   if (text.length <= maxLen) return [text];

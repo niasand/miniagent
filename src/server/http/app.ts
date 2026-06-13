@@ -25,7 +25,7 @@ import { RuntimeService } from "../runtime/service.js";
 import { WorkspacePolicy, WorkspacePolicyError } from "../security/workspace-policy.js";
 import { ChannelRegistry } from "../channels/registry.js";
 import { KnowledgeService } from "../services/knowledge.js";
-import type { WorkspaceSchedule, WorkspaceScheduleRun } from "../../shared/workspace.js";
+import type { WorkspaceSchedule, WorkspaceScheduleNotificationTarget, WorkspaceScheduleRun } from "../../shared/workspace.js";
 import type { ScheduleRecord } from "../stores/schedule-store.js";
 import type { ScheduleRunRecord } from "../stores/schedule-run-store.js";
 import type { AgentDefaultRecord } from "../stores/agent-default-store.js";
@@ -1002,9 +1002,28 @@ function mapSchedule(record: ScheduleRecord): WorkspaceSchedule {
     timezone: record.timezone,
     payloadText: getSchedulePayloadText(record.payload),
     payloadSummary: summarizeSchedulePayload(record.payload),
+    notificationTargets: getScheduleNotificationTargets(record.payload),
     nextRunAt: record.nextRunAt,
     lastRunAt: record.lastRunAt,
   };
+}
+
+function getScheduleNotificationTargets(payload: JsonValue): WorkspaceScheduleNotificationTarget[] {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return [];
+  const rawTargets = (payload as Record<string, unknown>).notificationTargets;
+  if (!Array.isArray(rawTargets)) return [];
+
+  const targets: WorkspaceScheduleNotificationTarget[] = [];
+  for (const rawTarget of rawTargets) {
+    if (!rawTarget || typeof rawTarget !== "object" || Array.isArray(rawTarget)) continue;
+    const target = rawTarget as Record<string, unknown>;
+    const channelType = target.channelType;
+    const targetRef = target.targetRef;
+    if ((channelType === "qq" || channelType === "telegram") && typeof targetRef === "string" && targetRef.trim()) {
+      targets.push({ channelType, targetRef: targetRef.trim() });
+    }
+  }
+  return targets;
 }
 
 function mapScheduleRun(record: ScheduleRunRecord): WorkspaceScheduleRun {

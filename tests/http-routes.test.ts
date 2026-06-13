@@ -488,7 +488,32 @@ describe("POST /api/schedules", () => {
     expect(data.schedule.timezone).toBe("UTC");
     expect(data.schedule.payloadText).toBe("Daily summary");
     expect(data.schedule.payloadSummary).toBe("Daily summary");
+    expect(data.schedule.notificationTargets).toEqual([]);
     expect(data.schedule.nextRunAt).toBeTruthy();
+  });
+
+  it("creates a schedule with QQ and Telegram notification targets", async () => {
+    const { sessionId } = (await (await postJson("/api/sessions", {})).json()) as any;
+    const res = await postJson("/api/schedules", {
+      sessionId,
+      kind: "cron",
+      cronExpr: "0 9 * * 1-5",
+      timezone: "UTC",
+      payload: {
+        text: "Daily summary",
+        notificationTargets: [
+          { channelType: "qq", targetRef: "group:123" },
+          { channelType: "telegram", targetRef: "private:456" },
+        ],
+      },
+    });
+
+    expect(res.status).toBe(201);
+    const data = await res.json();
+    expect(data.schedule.notificationTargets).toEqual([
+      { channelType: "qq", targetRef: "group:123" },
+      { channelType: "telegram", targetRef: "private:456" },
+    ]);
   });
 
   it("creates a once schedule", async () => {

@@ -59,6 +59,10 @@ export function AppShell(props: {
   schedulePreviewError: unknown;
   scheduleText: string;
   setScheduleText: (value: string) => void;
+  scheduleQqTargetRef: string;
+  setScheduleQqTargetRef: (value: string) => void;
+  scheduleTelegramTargetRef: string;
+  setScheduleTelegramTargetRef: (value: string) => void;
   scheduleError: string | null;
   createSchedulePending: boolean;
   selectedSessionId: string | null;
@@ -76,6 +80,10 @@ export function AppShell(props: {
   editSchedulePreviewError: unknown;
   editScheduleText: string;
   setEditScheduleText: (value: string) => void;
+  editScheduleQqTargetRef: string;
+  setEditScheduleQqTargetRef: (value: string) => void;
+  editScheduleTelegramTargetRef: string;
+  setEditScheduleTelegramTargetRef: (value: string) => void;
   editScheduleError: string | null;
   editSchedulePending: boolean;
   submitScheduleEdit: () => void;
@@ -217,6 +225,10 @@ export function AppShell(props: {
             editSchedulePreviewError={props.editSchedulePreviewError}
             editScheduleText={props.editScheduleText}
             setEditScheduleText={props.setEditScheduleText}
+            editScheduleQqTargetRef={props.editScheduleQqTargetRef}
+            setEditScheduleQqTargetRef={props.setEditScheduleQqTargetRef}
+            editScheduleTelegramTargetRef={props.editScheduleTelegramTargetRef}
+            setEditScheduleTelegramTargetRef={props.setEditScheduleTelegramTargetRef}
             editScheduleError={props.editScheduleError}
             editSchedulePending={props.editSchedulePending}
             submitScheduleEdit={props.submitScheduleEdit}
@@ -235,6 +247,10 @@ export function AppShell(props: {
             schedulePreviewError={props.schedulePreviewError}
             scheduleText={props.scheduleText}
             setScheduleText={props.setScheduleText}
+            scheduleQqTargetRef={props.scheduleQqTargetRef}
+            setScheduleQqTargetRef={props.setScheduleQqTargetRef}
+            scheduleTelegramTargetRef={props.scheduleTelegramTargetRef}
+            setScheduleTelegramTargetRef={props.setScheduleTelegramTargetRef}
             scheduleError={props.scheduleError}
             createSchedulePending={props.createSchedulePending}
             handleCreateSchedule={props.handleCreateSchedule}
