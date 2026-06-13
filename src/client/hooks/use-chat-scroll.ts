@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createChatScrollController } from "../lib/chat-scroll.js";
+import type { AppSection } from "./use-navigation.js";
 
 interface UseChatScrollOptions {
+  activeSection: AppSection;
   sessionId: string | null;
   selectedSessionId: string | null;
   messages: { id: string; role: string }[];
@@ -10,6 +12,7 @@ interface UseChatScrollOptions {
 }
 
 export function useChatScroll({
+  activeSection,
   sessionId,
   selectedSessionId,
   messages,
@@ -27,6 +30,7 @@ export function useChatScroll({
 
   const prevMsgCountRef = useRef(0);
   const lastAutoScrollSessionRef = useRef<string | null>(null);
+  const lastActiveSectionRef = useRef<AppSection>(activeSection);
   const [settledMessagesSessionKey, setSettledMessagesSessionKey] = useState<string | null>(null);
   const [focusedScheduleTarget, setFocusedScheduleTarget] = useState<{ sessionId: string; runId: string } | null>(null);
 
@@ -63,7 +67,8 @@ export function useChatScroll({
 
     const isInitialLoad = prevMsgCountRef.current === 0;
     const isNewSession = lastAutoScrollSessionRef.current !== messagesSessionKey;
-    const shouldSnapToBottom = isInitialLoad || isNewSession || settledMessagesSessionKey !== messagesSessionKey;
+    const returnedToWorkspace = lastActiveSectionRef.current !== "workspace" && activeSection === "workspace";
+    const shouldSnapToBottom = activeSection === "workspace" && (isInitialLoad || isNewSession || returnedToWorkspace || settledMessagesSessionKey !== messagesSessionKey);
 
     if (shouldSnapToBottom) {
       const cleanup = scrollController.scheduleInitialLoad({
@@ -75,12 +80,14 @@ export function useChatScroll({
       });
       prevMsgCountRef.current = messages.length;
       lastAutoScrollSessionRef.current = messagesSessionKey;
+      lastActiveSectionRef.current = activeSection;
       return cleanup;
     }
 
     prevMsgCountRef.current = messages.length;
     lastAutoScrollSessionRef.current = messagesSessionKey;
-  }, [hasWorkspaceSnapshot, lastMessageId, messages.length, messagesSessionKey, scrollController, settledMessagesSessionKey]);
+    lastActiveSectionRef.current = activeSection;
+  }, [activeSection, hasWorkspaceSnapshot, lastMessageId, messages.length, messagesSessionKey, scrollController, settledMessagesSessionKey]);
 
   // Scroll/touch event listeners for user scroll intent tracking
   useEffect(() => {

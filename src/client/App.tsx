@@ -90,6 +90,7 @@ export default function App() {
     messagesContainerRef, scrollMessagesToTop, scrollMessagesToBottom,
     focusedScheduleTarget, setFocusedScheduleTarget, messagesSessionKey, messagesSettling,
   } = useChatScroll({
+    activeSection,
     sessionId,
     selectedSessionId,
     messages,

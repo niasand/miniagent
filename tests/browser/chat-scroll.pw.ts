@@ -137,6 +137,37 @@ test("initial load keeps the scrollbar pinned through slower content growth", as
   await expect.poll(() => distanceFromBottom(messages)).toBeLessThanOrEqual(1);
 });
 
+test("returning from skills keeps the workspace conversation pinned to bottom", async ({ page }) => {
+  await page.addInitScript((id) => {
+    localStorage.setItem("sessionId", id);
+  }, sessionId);
+
+  await mockWorkspaceApis(page, createScrollableSnapshot(), {
+    skills: [
+      {
+        name: "ship-it",
+        description: "Ship the current change safely.",
+        source: "project",
+        path: "/project/.claude/skills/ship-it",
+      },
+    ],
+  });
+
+  await page.goto("/");
+
+  const messages = page.locator(".chat-messages");
+  await expect.poll(() => messages.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await expect.poll(() => distanceFromBottom(messages)).toBeLessThanOrEqual(1);
+  await page.getByRole("button", { name: "回到顶部" }).click();
+  await expect.poll(() => messages.evaluate((el) => el.scrollTop)).toBeLessThan(20);
+
+  await page.getByRole("button", { name: "技能" }).click();
+  await expect(page.getByPlaceholder("搜索技能...")).toBeVisible();
+  await page.getByRole("button", { name: "工作台" }).click();
+
+  await expect.poll(() => distanceFromBottom(messages)).toBeLessThanOrEqual(1);
+});
+
 test("reload ignores the browser-restored message scroll position", async ({ page }) => {
   await page.addInitScript((id) => {
     localStorage.setItem("sessionId", id);
