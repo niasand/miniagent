@@ -594,12 +594,6 @@ button { cursor: pointer; }
   padding: 9px 10px;
 }
 
-.schedule-delivery-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
 .schedule-input:focus,
 .schedule-textarea:focus {
   border-color: var(--color-ring);
@@ -880,22 +874,6 @@ button { cursor: pointer; }
 .schedule-run-main span:not(.schedule-status) {
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.schedule-target-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.schedule-target-list span {
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-muted);
-  padding: 4px 8px;
-  color: var(--color-muted-foreground);
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 12px;
 }
 
 .schedule-run-actions {
@@ -1551,10 +1529,6 @@ button { cursor: pointer; }
   }
 
   .detail-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .schedule-delivery-grid {
     grid-template-columns: 1fr;
   }
 

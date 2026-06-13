@@ -36,10 +36,6 @@ interface ScheduleDetailProps {
   editSchedulePreviewError: unknown;
   editScheduleText: string;
   setEditScheduleText: (value: string) => void;
-  editScheduleQqTargetRef: string;
-  setEditScheduleQqTargetRef: (value: string) => void;
-  editScheduleTelegramTargetRef: string;
-  setEditScheduleTelegramTargetRef: (value: string) => void;
   editScheduleError: string | null;
   editSchedulePending: boolean;
   submitScheduleEdit: () => void;
@@ -58,10 +54,6 @@ interface ScheduleDetailProps {
   schedulePreviewError: unknown;
   scheduleText: string;
   setScheduleText: (value: string) => void;
-  scheduleQqTargetRef: string;
-  setScheduleQqTargetRef: (value: string) => void;
-  scheduleTelegramTargetRef: string;
-  setScheduleTelegramTargetRef: (value: string) => void;
   scheduleError: string | null;
   createSchedulePending: boolean;
   handleCreateSchedule: () => void;
@@ -87,10 +79,6 @@ export function ScheduleDetail({
   editSchedulePreviewError,
   editScheduleText,
   setEditScheduleText,
-  editScheduleQqTargetRef,
-  setEditScheduleQqTargetRef,
-  editScheduleTelegramTargetRef,
-  setEditScheduleTelegramTargetRef,
   editScheduleError,
   editSchedulePending,
   submitScheduleEdit,
@@ -109,10 +97,6 @@ export function ScheduleDetail({
   schedulePreviewError,
   scheduleText,
   setScheduleText,
-  scheduleQqTargetRef,
-  setScheduleQqTargetRef,
-  scheduleTelegramTargetRef,
-  setScheduleTelegramTargetRef,
   scheduleError,
   createSchedulePending,
   handleCreateSchedule,
@@ -146,10 +130,6 @@ export function ScheduleDetail({
               </div>
             )}
             <Textarea inputSize="lg" value={scheduleText} onChange={(event) => setScheduleText(event.currentTarget.value)} placeholder="输入要发送的消息..." rows={4} />
-            <div className="schedule-delivery-grid">
-              <Input inputSize="md" value={scheduleQqTargetRef} onChange={(event) => setScheduleQqTargetRef(event.currentTarget.value)} placeholder="QQ targetRef，例如 group:123 或 c2c:openid" aria-label="QQ 通知目标" />
-              <Input inputSize="md" value={scheduleTelegramTargetRef} onChange={(event) => setScheduleTelegramTargetRef(event.currentTarget.value)} placeholder="Telegram targetRef，例如 private:123" aria-label="Telegram 通知目标" />
-            </div>
             {scheduleError && <div className="schedule-error" role="alert">{scheduleError}</div>}
             <Button variant="primary" onClick={handleCreateSchedule} disabled={!selectedSessionId || createSchedulePending}>
               <CalendarClock className="h-4 w-4" />
@@ -206,18 +186,6 @@ export function ScheduleDetail({
               <p>{selectedSchedule.payloadText ?? selectedSchedule.payloadSummary}</p>
             </div>
           )}
-          {selectedSchedule.notificationTargets.length > 0 && (
-            <div className="detail-section">
-              <h2>通知目标</h2>
-              <div className="schedule-target-list">
-                {selectedSchedule.notificationTargets.map((target) => (
-                  <span key={`${target.channelType}:${target.targetRef}`}>
-                    {target.channelType}: {target.targetRef}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
           {editingScheduleId === selectedSchedule.id && (
             <div className="detail-section">
               <h2>编辑任务</h2>
@@ -240,10 +208,6 @@ export function ScheduleDetail({
                   </div>
                 )}
                 <Textarea inputSize="lg" value={editScheduleText} onChange={(event) => setEditScheduleText(event.currentTarget.value)} aria-label="编辑消息" rows={4} />
-                <div className="schedule-delivery-grid">
-                  <Input inputSize="md" value={editScheduleQqTargetRef} onChange={(event) => setEditScheduleQqTargetRef(event.currentTarget.value)} placeholder="QQ targetRef，例如 group:123 或 c2c:openid" aria-label="编辑 QQ 通知目标" />
-                  <Input inputSize="md" value={editScheduleTelegramTargetRef} onChange={(event) => setEditScheduleTelegramTargetRef(event.currentTarget.value)} placeholder="Telegram targetRef，例如 private:123" aria-label="编辑 Telegram 通知目标" />
-                </div>
                 {editScheduleError && <div className="schedule-error" role="alert">{editScheduleError}</div>}
                 <div className="schedule-edit-actions">
                   <Button variant="default" onClick={() => setEditingScheduleId(null)}>取消</Button>

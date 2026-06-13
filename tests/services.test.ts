@@ -116,6 +116,41 @@ describe("SchedulerService", () => {
     expect(list[0].cronExpr).toBe("0 9 * * 1-5");
   });
 
+  it("adds default private QQ and Telegram notification targets", () => {
+    const events = new EventStore(db);
+    const sessions = new SessionStore(db, events);
+    const session = sessions.createSession({ title: "T", agentType: "claude", workspacePath: "/tmp" });
+    sessions.createSession({ title: "QQ group", agentType: "claude", workspacePath: "/tmp", channelType: "qq", channelRef: "group:ignore" });
+    sessions.createSession({ title: "QQ private", agentType: "claude", workspacePath: "/tmp", channelType: "qq", channelRef: "c2c:user1" });
+    sessions.createSession({ title: "TG private", agentType: "claude", workspacePath: "/tmp", channelType: "telegram", channelRef: "private:42" });
+
+    const scheduler = new SchedulerService(db);
+    const schedule = scheduler.create({
+      sessionId: session.id,
+      kind: "cron",
+      cronExpr: "0 9 * * 1-5",
+      payload: { text: "scheduled" },
+    });
+    expect(schedule.payload).toMatchObject({
+      text: "scheduled",
+      notificationTargets: [
+        { channelType: "qq", targetRef: "c2c:user1" },
+        { channelType: "telegram", targetRef: "private:42" },
+      ],
+    });
+
+    const updated = scheduler.update(schedule.id, {
+      payload: { text: "updated" },
+    });
+    expect(updated?.payload).toMatchObject({
+      text: "updated",
+      notificationTargets: [
+        { channelType: "qq", targetRef: "c2c:user1" },
+        { channelType: "telegram", targetRef: "private:42" },
+      ],
+    });
+  });
+
   it("pauses and resumes schedules", () => {
     const events = new EventStore(db);
     const sessions = new SessionStore(db, events);

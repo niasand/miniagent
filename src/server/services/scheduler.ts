@@ -5,6 +5,12 @@ import { ScheduleRunStore, type ScheduleRunRecord } from "../stores/schedule-run
 import { EventStore } from "../stores/event-store.js";
 import { AuditLogStore } from "../stores/audit-log-store.js";
 import type { RuntimeService } from "../runtime/service.js";
+import type { JsonObject, JsonValue } from "../../shared/json.js";
+
+type PrivateNotificationTarget = {
+  channelType: "qq" | "telegram";
+  targetRef: string;
+};
 
 export class SchedulerService {
   private sessions: SessionStore;
@@ -24,12 +30,15 @@ export class SchedulerService {
 
   create(input: {
     sessionId: string; kind: ScheduleKind; cronExpr?: string | null;
-    runAt?: string | null; timezone?: string; payload?: import("../../shared/json.js").JsonValue;
+    runAt?: string | null; timezone?: string; payload?: JsonValue;
     actorType?: string; actorRef?: string;
   }) {
     const session = this.sessions.getSession(input.sessionId);
     if (!session) throw new Error(`Session not found: ${input.sessionId}`);
-    const schedule = this.schedules.create(input);
+    const schedule = this.schedules.create({
+      ...input,
+      payload: this.withDefaultPrivateNotificationTargets(input.payload),
+    });
     this.auditLogs.insert({
       actorType: (input.actorType ?? "system") as any,
       actorRef: input.actorRef ?? null,
@@ -50,7 +59,12 @@ export class SchedulerService {
   }
 
   update(scheduleId: string, input: UpdateScheduleInput) {
-    const schedule = this.schedules.update(scheduleId, input);
+    const schedule = this.schedules.update(scheduleId, input.payload === undefined
+      ? input
+      : {
+          ...input,
+          payload: this.withDefaultPrivateNotificationTargets(input.payload),
+        });
     if (!schedule) return null;
     this.auditLogs.insert({
       actorType: "web_user",
@@ -126,5 +140,42 @@ export class SchedulerService {
     }
 
     return { triggered };
+  }
+
+  private withDefaultPrivateNotificationTargets(payload: JsonValue | undefined): JsonValue {
+    const base = payload && typeof payload === "object" && !Array.isArray(payload)
+      ? payload as JsonObject
+      : {};
+    return {
+      ...base,
+      notificationTargets: this.resolveDefaultPrivateNotificationTargets(),
+    };
+  }
+
+  private resolveDefaultPrivateNotificationTargets(): PrivateNotificationTarget[] {
+    const rows = this.db.prepare(`
+      SELECT channel_type, channel_ref FROM (
+        SELECT
+          channel_type,
+          channel_ref,
+          row_number() OVER (
+            PARTITION BY channel_type
+            ORDER BY updated_at DESC, id DESC
+          ) AS row_num
+        FROM sessions
+        WHERE status != 'archived'
+          AND (
+            (channel_type = 'qq' AND channel_ref LIKE 'c2c:%')
+            OR (channel_type = 'telegram' AND channel_ref LIKE 'private:%')
+          )
+      )
+      WHERE row_num = 1
+      ORDER BY CASE channel_type WHEN 'qq' THEN 0 ELSE 1 END
+    `).all() as Array<{ channel_type: "qq" | "telegram"; channel_ref: string }>;
+
+    return rows.map((row) => ({
+      channelType: row.channel_type,
+      targetRef: row.channel_ref,
+    }));
   }
 }

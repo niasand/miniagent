@@ -619,6 +619,8 @@ test("tasks section creates, opens, and pauses a scheduled message", async ({ pa
 
   await page.goto("/");
   await page.getByRole("button", { name: "任务" }).click();
+  await expect(page.getByPlaceholder(/QQ targetRef/)).toHaveCount(0);
+  await expect(page.getByPlaceholder(/Telegram targetRef/)).toHaveCount(0);
   await page.getByRole("button", { name: "周期" }).click();
   await expect(page.locator(".schedule-preview")).toContainText("下次执行");
   await page.getByRole("button", { name: "时区" }).click();
@@ -628,7 +630,7 @@ test("tasks section creates, opens, and pauses a scheduled message", async ({ pa
   await page.getByRole("button", { name: "创建" }).click();
 
   await expect(page.locator(".schedule-item")).toHaveCount(1);
-  await expect(page.locator(".schedule-item-title .schedule-status")).toHaveText("启用中");
+  await expect(page.locator(".schedule-item-title")).toContainText("启用中");
   await expect(page.locator(".schedule-item-meta")).toContainText("UTC");
   await expect(page.locator(".schedule-item-summary")).toHaveText("Send a scheduled summary");
   await expect(page.locator(".schedule-run-item")).toContainText("成功");
@@ -638,6 +640,8 @@ test("tasks section creates, opens, and pauses a scheduled message", async ({ pa
   await expect(page.locator('[data-run-id="run_test"]')).toHaveClass(/chat-bubble--focused-run/);
   await page.getByRole("button", { name: "任务" }).click();
   await page.getByRole("button", { name: "编辑" }).click();
+  await expect(page.getByPlaceholder(/QQ targetRef/)).toHaveCount(0);
+  await expect(page.getByPlaceholder(/Telegram targetRef/)).toHaveCount(0);
   await expect(page.locator(".schedule-edit-form .schedule-preview")).toContainText("下次执行");
   await page.getByLabel("编辑消息").fill("Updated scheduled summary");
   await page.getByLabel("编辑 Cron 表达式").fill("15 10 * * 1-5");
@@ -646,7 +650,7 @@ test("tasks section creates, opens, and pauses a scheduled message", async ({ pa
   await expect(page.locator(".schedule-item-title")).toContainText("15 10 * * 1-5");
   await expect(page.locator(".schedule-item-summary")).toHaveText("Updated scheduled summary");
   await page.getByRole("button", { name: "暂停" }).click();
-  await expect(page.locator(".schedule-item-title .schedule-status")).toHaveText("已暂停");
+  await expect(page.locator(".schedule-item-title")).toContainText("已暂停");
 });
 
 async function mockWorkspaceApis(

@@ -173,10 +173,6 @@ export default function App() {
       schedulePreviewError={schedules.schedulePreviewError}
       scheduleText={schedules.scheduleText}
       setScheduleText={schedules.setScheduleText}
-      scheduleQqTargetRef={schedules.scheduleQqTargetRef}
-      setScheduleQqTargetRef={schedules.setScheduleQqTargetRef}
-      scheduleTelegramTargetRef={schedules.scheduleTelegramTargetRef}
-      setScheduleTelegramTargetRef={schedules.setScheduleTelegramTargetRef}
       scheduleError={schedules.scheduleError}
       createSchedulePending={schedules.createSchedulePending}
       selectedSessionId={selectedSessionId}
@@ -194,10 +190,6 @@ export default function App() {
       editSchedulePreviewError={schedules.editSchedulePreviewError}
       editScheduleText={schedules.editScheduleText}
       setEditScheduleText={schedules.setEditScheduleText}
-      editScheduleQqTargetRef={schedules.editScheduleQqTargetRef}
-      setEditScheduleQqTargetRef={schedules.setEditScheduleQqTargetRef}
-      editScheduleTelegramTargetRef={schedules.editScheduleTelegramTargetRef}
-      setEditScheduleTelegramTargetRef={schedules.setEditScheduleTelegramTargetRef}
       editScheduleError={schedules.editScheduleError}
       editSchedulePending={schedules.editSchedulePending}
       submitScheduleEdit={schedules.submitScheduleEdit}

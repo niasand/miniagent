@@ -492,7 +492,11 @@ describe("POST /api/schedules", () => {
     expect(data.schedule.nextRunAt).toBeTruthy();
   });
 
-  it("creates a schedule with QQ and Telegram notification targets", async () => {
+  it("creates a schedule with default private QQ and Telegram notification targets", async () => {
+    const sessions = new SessionStore(db, new EventStore(db));
+    sessions.createSession({ title: "QQ group", agentType: "claude", workspacePath: process.cwd(), channelType: "qq", channelRef: "group:ignore" });
+    sessions.createSession({ title: "QQ private", agentType: "claude", workspacePath: process.cwd(), channelType: "qq", channelRef: "c2c:user1" });
+    sessions.createSession({ title: "TG private", agentType: "claude", workspacePath: process.cwd(), channelType: "telegram", channelRef: "private:456" });
     const { sessionId } = (await (await postJson("/api/sessions", {})).json()) as any;
     const res = await postJson("/api/schedules", {
       sessionId,
@@ -503,7 +507,7 @@ describe("POST /api/schedules", () => {
         text: "Daily summary",
         notificationTargets: [
           { channelType: "qq", targetRef: "group:123" },
-          { channelType: "telegram", targetRef: "private:456" },
+          { channelType: "telegram", targetRef: "private:999" },
         ],
       },
     });
@@ -511,7 +515,7 @@ describe("POST /api/schedules", () => {
     expect(res.status).toBe(201);
     const data = await res.json();
     expect(data.schedule.notificationTargets).toEqual([
-      { channelType: "qq", targetRef: "group:123" },
+      { channelType: "qq", targetRef: "c2c:user1" },
       { channelType: "telegram", targetRef: "private:456" },
     ]);
   });
