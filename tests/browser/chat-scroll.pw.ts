@@ -18,6 +18,36 @@ test("message copy button shows copied feedback", async ({ page }) => {
   await expect(copyButton).toHaveAttribute("title", "已复制");
 });
 
+test("header and skill copy buttons show copied feedback", async ({ page }) => {
+  await page.context().grantPermissions(["clipboard-write"], { origin: "http://127.0.0.1:7274" });
+  await page.addInitScript((id) => {
+    localStorage.setItem("sessionId", id);
+  }, sessionId);
+  await mockWorkspaceApis(page, createScrollableSnapshot(), {
+    skills: [
+      {
+        name: "ship-it",
+        description: "Ship the current change safely.",
+        source: "project",
+        path: "/project/.claude/skills/ship-it",
+      },
+    ],
+  });
+
+  await page.goto("/");
+
+  const sessionNameCopy = page.locator(".chat-header-copy").first();
+  await expect(sessionNameCopy).toBeVisible();
+  await sessionNameCopy.click();
+  await expect(sessionNameCopy).toHaveAttribute("title", "已复制");
+
+  await page.getByRole("button", { name: "技能" }).click();
+  const skillPathCopy = page.locator(".copy-path-btn").first();
+  await expect(skillPathCopy).toBeVisible();
+  await skillPathCopy.click();
+  await expect(skillPathCopy).toHaveAttribute("title", "已复制");
+});
+
 test("clicking back to top after refresh is not overridden by initial auto-scroll", async ({ page }) => {
   await page.addInitScript((id) => {
     localStorage.setItem("sessionId", id);
