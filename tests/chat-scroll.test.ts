@@ -27,6 +27,8 @@ describe("createChatScrollController", () => {
     timerCallbacks[0]?.();
     timerCallbacks[1]?.();
     timerCallbacks[2]?.();
+    timerCallbacks[3]?.();
+    timerCallbacks[4]?.();
 
     expect(calls).toEqual(["bottom:auto", "top:smooth", "settle"]);
   });
@@ -55,8 +57,19 @@ describe("createChatScrollController", () => {
     timerCallbacks[0]?.();
     timerCallbacks[1]?.();
     timerCallbacks[2]?.();
+    timerCallbacks[3]?.();
+    timerCallbacks[4]?.();
 
-    expect(calls).toEqual(["bottom:auto", "bottom:auto", "bottom:auto", "bottom:auto", "bottom:auto", "settle"]);
+    expect(calls).toEqual([
+      "bottom:auto",
+      "bottom:auto",
+      "bottom:auto",
+      "bottom:auto",
+      "bottom:auto",
+      "bottom:auto",
+      "bottom:auto",
+      "settle",
+    ]);
   });
 
   it("corrects non-user scroll restoration while initial load is settling", () => {
@@ -107,7 +120,7 @@ describe("createChatScrollController", () => {
     timerCallbacks[1]?.();
     expect(calls).toEqual(["bottom:auto", "bottom:auto", "bottom:auto", "bottom:auto"]);
 
-    timerCallbacks[2]?.();
+    timerCallbacks[4]?.();
 
     expect(calls).toEqual(["bottom:auto", "bottom:auto", "bottom:auto", "bottom:auto", "bottom:auto", "settle"]);
   });

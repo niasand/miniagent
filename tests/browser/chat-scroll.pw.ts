@@ -113,6 +113,30 @@ test("refresh keeps the scrollbar pinned through late content growth", async ({ 
   await expect.poll(() => distanceFromBottom(messages)).toBeLessThanOrEqual(1);
 });
 
+test("initial load keeps the scrollbar pinned through slower content growth", async ({ page }) => {
+  await page.addInitScript((id) => {
+    localStorage.setItem("sessionId", id);
+  }, sessionId);
+
+  await mockWorkspaceApis(page, createScrollableSnapshot());
+
+  await page.goto("/");
+
+  const messages = page.locator(".chat-messages");
+  await expect.poll(() => messages.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  await expect.poll(() => distanceFromBottom(messages)).toBeLessThanOrEqual(1);
+
+  await page.waitForTimeout(520);
+  await messages.evaluate((el) => {
+    const lateContent = document.createElement("div");
+    lateContent.style.height = "320px";
+    lateContent.dataset.testid = "slower-late-content";
+    el.append(lateContent);
+  });
+
+  await expect.poll(() => distanceFromBottom(messages)).toBeLessThanOrEqual(1);
+});
+
 test("reload ignores the browser-restored message scroll position", async ({ page }) => {
   await page.addInitScript((id) => {
     localStorage.setItem("sessionId", id);

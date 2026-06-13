@@ -80,11 +80,13 @@ export function createChatScrollController({
     cancelFrame,
     setTimer,
     clearTimer,
-    settleDelayMs = 360,
+    settleDelayMs = 900,
   }: InitialScrollScheduleOptions) => {
     initialSettling = true;
     userDetached = false;
     scrollToBottom("auto");
+    let active = true;
+    let frame: number | null = null;
 
     const correctPosition = () => {
       if (!userDetached) {
@@ -92,21 +94,36 @@ export function createChatScrollController({
       }
     };
 
-    const finishSettling = () => {
+    const correctUntilSettled = () => {
+      if (!active) return;
       correctPosition();
+      frame = requestFrame(correctUntilSettled);
+    };
+
+    const finishSettling = () => {
+      if (!active) return;
+      correctPosition();
+      active = false;
+      if (frame !== null) {
+        cancelFrame(frame);
+        frame = null;
+      }
       initialSettling = false;
       markSettled();
     };
 
-    const frame = requestFrame(correctPosition);
+    frame = requestFrame(correctUntilSettled);
     const timers = [
       setTimer(correctPosition, 80),
       setTimer(correctPosition, 180),
+      setTimer(correctPosition, 360),
+      setTimer(correctPosition, 640),
       setTimer(finishSettling, settleDelayMs),
     ];
 
     return () => {
-      cancelFrame(frame);
+      active = false;
+      if (frame !== null) cancelFrame(frame);
       for (const timer of timers) clearTimer(timer);
       initialSettling = false;
     };
