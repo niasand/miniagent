@@ -283,8 +283,17 @@ export type WorkspaceScheduleRun = {
   scheduledFor: string | null;
   payloadSummary: string | null;
   status: WorkspaceScheduleRunStatus;
+  deliveries: WorkspaceScheduleRunDelivery[];
   error: string | null;
   createdAt: string;
+};
+
+export type WorkspaceScheduleRunDelivery = {
+  channelType: "qq" | "telegram" | "feishu" | "discord" | "wechat" | "wecom" | "dingtalk";
+  targetRef: string;
+  status: "pending" | "sending" | "sent" | "failed" | "dead";
+  lastError: string | null;
+  sentAt: string | null;
 };
 
 export type WorkspaceScheduleRunStatus =

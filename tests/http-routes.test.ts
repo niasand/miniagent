@@ -693,6 +693,34 @@ describe("POST /api/schedules/due/run", () => {
     expect(runsData.runs[0].taskId).toBe(data.triggered[0].taskId);
     expect(runsData.runs[0].status).toBe("running");
     expect(runsData.runs[0].payloadSummary).toBe("history payload summary");
+    expect(runsData.runs[0].runId).toMatch(/^run_/);
+
+    const outbox = new OutboxStore(db);
+    const qqDelivery = outbox.enqueue({
+      sessionId,
+      channelType: "qq",
+      targetRef: "c2c:user1",
+      kind: "qq_markdown",
+      viewModel: { text: "delivered" },
+      idempotencyKey: `${runsData.runs[0].runId}:reply:qq:c2c:user1:0`,
+    });
+    outbox.markSent(qqDelivery.id, "provider_1");
+    const telegramDelivery = outbox.enqueue({
+      sessionId,
+      channelType: "telegram",
+      targetRef: "private:42",
+      kind: "telegram_markdown",
+      viewModel: { text: "retry" },
+      idempotencyKey: `${runsData.runs[0].runId}:reply:telegram:private:42:0`,
+    });
+    outbox.markFailed(telegramDelivery.id, "rate limited");
+
+    const runsWithDeliveriesRes = await request(`/api/schedules/${schedule.id}/runs`);
+    const runsWithDeliveriesData = await runsWithDeliveriesRes.json();
+    expect(runsWithDeliveriesData.runs[0].deliveries).toMatchObject([
+      { channelType: "qq", targetRef: "c2c:user1", status: "sent", lastError: null },
+      { channelType: "telegram", targetRef: "private:42", status: "failed", lastError: "rate limited" },
+    ]);
   });
 });
 

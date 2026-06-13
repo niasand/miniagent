@@ -1,6 +1,7 @@
 import type { SqliteDatabase } from "../db/migrate.js";
 import { createId } from "../../shared/ids.js";
 import { nowIso } from "../../shared/time.js";
+import type { WorkspaceScheduleRunDelivery } from "../../shared/workspace.js";
 
 export type ScheduleRunStatus = "queued" | "failed";
 
@@ -14,6 +15,7 @@ export type ScheduleRunRecord = {
   payloadSummary: string | null;
   status: ScheduleRunStatus;
   taskStatus: string | null;
+  deliveries: WorkspaceScheduleRunDelivery[];
   error: string | null;
   createdAt: string;
 };
@@ -30,6 +32,14 @@ type ScheduleRunRow = {
   task_status: string | null;
   error: string | null;
   created_at: string;
+};
+
+type DeliveryRow = {
+  channel_type: WorkspaceScheduleRunDelivery["channelType"];
+  target_ref: string;
+  status: WorkspaceScheduleRunDelivery["status"];
+  last_error: string | null;
+  sent_at: string | null;
 };
 
 export class ScheduleRunStore {
@@ -71,11 +81,50 @@ export class ScheduleRunStore {
        ORDER BY sr.created_at DESC, sr.id DESC
        LIMIT ?`,
     ).all(scheduleId, limit) as ScheduleRunRow[];
-    return rows.map(mapRow);
+    return rows.map((row) => mapRow(row, this.listDeliveriesByRun(row.run_id)));
+  }
+
+  private listDeliveriesByRun(runId: string | null): WorkspaceScheduleRunDelivery[] {
+    if (!runId) return [];
+    const rows = this.db.prepare(
+      `SELECT
+         channel_type,
+         target_ref,
+         CASE
+           WHEN SUM(CASE WHEN status = 'dead' THEN 1 ELSE 0 END) > 0 THEN 'dead'
+           WHEN SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) > 0 THEN 'failed'
+           WHEN SUM(CASE WHEN status = 'sending' THEN 1 ELSE 0 END) > 0 THEN 'sending'
+           WHEN SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) > 0 THEN 'pending'
+           ELSE 'sent'
+         END AS status,
+         MAX(last_error) AS last_error,
+         MAX(sent_at) AS sent_at
+       FROM outbox
+       WHERE idempotency_key GLOB ?
+       GROUP BY channel_type, target_ref
+       ORDER BY CASE channel_type
+         WHEN 'qq' THEN 0
+         WHEN 'telegram' THEN 1
+         WHEN 'feishu' THEN 2
+         WHEN 'discord' THEN 3
+         WHEN 'wechat' THEN 4
+         WHEN 'wecom' THEN 5
+         WHEN 'dingtalk' THEN 6
+         ELSE 7
+       END, target_ref`,
+    ).all(`${runId}:reply:*`) as DeliveryRow[];
+
+    return rows.map((row) => ({
+      channelType: row.channel_type,
+      targetRef: row.target_ref,
+      status: row.status,
+      lastError: row.last_error,
+      sentAt: row.sent_at,
+    }));
   }
 }
 
-function mapRow(row: ScheduleRunRow): ScheduleRunRecord {
+function mapRow(row: ScheduleRunRow, deliveries: WorkspaceScheduleRunDelivery[] = []): ScheduleRunRecord {
   return {
     id: row.id,
     scheduleId: row.schedule_id,
@@ -86,6 +135,7 @@ function mapRow(row: ScheduleRunRow): ScheduleRunRecord {
     payloadSummary: row.payload_summary,
     status: row.status,
     taskStatus: row.task_status,
+    deliveries,
     error: row.error,
     createdAt: row.created_at,
   };

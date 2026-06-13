@@ -589,6 +589,10 @@ test("tasks section creates, opens, and pauses a scheduled message", async ({ pa
         scheduledFor: "2026-05-19T09:00:00.000+08:00",
         payloadSummary: "Send a scheduled summary",
         status: "succeeded",
+        deliveries: [
+          { channelType: "qq", targetRef: "c2c:user1", status: "sent", lastError: null, sentAt: "2026-05-19T09:00:02.000+08:00" },
+          { channelType: "telegram", targetRef: "private:42", status: "failed", lastError: "rate limited", sentAt: null },
+        ],
         error: null,
         createdAt: "2026-05-19T09:00:01.000+08:00",
       }] } });
@@ -656,6 +660,8 @@ test("tasks section creates, opens, and pauses a scheduled message", async ({ pa
   await expect(page.locator(".schedule-item-summary")).toHaveText("Send a scheduled summary");
   await expect(page.locator(".schedule-run-item")).toContainText("成功");
   await expect(page.locator(".schedule-run-item")).toContainText("Send a scheduled summary");
+  await expect(page.locator(".schedule-run-deliveries")).toContainText("QQ 已发送");
+  await expect(page.locator(".schedule-run-deliveries")).toContainText("Telegram 重试中");
   await expect(page.getByRole("button", { name: "打开会话 tsk_test" })).toBeVisible();
   await page.getByRole("button", { name: "打开任务输出 tsk_test" }).click();
   await expect(page.locator('[data-run-id="run_test"]')).toHaveClass(/chat-bubble--focused-run/);

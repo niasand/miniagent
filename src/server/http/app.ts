@@ -1053,6 +1053,7 @@ function mapScheduleRun(record: ScheduleRunRecord): WorkspaceScheduleRun {
     scheduledFor: record.scheduledFor,
     payloadSummary: record.payloadSummary,
     status: (record.taskStatus ?? record.status) as WorkspaceScheduleRun["status"],
+    deliveries: record.deliveries,
     error: record.error,
     createdAt: record.createdAt,
   };

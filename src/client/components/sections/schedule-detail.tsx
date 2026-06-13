@@ -16,6 +16,13 @@ function scheduleStatusTone(status: string): "success" | "warning" | "error" | "
   return "default";
 }
 
+function deliveryStatusTone(status: string): "success" | "warning" | "error" | "muted" | "info" | "default" {
+  if (status === "sent") return "success";
+  if (status === "failed" || status === "dead") return "error";
+  if (status === "sending" || status === "pending") return "info";
+  return "default";
+}
+
 interface ScheduleDetailProps {
   selectedSchedule: WorkspaceSchedule | null;
   selectedSessionName: string;
@@ -227,12 +234,27 @@ export function ScheduleDetail({
               {scheduleRuns.length === 0 && <div className="schedule-run-empty">暂无执行记录</div>}
               {scheduleRuns.map((run) => (
                 <div key={run.id} className="schedule-run-item">
-                  <div className="schedule-run-main">
-                    <Badge tone={scheduleStatusTone(run.status)}>{formatScheduleRunStatus(run.status)}</Badge>
-                    <span>{formatZonedTime(run.scheduledFor ?? run.createdAt, selectedSchedule!.timezone)}</span>
-                    {run.payloadSummary && <span title={run.payloadSummary}>{run.payloadSummary}</span>}
-                    {run.taskId && <span title={run.taskId}>{run.taskId}</span>}
-                    {run.error && <span title={run.error}>{run.error}</span>}
+                  <div className="schedule-run-content">
+                    <div className="schedule-run-main">
+                      <Badge tone={scheduleStatusTone(run.status)}>{formatScheduleRunStatus(run.status)}</Badge>
+                      <span>{formatZonedTime(run.scheduledFor ?? run.createdAt, selectedSchedule!.timezone)}</span>
+                      {run.payloadSummary && <span title={run.payloadSummary}>{run.payloadSummary}</span>}
+                      {run.taskId && <span title={run.taskId}>{run.taskId}</span>}
+                      {run.error && <span title={run.error}>{run.error}</span>}
+                    </div>
+                    {(run.deliveries ?? []).length > 0 && (
+                      <div className="schedule-run-deliveries" aria-label="投递通道">
+                        {(run.deliveries ?? []).map((delivery) => (
+                          <Badge
+                            key={`${delivery.channelType}:${delivery.targetRef}`}
+                            tone={deliveryStatusTone(delivery.status)}
+                            title={delivery.lastError ?? delivery.targetRef}
+                          >
+                            {formatDeliveryChannel(delivery.channelType)} {formatDeliveryStatus(delivery.status)}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div className="schedule-run-actions">
                     <Button variant="ghost" size="xs" title="打开会话" aria-label={`打开会话 ${run.taskId ?? run.id}`} onClick={() => openScheduleRun(run, false)}>
@@ -256,4 +278,22 @@ export function ScheduleDetail({
       )}
     </div>
   );
+}
+
+function formatDeliveryChannel(channelType: WorkspaceScheduleRun["deliveries"][number]["channelType"]) {
+  if (channelType === "qq") return "QQ";
+  if (channelType === "telegram") return "Telegram";
+  if (channelType === "feishu") return "Feishu";
+  if (channelType === "wechat") return "WeChat";
+  if (channelType === "wecom") return "WeCom";
+  if (channelType === "dingtalk") return "DingTalk";
+  return "Discord";
+}
+
+function formatDeliveryStatus(status: WorkspaceScheduleRun["deliveries"][number]["status"]) {
+  if (status === "sent") return "已发送";
+  if (status === "sending") return "发送中";
+  if (status === "pending") return "待发送";
+  if (status === "dead") return "发送失败";
+  return "重试中";
 }
