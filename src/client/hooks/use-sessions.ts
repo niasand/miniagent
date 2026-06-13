@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { batchDeleteSessions, createSession, fetchSessions, updateSessionName } from "../api/sessions.js";
 import type { AgentType } from "../api/types.js";
 import { localizeAppErrorMessage } from "../lib/error-messages.js";
+import { randomSessionName } from "../lib/session-names.js";
 import type { AppSection } from "./use-navigation.js";
 import type { WorkspaceSnapshot } from "../../shared/workspace.js";
 
@@ -180,7 +181,7 @@ export function useSessions({ activeSection, agentType, onNewSession }: UseSessi
     if (isCreatingSession) return;
     setIsCreatingSession(true);
     try {
-      const res = await createSession({ agentType });
+      const res = await createSession({ agentType, title: randomSessionName() });
       setSessionId(res.sessionId);
       localStorage.setItem(SESSION_STORAGE_KEY, res.sessionId);
       setSessionsPage(1);
