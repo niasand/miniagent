@@ -6,10 +6,14 @@ import { OutboxStore, type OutboxChannel, type OutboxKind } from "../stores/outb
 import { AuditLogStore, type AuditActorType } from "../stores/audit-log-store.js";
 import { AgentDefaultStore } from "../stores/agent-default-store.js";
 import { ContextBudgetStore } from "../stores/context-budget-store.js";
+import { DelegationStore } from "../stores/delegation-store.js";
+import { GoalStore, type GoalRecord } from "../stores/goal-store.js";
+import { ScheduleStore, summarizeSchedulePayload } from "../stores/schedule-store.js";
 import { WorkspacePolicy, WorkspacePolicyError } from "../security/workspace-policy.js";
+import { MemoryService } from "./memory.js";
+import { SchedulerService } from "./scheduler.js";
+import { SkillService } from "./skills.js";
 import { createId } from "../../shared/ids.js";
-import { nowIso } from "../../shared/time.js";
-import { stringifyJson, type JsonValue } from "../../shared/json.js";
 
 export type InboundMessage = {
   messageId: string;
@@ -27,7 +31,7 @@ export type InboundResult = {
   taskId?: string;
 };
 
-const SLASH_COMMANDS = ["/agent", "/context"] as const;
+const SLASH_COMMANDS = ["/agent", "/context", "/cron", "/goal", "/delegate", "/skill", "/search"] as const;
 
 export class InboundService {
   private sessions: SessionStore;
@@ -37,6 +41,12 @@ export class InboundService {
   private auditLogs: AuditLogStore;
   private agentDefaults: AgentDefaultStore;
   private contextBudgets: ContextBudgetStore;
+  private delegations: DelegationStore;
+  private goals: GoalStore;
+  private schedules: ScheduleStore;
+  private schedulerService: SchedulerService;
+  private memory: MemoryService;
+  private skills: SkillService;
 
   constructor(
     private readonly db: SqliteDatabase,
@@ -50,6 +60,12 @@ export class InboundService {
     this.auditLogs = new AuditLogStore(db);
     this.agentDefaults = new AgentDefaultStore(db);
     this.contextBudgets = new ContextBudgetStore(db);
+    this.delegations = new DelegationStore(db);
+    this.goals = new GoalStore(db);
+    this.schedules = new ScheduleStore(db);
+    this.schedulerService = new SchedulerService(db);
+    this.memory = new MemoryService(db);
+    this.skills = new SkillService();
   }
 
   receiveMessage(msg: InboundMessage): InboundResult {
@@ -79,7 +95,7 @@ export class InboundService {
 
     const sourceType = this.channelType as SourceType;
     const dedupeKey = `${this.channelType}:${msg.messageId}`;
-    const actorType = `${this.channelType}_user` as AuditActorType;
+    const actorType = mapChannelActorType(this.channelType);
 
     const { task, event } = this.sessions.createTask({
       sessionId: session.id,
@@ -124,7 +140,7 @@ export class InboundService {
 
     const sourceType = this.channelType as SourceType;
     const dedupeKey = `${this.channelType}:${msg.messageId}`;
-    const actorType = `${this.channelType}_user` as AuditActorType;
+    const actorType = mapChannelActorType(this.channelType);
 
     const { task, event } = this.sessions.createTask({
       sessionId: session.id,
@@ -166,7 +182,7 @@ export class InboundService {
     const session = this.getOrCreateSession(msg);
     const parts = text.split(/\s+/);
     const cmd = parts[0].toLowerCase();
-    const actorType = `${this.channelType}_user` as AuditActorType;
+    const actorType = mapChannelActorType(this.channelType);
 
     if (cmd === "/agent") {
       const sub = parts[1]?.toLowerCase();
@@ -218,7 +234,209 @@ export class InboundService {
       return { action: "command", session };
     }
 
+    if (cmd === "/cron") {
+      return this.handleCronCommand(session, msg, parts, text);
+    }
+
+    if (cmd === "/goal") {
+      return this.handleGoalCommand(session, msg, parts, text);
+    }
+
+    if (cmd === "/delegate") {
+      return this.handleDelegateCommand(session, msg, text);
+    }
+
+    if (cmd === "/skill") {
+      return this.handleSkillCommand(session, msg, parts, text);
+    }
+
+    if (cmd === "/search") {
+      const query = text.replace(/^\/search\s*/i, "").trim();
+      if (!query) {
+        this.enqueueTextReply(session, "Usage: /search <keyword>");
+        return { action: "command", session };
+      }
+      const results = this.memory.search(query, { sessionId: session.id, limit: 5 });
+      this.enqueueTextReply(session, this.memory.formatResults(results));
+      return { action: "command", session };
+    }
+
     return { action: "ignored", session };
+  }
+
+  private handleCronCommand(session: SessionRecord, msg: InboundMessage, parts: string[], text: string): InboundResult {
+    const sub = parts[1]?.toLowerCase();
+    if (sub === "list") {
+      const schedules = this.schedules.listBySession(session.id);
+      if (schedules.length === 0) {
+        this.enqueueTextReply(session, "No schedules for this session.");
+      } else {
+        this.enqueueTextReply(session, schedules.map((schedule) => {
+          const timing = schedule.kind === "cron" ? schedule.cronExpr : schedule.runAt;
+          return `${schedule.id} ${schedule.status} ${schedule.kind} ${timing ?? ""}\n${summarizeSchedulePayload(schedule.payload) ?? ""}`;
+        }).join("\n\n"));
+      }
+      return { action: "command", session };
+    }
+
+    if ((sub === "pause" || sub === "resume" || sub === "cancel") && parts[2]) {
+      const updated =
+        sub === "pause" ? this.schedules.updateStatus(parts[2], "paused") :
+        sub === "resume" ? this.schedules.updateStatus(parts[2], "active") :
+        this.schedules.updateStatus(parts[2], "cancelled");
+      this.enqueueTextReply(session, updated ? `Schedule ${updated.id} is now ${updated.status}.` : "Schedule not found.");
+      return { action: "command", session };
+    }
+
+    if (sub === "add") {
+      const rest = text.replace(/^\/cron\s+add\s+/i, "").trim();
+      const parsed = parseCronAdd(rest);
+      if (!parsed) {
+        this.enqueueTextReply(session, "Usage: /cron add <5-field cron> <prompt>");
+        return { action: "command", session };
+      }
+      const schedule = this.schedulerService.create({
+        sessionId: session.id,
+        kind: "cron",
+        cronExpr: parsed.cronExpr,
+        payload: { text: parsed.prompt },
+        actorType: mapChannelActorType(this.channelType),
+        actorRef: msg.userId,
+      });
+      this.enqueueTextReply(session, `Schedule created: ${schedule.id}\nNext run: ${schedule.nextRunAt}`);
+      return { action: "command", session };
+    }
+
+    if (sub === "once") {
+      const rest = text.replace(/^\/cron\s+once\s+/i, "").trim();
+      const [runAt, ...promptParts] = rest.split(/\s+/);
+      const prompt = promptParts.join(" ").trim();
+      if (!runAt || !prompt) {
+        this.enqueueTextReply(session, "Usage: /cron once <ISO time> <prompt>");
+        return { action: "command", session };
+      }
+      const schedule = this.schedulerService.create({
+        sessionId: session.id,
+        kind: "once",
+        runAt,
+        payload: { text: prompt },
+        actorType: mapChannelActorType(this.channelType),
+        actorRef: msg.userId,
+      });
+      this.enqueueTextReply(session, `One-shot schedule created: ${schedule.id}\nRun at: ${schedule.runAt}`);
+      return { action: "command", session };
+    }
+
+    this.enqueueTextReply(session, "Usage:\n/cron list\n/cron add <5-field cron> <prompt>\n/cron once <ISO time> <prompt>\n/cron pause|resume|cancel <scheduleId>");
+    return { action: "command", session };
+  }
+
+  private handleGoalCommand(session: SessionRecord, msg: InboundMessage, parts: string[], text: string): InboundResult {
+    const sub = parts[1]?.toLowerCase();
+    if (!sub || !["status", "pause", "resume", "complete", "clear", "subgoal"].includes(sub)) {
+      const objective = text.replace(/^\/goal\s*/i, "").trim();
+      if (!objective) {
+        this.enqueueTextReply(session, "Usage: /goal <objective>\n/goal status|pause|resume|complete|clear\n/goal subgoal <criterion>");
+        return { action: "command", session };
+      }
+      const goal = this.goals.set({ sessionId: session.id, objective });
+      this.auditLogs.insert({
+        actorType: mapChannelActorType(this.channelType),
+        actorRef: msg.userId,
+        action: "goal_set",
+        resourceType: "goal",
+        resourceId: goal.id,
+        payload: { sessionId: session.id },
+      });
+      this.enqueueTextReply(session, `Goal set: ${goal.objective}`);
+      return { action: "command", session };
+    }
+
+    if (sub === "status") {
+      const goal = this.goals.get(session.id);
+      this.enqueueTextReply(session, goal ? formatGoal(goal) : "No goal is set for this session.");
+      return { action: "command", session };
+    }
+
+    if (sub === "subgoal") {
+      const subgoal = text.replace(/^\/goal\s+subgoal\s*/i, "").trim();
+      if (!subgoal) {
+        this.enqueueTextReply(session, "Usage: /goal subgoal <criterion>");
+        return { action: "command", session };
+      }
+      const goal = this.goals.addSubgoal(session.id, subgoal);
+      this.enqueueTextReply(session, goal ? `Subgoal added.\n${formatGoal(goal)}` : "No active goal is set.");
+      return { action: "command", session };
+    }
+
+    const status = sub === "complete" ? "completed" : sub === "clear" ? "cleared" : sub === "pause" ? "paused" : "active";
+    const goal = this.goals.updateStatus(session.id, status);
+    this.enqueueTextReply(session, goal ? `Goal ${goal.status}.` : "No goal is set for this session.");
+    return { action: "command", session };
+  }
+
+  private handleDelegateCommand(session: SessionRecord, msg: InboundMessage, text: string): InboundResult {
+    const goal = text.replace(/^\/delegate\s*/i, "").trim();
+    if (!goal) {
+      this.enqueueTextReply(session, "Usage: /delegate <isolated task goal>");
+      return { action: "command", session };
+    }
+
+    const child = this.sessions.createSession({
+      title: `Delegated: ${goal.slice(0, 48)}`,
+      agentType: session.agentType,
+      workspacePath: session.workspacePath,
+      channelType: session.channelType as any,
+      channelRef: session.channelRef,
+      sourceSessionId: session.id,
+      defaultParams: { delegatedFrom: session.id },
+    });
+    const { task } = this.sessions.createTask({
+      sessionId: child.id,
+      sourceType: this.channelType as SourceType,
+      sourceRef: msg.userId,
+      type: "message",
+      input: {
+        text: `You are a delegated child agent. Work independently on this goal and report a concise final summary.\n\nGoal: ${goal}\n\nParent session: ${session.id}`,
+        delegatedFrom: session.id,
+      },
+      dedupeKey: `${this.channelType}:delegate:${msg.messageId}`,
+    });
+    const delegation = this.delegations.create({
+      parentSessionId: session.id,
+      childSessionId: child.id,
+      childTaskId: task.id,
+      goal,
+    });
+    this.enqueueTextReply(session, `Delegated task created: ${delegation.id}\nChild session: ${child.id}`);
+    return { action: "command", session: child, taskId: task.id };
+  }
+
+  private handleSkillCommand(session: SessionRecord, msg: InboundMessage, parts: string[], text: string): InboundResult {
+    const sub = parts[1]?.toLowerCase();
+    if (sub === "list") {
+      const skills = this.skills.listSync().slice(0, 20);
+      this.enqueueTextReply(session, skills.length ? skills.map((skill) => `/${skill.name} — ${skill.description || skill.source}`).join("\n") : "No skills found.");
+      return { action: "command", session };
+    }
+
+    if (sub === "use" && parts[2]) {
+      const skillName = parts[2];
+      const prompt = text.replace(/^\/skill\s+use\s+\S+\s*/i, "").trim() || `Use skill /${skillName}.`;
+      const { task } = this.sessions.createTask({
+        sessionId: session.id,
+        sourceType: this.channelType as SourceType,
+        sourceRef: msg.userId,
+        type: "message",
+        input: { text: `Use skill /${skillName}.\n\n${prompt}`, skill: skillName },
+        dedupeKey: `${this.channelType}:skill:${msg.messageId}`,
+      });
+      this.enqueueTextReply(session, `Queued skill task with /${skillName}.`);
+      return { action: "command", session, taskId: task.id };
+    }
+
+    this.enqueueTextReply(session, "Usage:\n/skill list\n/skill use <name> [prompt]");
+    return { action: "command", session };
   }
 
   private getOrCreateSession(msg: InboundMessage): SessionRecord {
@@ -249,7 +467,7 @@ export class InboundService {
       targetRef: session.channelRef ?? "",
       kind,
       viewModel: { text },
-      idempotencyKey: `reply:${session.id}:${Date.now()}`,
+      idempotencyKey: `reply:${session.id}:${createId("msg")}`,
     });
   }
 
@@ -264,4 +482,27 @@ function summarizeSessionName(text: string): string {
   const normalized = text.trim().replace(/\s+/g, " ");
   if (normalized.length <= 160) return normalized;
   return `${normalized.slice(0, 157)}...`;
+}
+
+function parseCronAdd(input: string): { cronExpr: string; prompt: string } | null {
+  const fields = input.trim().split(/\s+/);
+  if (fields.length < 6) return null;
+  const cronExpr = fields.slice(0, 5).join(" ");
+  const prompt = fields.slice(5).join(" ").trim();
+  return prompt ? { cronExpr, prompt } : null;
+}
+
+function formatGoal(goal: GoalRecord): string {
+  const subgoals = goal.subgoals.length
+    ? `\nSubgoals:\n${goal.subgoals.map((item, index) => `${index + 1}. ${item}`).join("\n")}`
+    : "";
+  return `Goal: ${goal.objective}\nStatus: ${goal.status}\nTurns: ${goal.turnCount}/${goal.maxTurns}${subgoals}`;
+}
+
+function mapChannelActorType(channelType: string): AuditActorType {
+  if (channelType === "feishu") return "feishu_user";
+  if (channelType === "qq") return "qq_user";
+  if (channelType === "telegram") return "telegram_user";
+  if (channelType === "discord") return "discord_user";
+  return "web_user";
 }

@@ -1,6 +1,3 @@
-import { readdir, readFile, stat } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
@@ -20,12 +17,16 @@ import { SessionStore } from "../stores/session-store.js";
 import { computeNextCronRun, getSchedulePayloadText, normalizeScheduleTimezone, summarizeSchedulePayload } from "../stores/schedule-store.js";
 import { PermissionRequestStore } from "../stores/permission-request-store.js";
 import { OutboxStore } from "../stores/outbox-store.js";
+import { DelegationStore } from "../stores/delegation-store.js";
+import { GoalStore } from "../stores/goal-store.js";
 import { RuntimeAdapterRegistry } from "../runtime/registry.js";
 import { RuntimeSupervisor } from "../runtime/supervisor.js";
 import { RuntimeService } from "../runtime/service.js";
 import { WorkspacePolicy, WorkspacePolicyError } from "../security/workspace-policy.js";
 import { ChannelRegistry } from "../channels/registry.js";
 import { KnowledgeService } from "../services/knowledge.js";
+import { MemoryService } from "../services/memory.js";
+import { SkillService } from "../services/skills.js";
 import type { NotificationPreference, WorkspaceSchedule, WorkspaceScheduleNotificationTarget, WorkspaceScheduleRun } from "../../shared/workspace.js";
 import type { ScheduleRecord } from "../stores/schedule-store.js";
 import type { ScheduleRunRecord } from "../stores/schedule-run-store.js";
@@ -318,6 +319,49 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
   });
 
   // ── Handoffs ──
+
+  app.get("/api/sessions/:sessionId/goal", (c) => {
+    const goal = new GoalStore(db).get(c.req.param("sessionId"));
+    return c.json({ goal });
+  });
+
+  app.post("/api/sessions/:sessionId/goal", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return c.json({ error: "Request body must be valid JSON" }, 400);
+    }
+    const value = body as Record<string, unknown>;
+    const objective = value.objective;
+    if (typeof objective !== "string" || objective.trim().length === 0) {
+      return c.json({ error: "objective is required" }, 400);
+    }
+    const maxTurns = typeof value.maxTurns === "number" && Number.isInteger(value.maxTurns) && value.maxTurns > 0
+      ? value.maxTurns
+      : undefined;
+    const session = sessionStore.getSession(c.req.param("sessionId"));
+    if (!session) return c.json({ error: `Session not found: ${c.req.param("sessionId")}` }, 404);
+    const goal = new GoalStore(db).set({ sessionId: session.id, objective, maxTurns });
+    return c.json({ goal }, 201);
+  });
+
+  app.patch("/api/sessions/:sessionId/goal", async (c) => {
+    const body = await c.req.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return c.json({ error: "Request body must be valid JSON" }, 400);
+    }
+    const status = (body as Record<string, unknown>).status;
+    if (status !== "active" && status !== "paused" && status !== "completed" && status !== "cleared") {
+      return c.json({ error: "status must be active, paused, completed, or cleared" }, 400);
+    }
+    const goal = new GoalStore(db).updateStatus(c.req.param("sessionId"), status);
+    if (!goal) return c.json({ error: "Goal not found" }, 404);
+    return c.json({ goal });
+  });
+
+  app.get("/api/sessions/:sessionId/delegations", (c) => {
+    const rows = new DelegationStore(db).listByParent(c.req.param("sessionId"));
+    return c.json({ delegations: rows });
+  });
 
   app.post("/api/sessions/:sessionId/handoffs", async (c) => {
     const body = await c.req.json().catch(() => null);
@@ -639,41 +683,30 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
   // ── Skills ──
 
   app.get("/api/skills", async () => {
-    const dirs = [
-      join(process.cwd(), ".claude", "skills"),
-      join(homedir(), ".claude", "skills"),
-    ];
-    const seen = new Set<string>();
-    const results: Array<{ name: string; description: string; source: string; path: string }> = [];
-    for (const skillsDir of dirs) {
-      let entries: string[];
-      try {
-        entries = await readdir(skillsDir);
-      } catch {
-        continue;
-      }
-      for (const entry of entries) {
-        if (seen.has(entry)) continue;
-        const entryPath = join(skillsDir, entry);
-        const s = await stat(entryPath).catch(() => null);
-        if (!s?.isDirectory()) continue;
-        seen.add(entry);
-        let mdContent = "";
-        for (const file of ["SKILL.md", "skill.md", "README.md"]) {
-          mdContent = await readFile(join(entryPath, file), "utf-8").catch(() => "");
-          if (mdContent) break;
-        }
-        results.push({
-          name: entry,
-          description: parseFrontmatterDescription(mdContent) ?? "",
-          source: skillsDir === dirs[0] ? "project" : "user",
-          path: entryPath,
-        });
-      }
-    }
+    const results = await new SkillService().list();
     return new Response(JSON.stringify({ skills: results }), {
       headers: { "Content-Type": "application/json" },
     });
+  });
+
+  app.get("/api/skills/:name", async (c) => {
+    const skill = await new SkillService().get(c.req.param("name"));
+    if (!skill) return c.json({ error: "Skill not found" }, 404);
+    return c.json({ skill });
+  });
+
+  // ── Memory ──
+
+  app.get("/api/memory/search", (c) => {
+    const query = c.req.query("q") ?? "";
+    if (!query.trim()) return c.json({ error: "q is required" }, 400);
+
+    const rawLimit = Number(c.req.query("limit") ?? 10);
+    const results = new MemoryService(db).search(query, {
+      sessionId: c.req.query("sessionId") || undefined,
+      limit: Number.isFinite(rawLimit) ? rawLimit : 10,
+    });
+    return c.json({ results });
   });
 
   // ── Channels ──
@@ -801,7 +834,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
     try {
       const inbound = new InboundService(db, "dingtalk", { workspacePolicy });
       const result = inbound.receiveMessage(msg);
-      if (result.action === "message" && result.taskId) {
+      if (result.taskId) {
         try { runtimeService.startNextQueuedTask(result.session.id); } catch { /* already active */ }
       }
     } catch (err) {
@@ -1107,20 +1140,6 @@ function mapPermissionRequest(record: PermissionRequestRecord) {
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
-}
-
-function parseFrontmatterDescription(content: string): string | null {
-  const match = content.match(/^---\n([\s\S]*?)\n---/);
-  if (!match) return null;
-  const frontmatter = match[1];
-  // Supports YAML multiline: >- (folded strip), > (folded keep), |- (literal strip), | (literal keep)
-  const multilineMatch = frontmatter.match(
-    /^description:\s*(?:[>|][+-]?)\s*\n([\s\S]*?)(?=\n\w|\n---|$)/m,
-  );
-  if (multilineMatch) return multilineMatch[1].replace(/^\s+/, "").trim();
-  const simpleMatch = frontmatter.match(/^description:\s*(.+)/m);
-  if (simpleMatch) return simpleMatch[1].trim();
-  return null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

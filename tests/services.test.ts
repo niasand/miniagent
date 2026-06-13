@@ -8,6 +8,10 @@ import { InboundService } from "../src/server/services/inbound.js";
 import { WorkspacePolicy } from "../src/server/security/workspace-policy.js";
 import { SchedulerService } from "../src/server/services/scheduler.js";
 import { ContextService } from "../src/server/services/context.js";
+import { GoalStore } from "../src/server/stores/goal-store.js";
+import { DelegationStore } from "../src/server/stores/delegation-store.js";
+import { MemoryService } from "../src/server/services/memory.js";
+import { ScheduleStore } from "../src/server/stores/schedule-store.js";
 
 let db: SqliteDatabase;
 
@@ -71,6 +75,79 @@ describe("InboundService", () => {
       messageId: "msg_1", chatId: "c2c:1", userId: "u1", text: "/agent list", chatType: "private",
     });
     expect(result.action).toBe("command");
+  });
+
+  it("sets a persistent goal from chat", () => {
+    const inbound = makeInbound("web");
+    const result = inbound.receiveMessage({
+      messageId: "msg_goal",
+      chatId: "web-goal",
+      userId: "u1",
+      text: "/goal ship the scheduler commands",
+      chatType: "private",
+    });
+
+    expect(result.action).toBe("command");
+    const goal = new GoalStore(db).get(result.session.id);
+    expect(goal?.status).toBe("active");
+    expect(goal?.objective).toBe("ship the scheduler commands");
+  });
+
+  it("creates a cron schedule from chat", () => {
+    const inbound = makeInbound("web");
+    const result = inbound.receiveMessage({
+      messageId: "msg_cron",
+      chatId: "web-cron",
+      userId: "u1",
+      text: "/cron add 0 9 * * 1-5 summarize the repo",
+      chatType: "private",
+    });
+
+    expect(result.action).toBe("command");
+    const schedules = new ScheduleStore(db).listBySession(result.session.id);
+    expect(schedules).toHaveLength(1);
+    expect(schedules[0].cronExpr).toBe("0 9 * * 1-5");
+    expect(schedules[0].payload).toMatchObject({ text: "summarize the repo" });
+  });
+
+  it("creates an isolated delegated child task from chat", () => {
+    const inbound = makeInbound("web");
+    const parent = inbound.receiveMessage({
+      messageId: "msg_parent",
+      chatId: "web-delegate",
+      userId: "u1",
+      text: "initial context",
+      chatType: "private",
+    });
+
+    const delegated = inbound.receiveMessage({
+      messageId: "msg_delegate",
+      chatId: "web-delegate",
+      userId: "u1",
+      text: "/delegate inspect the scheduler store",
+      chatType: "private",
+    });
+
+    expect(delegated.action).toBe("command");
+    expect(delegated.taskId).toMatch(/^tsk_/);
+    expect(delegated.session.id).not.toBe(parent.session.id);
+    const rows = new DelegationStore(db).listByParent(parent.session.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].goal).toBe("inspect the scheduler store");
+  });
+
+  it("searches local message memory from chat history", () => {
+    const inbound = makeInbound("web");
+    const result = inbound.receiveMessage({
+      messageId: "msg_memory",
+      chatId: "web-memory",
+      userId: "u1",
+      text: "remember the blue release checklist",
+      chatType: "private",
+    });
+
+    const results = new MemoryService(db).search("blue checklist", { sessionId: result.session.id });
+    expect(results[0].content).toBe("remember the blue release checklist");
   });
 
   it("ignores empty messages", () => {

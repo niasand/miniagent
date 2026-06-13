@@ -242,6 +242,55 @@ describe("POST /api/runs/:runId/stop", () => {
   });
 });
 
+// ── Goals / Memory ──
+
+describe("session goals", () => {
+  it("creates, reads, and updates a persistent goal", async () => {
+    const { sessionId } = (await (await postJson("/api/sessions", {})).json()) as any;
+    const create = await postJson(`/api/sessions/${sessionId}/goal`, {
+      objective: "finish the MiniAgent control features",
+      maxTurns: 3,
+    });
+    expect(create.status).toBe(201);
+    const created = await create.json();
+    expect(created.goal.objective).toBe("finish the MiniAgent control features");
+    expect(created.goal.maxTurns).toBe(3);
+
+    const read = await request(`/api/sessions/${sessionId}/goal`);
+    expect(read.status).toBe(200);
+    const readData = await read.json();
+    expect(readData.goal.status).toBe("active");
+
+    const paused = await patchJson(`/api/sessions/${sessionId}/goal`, { status: "paused" });
+    expect(paused.status).toBe(200);
+    const pausedData = await paused.json();
+    expect(pausedData.goal.status).toBe("paused");
+  });
+
+  it("rejects invalid goal updates", async () => {
+    const { sessionId } = (await (await postJson("/api/sessions", {})).json()) as any;
+    expect((await postJson(`/api/sessions/${sessionId}/goal`, { objective: "" })).status).toBe(400);
+    expect((await patchJson(`/api/sessions/${sessionId}/goal`, { status: "unknown" })).status).toBe(400);
+  });
+});
+
+describe("GET /api/memory/search", () => {
+  it("searches persisted messages", async () => {
+    const { sessionId } = (await (await postJson("/api/sessions", {})).json()) as any;
+    await postJson(`/api/sessions/${sessionId}/messages`, { text: "release checklist includes migrations" });
+
+    const res = await request(`/api/memory/search?sessionId=${sessionId}&q=checklist`);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.results[0].content).toBe("release checklist includes migrations");
+  });
+
+  it("requires a query", async () => {
+    const res = await request("/api/memory/search");
+    expect(res.status).toBe(400);
+  });
+});
+
 // ── Permissions ──
 
 describe("GET /api/runs/:runId/permissions", () => {

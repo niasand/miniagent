@@ -40,9 +40,9 @@ const channelRegistry = new ChannelRegistry(db, (channelType, msg) => {
   try {
     const inbound = new InboundService(db, channelType, { workspacePolicy });
     const result = inbound.receiveMessage(msg);
-    if (result.action === "message" && result.taskId) {
+    if (result.taskId) {
       // React 👀 to user message to indicate processing
-      if (msg.providerMessageId && result.session.channelRef) {
+      if (result.action === "message" && msg.providerMessageId && result.session.channelRef) {
         const adapter = channelRegistry.get(channelType);
         if (adapter?.react) {
           adapter.react(result.session.channelRef, msg.providerMessageId, "👀").catch((err) => {

@@ -3,10 +3,12 @@ import { SessionStore } from "../stores/session-store.js";
 import { EventStore } from "../stores/event-store.js";
 import { AuditLogStore } from "../stores/audit-log-store.js";
 import { PermissionRequestStore } from "../stores/permission-request-store.js";
+import { GoalStore } from "../stores/goal-store.js";
 import { RuntimeSupervisor } from "./supervisor.js";
 import { RuntimeAdapterRegistry } from "./registry.js";
 import { WorkspacePolicy, WorkspacePolicyError } from "../security/workspace-policy.js";
 import type { KnowledgeService } from "../services/knowledge.js";
+import { MemoryService } from "../services/memory.js";
 import type { JsonValue } from "../../shared/json.js";
 
 export type StartNextQueuedTaskResult = {
@@ -18,6 +20,8 @@ export class RuntimeService {
   private readonly sessions: SessionStore;
   private readonly auditLogs: AuditLogStore;
   private readonly permissionRequests: PermissionRequestStore;
+  private readonly goals: GoalStore;
+  private readonly memory: MemoryService;
 
   constructor(
     private readonly db: SqliteDatabase,
@@ -29,6 +33,8 @@ export class RuntimeService {
     this.sessions = new SessionStore(db, events);
     this.auditLogs = new AuditLogStore(db);
     this.permissionRequests = new PermissionRequestStore(db);
+    this.goals = new GoalStore(db);
+    this.memory = new MemoryService(db);
   }
 
   startNextQueuedTask(sessionId: string): StartNextQueuedTaskResult | null {
@@ -59,9 +65,10 @@ export class RuntimeService {
       taskId: task.id,
     });
 
+    const enrichedInput = this.augmentWithControlContext(session, task.input);
     const knowledgeInput = this.knowledgeService
-      ? this.augmentWithKnowledge(session, task.input)
-      : task.input;
+      ? this.augmentWithKnowledge(session, enrichedInput)
+      : enrichedInput;
 
     this.supervisor.sendInput(started.run.id, {
       taskType: task.type,
@@ -97,5 +104,41 @@ export class RuntimeService {
       ? taskInput as Record<string, unknown>
       : { text: taskInput };
     return { ...inputObj, knowledge };
+  }
+
+  private augmentWithControlContext(
+    session: { id: string },
+    taskInput: JsonValue,
+  ): JsonValue {
+    const inputObj = taskInput && typeof taskInput === "object" && !Array.isArray(taskInput)
+      ? taskInput as Record<string, unknown>
+      : { text: taskInput };
+
+    const goal = this.goals.get(session.id);
+    const goalContext = goal?.status === "active"
+      ? {
+          objective: goal.objective,
+          turnCount: goal.turnCount,
+          maxTurns: goal.maxTurns,
+          subgoals: goal.subgoals,
+        }
+      : undefined;
+    if (goalContext) {
+      const updated = this.goals.incrementTurn(session.id);
+      if (updated && updated.turnCount >= updated.maxTurns) {
+        this.goals.updateStatus(session.id, "paused");
+      }
+    }
+
+    const text = typeof inputObj.text === "string" ? inputObj.text : "";
+    const memoryResults = text ? this.memory.search(text, { sessionId: session.id, limit: 3 }) : [];
+    const memoryContext = memoryResults.length > 0 ? this.memory.formatResults(memoryResults) : undefined;
+
+    if (!goalContext && !memoryContext) return taskInput;
+    return {
+      ...inputObj,
+      ...(goalContext ? { activeGoal: goalContext } : {}),
+      ...(memoryContext ? { memoryContext } : {}),
+    };
   }
 }
