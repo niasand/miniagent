@@ -76,9 +76,12 @@ export class ScheduleStore {
   updateStatus(scheduleId: string, status: ScheduleStatus): ScheduleRecord | null {
     const now = nowIso();
     const existing = this.get(scheduleId);
+    // Non-active states (paused/cancelled) must clear next_run_at: they won't
+    // fire again, so a stale next_run_at is misleading. resume() re-enters via
+    // the active branch above and recomputes it. (ISSUE-009)
     const nextRunAt = status === "active" && existing?.kind === "cron" && existing.cronExpr
       ? computeNextCronRun(existing.cronExpr, now, existing.timezone)
-      : existing?.nextRunAt ?? null;
+      : null;
     this.db.prepare(
       "UPDATE schedules SET status = @status, next_run_at = @nextRunAt, locked_by = NULL, locked_at = NULL, lease_expires_at = NULL, updated_at = @updatedAt WHERE id = @id"
     ).run({ id: scheduleId, status, nextRunAt, updatedAt: now });
