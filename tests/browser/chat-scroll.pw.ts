@@ -6,6 +6,18 @@ import type { WorkspaceSnapshot } from "../../src/shared/workspace.js";
 
 const sessionId = "ses_browser_scroll";
 
+test("message copy button shows copied feedback", async ({ page }) => {
+  await page.context().grantPermissions(["clipboard-write"], { origin: "http://127.0.0.1:7274" });
+  await mockWorkspaceApis(page, createScrollableSnapshot());
+
+  await page.goto("/");
+
+  const copyButton = page.locator(".chat-bubble-copy").first();
+  await expect(copyButton).toBeVisible();
+  await copyButton.click();
+  await expect(copyButton).toHaveAttribute("title", "已复制");
+});
+
 test("clicking back to top after refresh is not overridden by initial auto-scroll", async ({ page }) => {
   await page.addInitScript((id) => {
     localStorage.setItem("sessionId", id);
