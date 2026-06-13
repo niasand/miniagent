@@ -60,10 +60,19 @@ export default function App() {
     queryFn: fetchDefaultNotificationPreference,
   });
 
-  // Derived from workspace snapshot
-  const messages = snapshot?.messages ?? [];
-  const hasWorkspaceSnapshot = snapshot !== undefined;
-  const runStats = snapshot?.runStats ?? { durationSeconds: null, tokensUsed: null, tokensTotal: null };
+  // Derived from workspace snapshot.
+  // Guard: only trust a snapshot's messages when it actually belongs to the
+  // currently selected session. Without this, switching sessions (e.g. after
+  // clicking "+") can briefly render the *previous* session's messages — the
+  // old snapshot leaks into the new (empty) session UI until the fresh fetch
+  // lands. See ISSUE-009.
+  const snapshotMatchesSession =
+    snapshot !== undefined && snapshot.selectedSessionId === selectedSessionId;
+  const messages = snapshotMatchesSession ? snapshot.messages : [];
+  const hasWorkspaceSnapshot = snapshotMatchesSession;
+  const runStats = snapshotMatchesSession
+    ? snapshot.runStats
+    : { durationSeconds: null, tokensUsed: null, tokensTotal: null };
 
   // Hook 6: Chat stream (SSE — highest risk)
   const {

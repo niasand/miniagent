@@ -35,6 +35,15 @@ export function useChatStream(sessionId: string | null) {
   // Why: connects to server-sent events for real-time run output streaming
   useEffect(() => {
     if (!sessionId) return;
+    // Reset streaming state on session switch. Without this, streamingText from
+    // the previous session (e.g. a long-running晚安 reply) leaks into the new
+    // (empty) session UI and renders as a stale agent bubble. See ISSUE-009.
+    streamingTextRef.current = "";
+    setStreamingText("");
+    isStreamingRef.current = false;
+    setIsStreaming(false);
+    activeRunIdRef.current = null;
+
     let stopped = false;
     let source: EventSource | null = null;
 

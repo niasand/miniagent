@@ -45,7 +45,11 @@ export function useSessions({ activeSection, agentType, onNewSession }: UseSessi
       return res.json() as Promise<WorkspaceSnapshot>;
     },
     refetchInterval: 3_000,
-    placeholderData: (previous) => previous,
+    // NOTE: do NOT add placeholderData here. Across session switches the
+    // previous snapshot belongs to a different session; placeholderData would
+    // leak the old session's messages into the new session UI. Same-key
+    // refetch (3s poll) keeps its data by default, so there's no flicker to
+    // guard against. See ISSUE-009.
   });
 
   const sessions = snapshot?.sessions ?? [];
