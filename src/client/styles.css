@@ -280,12 +280,6 @@ button { cursor: pointer; }
   white-space: nowrap;
 }
 
-.notification-defaults-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 12px;
-}
-
 .detail-pane {
   min-width: 0;
   min-height: 0;
@@ -1606,8 +1600,7 @@ button { cursor: pointer; }
     grid-template-columns: 1fr;
   }
 
-  .notification-defaults-header,
-  .notification-defaults-actions {
+  .notification-defaults-header {
     align-items: stretch;
     flex-direction: column;
   }

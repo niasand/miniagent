@@ -89,7 +89,6 @@ export function AppShell(props: {
   notificationPreference: NotificationPreference | null;
   latestPrivateNotificationTargets: WorkspaceScheduleNotificationTarget[];
   notificationPreferenceLoading: boolean;
-  bindNotificationPreference: () => Promise<void>;
   agentType: AgentType;
   setAgentType: (value: AgentType) => void;
   providerRuntimes: WorkspaceAgentRuntime[];
@@ -252,7 +251,6 @@ export function AppShell(props: {
             notificationPreference={props.notificationPreference}
             latestPrivateNotificationTargets={props.latestPrivateNotificationTargets}
             notificationPreferenceLoading={props.notificationPreferenceLoading}
-            bindNotificationPreference={props.bindNotificationPreference}
             agentType={props.agentType}
             setAgentType={props.setAgentType}
             providerRuntimes={props.providerRuntimes}

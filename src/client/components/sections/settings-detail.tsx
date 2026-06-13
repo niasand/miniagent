@@ -1,10 +1,8 @@
-import { useState } from "react";
 import type { AgentType } from "../../api/types.js";
 import type { ChannelInfo } from "../../api/channels.js";
 import type { NotificationPreference, WorkspaceAgentRuntime, WorkspaceScheduleNotificationTarget } from "../../../shared/workspace.js";
 import { ChannelCard } from "../channel-card.js";
 import { Badge } from "../ui/badge.js";
-import { Button } from "../ui/button.js";
 import { ProviderSelect } from "../controls.js";
 import { localizeProviderErrorMessage } from "../../lib/error-messages.js";
 import { formatCapabilityAvailability, formatCapabilityName, formatProviderStatus } from "../../lib/status-labels.js";
@@ -27,7 +25,6 @@ interface SettingsDetailProps {
   notificationPreference: NotificationPreference | null;
   latestPrivateNotificationTargets: WorkspaceScheduleNotificationTarget[];
   notificationPreferenceLoading: boolean;
-  bindNotificationPreference: () => Promise<void>;
   agentType: AgentType;
   setAgentType: (value: AgentType) => void;
   providerRuntimes: WorkspaceAgentRuntime[];
@@ -42,32 +39,15 @@ export function SettingsDetail({
   notificationPreference,
   latestPrivateNotificationTargets,
   notificationPreferenceLoading,
-  bindNotificationPreference,
   agentType,
   setAgentType,
   providerRuntimes,
   providerSavePending,
   providerError,
 }: SettingsDetailProps) {
-  const [bindingNotificationPreference, setBindingNotificationPreference] = useState(false);
-  const [notificationPreferenceError, setNotificationPreferenceError] = useState<string | null>(null);
-
   const boundTargets = notificationPreference?.targets ?? [];
   const effectiveTargets = boundTargets.length ? boundTargets : latestPrivateNotificationTargets;
-  const notificationState = boundTargets.length ? "已绑定" : effectiveTargets.length ? "自动匹配" : "未发现私聊";
-
-  const handleBindNotificationPreference = async () => {
-    if (bindingNotificationPreference) return;
-    setBindingNotificationPreference(true);
-    setNotificationPreferenceError(null);
-    try {
-      await bindNotificationPreference();
-    } catch (error) {
-      setNotificationPreferenceError(error instanceof Error ? error.message : "绑定默认通知失败");
-    } finally {
-      setBindingNotificationPreference(false);
-    }
-  };
+  const notificationState = effectiveTargets.length ? "自动匹配" : "未发现私聊";
 
   return (
     <div className="detail-scroll">
@@ -83,23 +63,13 @@ export function SettingsDetail({
             <div className="notification-defaults-header">
               <div>
                 <h2>默认通知私聊</h2>
-                <p>定时任务默认发送到你的 QQ/Telegram 私聊。</p>
+                <p>定时任务会自动发送到最近识别到的 QQ/Telegram 私聊。</p>
               </div>
-              <Badge tone={boundTargets.length ? "success" : effectiveTargets.length ? "info" : "warning"}>{notificationState}</Badge>
+              <Badge tone={effectiveTargets.length ? "info" : "warning"}>{notificationState}</Badge>
             </div>
             <div className="notification-target-grid">
               <NotificationTargetPanel title="当前目标" targets={effectiveTargets} emptyText={notificationPreferenceLoading ? "加载中" : "暂无私聊目标"} />
-              <NotificationTargetPanel title="最近私聊" targets={latestPrivateNotificationTargets} emptyText="暂无可绑定私聊" />
-            </div>
-            {notificationPreferenceError && <p className="provider-error" role="alert">{notificationPreferenceError}</p>}
-            <div className="notification-defaults-actions">
-              <Button
-                variant="default"
-                onClick={handleBindNotificationPreference}
-                disabled={bindingNotificationPreference || notificationPreferenceLoading || latestPrivateNotificationTargets.length === 0}
-              >
-                {bindingNotificationPreference ? "绑定中" : "绑定最近私聊"}
-              </Button>
+              <NotificationTargetPanel title="最近私聊" targets={latestPrivateNotificationTargets} emptyText="暂无私聊" />
             </div>
           </div>
           <div className="settings-channel-grid">

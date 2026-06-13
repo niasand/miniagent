@@ -393,11 +393,10 @@ test("settings shows and binds default private notification targets", async ({ p
 
   await page.goto("/#settings/channels");
   await expect(page.getByRole("heading", { name: "默认通知私聊" })).toBeVisible();
-  await expect(page.locator(".notification-defaults")).toContainText("定时任务默认发送到你的 QQ/Telegram 私聊。");
+  await expect(page.locator(".notification-defaults")).toContainText("定时任务会自动发送到最近识别到的 QQ/Telegram 私聊。");
   await expect(page.locator(".notification-defaults")).toContainText("自动匹配");
   await expect(page.locator(".notification-target-panel").filter({ hasText: "当前目标" })).toContainText("c2c:user1");
-  await page.getByRole("button", { name: "绑定最近私聊" }).click();
-  await expect(page.locator(".notification-defaults")).toContainText("已绑定");
+  await expect(page.getByRole("button", { name: "绑定最近私聊" })).toHaveCount(0);
 });
 
 test("channel cards show localized status labels", async ({ page }) => {
