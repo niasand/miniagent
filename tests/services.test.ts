@@ -151,6 +151,40 @@ describe("SchedulerService", () => {
     });
   });
 
+  it("prefers bound notification targets over latest private sessions", () => {
+    const events = new EventStore(db);
+    const sessions = new SessionStore(db, events);
+    const session = sessions.createSession({ title: "T", agentType: "claude", workspacePath: "/tmp" });
+    sessions.createSession({ title: "QQ bound", agentType: "claude", workspacePath: "/tmp", channelType: "qq", channelRef: "c2c:bound" });
+
+    const scheduler = new SchedulerService(db);
+    const first = scheduler.create({
+      sessionId: session.id,
+      kind: "cron",
+      cronExpr: "0 9 * * 1-5",
+      payload: { text: "first" },
+    });
+    expect(first.payload).toMatchObject({
+      notificationTargets: [{ channelType: "qq", targetRef: "c2c:bound" }],
+    });
+
+    db.prepare(
+      `INSERT INTO notification_preferences (id, scope_type, scope_ref, targets_json, created_at, updated_at)
+       VALUES ('ntp_test', 'user', 'default', '[{"channelType":"qq","targetRef":"c2c:bound"}]', '2026-05-19T01:00:00.000Z', '2026-05-19T01:00:00.000Z')`,
+    ).run();
+    sessions.createSession({ title: "QQ newer", agentType: "claude", workspacePath: "/tmp", channelType: "qq", channelRef: "c2c:newer" });
+
+    const second = scheduler.create({
+      sessionId: session.id,
+      kind: "cron",
+      cronExpr: "0 10 * * 1-5",
+      payload: { text: "second" },
+    });
+    expect(second.payload).toMatchObject({
+      notificationTargets: [{ channelType: "qq", targetRef: "c2c:bound" }],
+    });
+  });
+
   it("pauses and resumes schedules", () => {
     const events = new EventStore(db);
     const sessions = new SessionStore(db, events);

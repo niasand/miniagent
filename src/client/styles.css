@@ -232,6 +232,60 @@ button { cursor: pointer; }
   gap: 10px;
 }
 
+.notification-defaults {
+  max-width: 760px;
+}
+
+.notification-defaults-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.notification-defaults-header p {
+  margin: 4px 0 0;
+  color: var(--color-muted-foreground);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.notification-target-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.notification-target-panel {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-muted);
+  padding: 10px;
+}
+
+.notification-target-panel strong {
+  font-size: 12px;
+}
+
+.notification-target-panel span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-muted-foreground);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.notification-defaults-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
 .detail-pane {
   min-width: 0;
   min-height: 0;
@@ -598,6 +652,13 @@ button { cursor: pointer; }
 .schedule-textarea:focus {
   border-color: var(--color-ring);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-ring) 16%, transparent);
+}
+
+.schedule-delivery-note {
+  margin: -2px 0 0;
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .timezone-select {
@@ -1529,6 +1590,16 @@ button { cursor: pointer; }
   }
 
   .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .notification-defaults-header,
+  .notification-defaults-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .notification-target-grid {
     grid-template-columns: 1fr;
   }
 

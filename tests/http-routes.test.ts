@@ -453,6 +453,38 @@ describe("PUT /api/channels/:channelId/config", () => {
   });
 });
 
+describe("notification preferences", () => {
+  it("returns latest private targets and binds them as the default", async () => {
+    const sessions = new SessionStore(db, new EventStore(db));
+    sessions.createSession({ title: "QQ group", agentType: "claude", workspacePath: process.cwd(), channelType: "qq", channelRef: "group:ignore" });
+    sessions.createSession({ title: "QQ private", agentType: "claude", workspacePath: process.cwd(), channelType: "qq", channelRef: "c2c:user1" });
+    sessions.createSession({ title: "TG private", agentType: "claude", workspacePath: process.cwd(), channelType: "telegram", channelRef: "private:42" });
+
+    const before = await request("/api/notification-preferences/default");
+    expect(before.status).toBe(200);
+    const beforeData = await before.json();
+    expect(beforeData.preference.targets).toEqual([]);
+    expect(beforeData.latestPrivateTargets).toEqual([
+      { channelType: "qq", targetRef: "c2c:user1" },
+      { channelType: "telegram", targetRef: "private:42" },
+    ]);
+
+    const bind = await postJson("/api/notification-preferences/default/bind-latest-private", {});
+    expect(bind.status).toBe(200);
+    const bindData = await bind.json();
+    expect(bindData.preference.targets).toEqual(beforeData.latestPrivateTargets);
+
+    sessions.createSession({ title: "QQ newer", agentType: "claude", workspacePath: process.cwd(), channelType: "qq", channelRef: "c2c:newer" });
+    const after = await request("/api/notification-preferences/default");
+    const afterData = await after.json();
+    expect(afterData.preference.targets).toEqual([
+      { channelType: "qq", targetRef: "c2c:user1" },
+      { channelType: "telegram", targetRef: "private:42" },
+    ]);
+    expect(afterData.latestPrivateTargets[0]).toEqual({ channelType: "qq", targetRef: "c2c:newer" });
+  });
+});
+
 // ── Schedules ──
 
 describe("GET /api/schedules", () => {

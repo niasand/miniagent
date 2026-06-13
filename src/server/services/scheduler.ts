@@ -6,17 +6,14 @@ import { EventStore } from "../stores/event-store.js";
 import { AuditLogStore } from "../stores/audit-log-store.js";
 import type { RuntimeService } from "../runtime/service.js";
 import type { JsonObject, JsonValue } from "../../shared/json.js";
-
-type PrivateNotificationTarget = {
-  channelType: "qq" | "telegram";
-  targetRef: string;
-};
+import { NotificationPreferenceService } from "./notification-preferences.js";
 
 export class SchedulerService {
   private sessions: SessionStore;
   private schedules: ScheduleStore;
   private scheduleRuns: ScheduleRunStore;
   private auditLogs: AuditLogStore;
+  private notificationPreferences: NotificationPreferenceService;
 
   constructor(
     private readonly db: SqliteDatabase,
@@ -26,6 +23,7 @@ export class SchedulerService {
     this.schedules = new ScheduleStore(db);
     this.scheduleRuns = new ScheduleRunStore(db);
     this.auditLogs = new AuditLogStore(db);
+    this.notificationPreferences = new NotificationPreferenceService(db);
   }
 
   create(input: {
@@ -148,34 +146,7 @@ export class SchedulerService {
       : {};
     return {
       ...base,
-      notificationTargets: this.resolveDefaultPrivateNotificationTargets(),
+      notificationTargets: this.notificationPreferences.resolveTargetsForDefaultUser(),
     };
-  }
-
-  private resolveDefaultPrivateNotificationTargets(): PrivateNotificationTarget[] {
-    const rows = this.db.prepare(`
-      SELECT channel_type, channel_ref FROM (
-        SELECT
-          channel_type,
-          channel_ref,
-          row_number() OVER (
-            PARTITION BY channel_type
-            ORDER BY updated_at DESC, id DESC
-          ) AS row_num
-        FROM sessions
-        WHERE status != 'archived'
-          AND (
-            (channel_type = 'qq' AND channel_ref LIKE 'c2c:%')
-            OR (channel_type = 'telegram' AND channel_ref LIKE 'private:%')
-          )
-      )
-      WHERE row_num = 1
-      ORDER BY CASE channel_type WHEN 'qq' THEN 0 ELSE 1 END
-    `).all() as Array<{ channel_type: "qq" | "telegram"; channel_ref: string }>;
-
-    return rows.map((row) => ({
-      channelType: row.channel_type,
-      targetRef: row.channel_ref,
-    }));
   }
 }

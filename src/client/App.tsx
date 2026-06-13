@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { fetchChannels } from "./api/channels.js";
+import { bindDefaultNotificationPreference, fetchDefaultNotificationPreference } from "./api/notification-preferences.js";
 import { AppShell } from "./components/app-shell.js";
 import { formatSessionChannel, formatSessionUpdatedAt, formatZonedTime, renderHighlightedSessionName } from "./lib/formatters.js";
 import type { WorkspaceScheduleRun } from "../shared/workspace.js";
@@ -53,6 +54,11 @@ export default function App() {
     queryFn: fetchChannels,
   });
   const channels = channelsData?.channels ?? [];
+
+  const { data: notificationPreferenceData, isFetching: notificationPreferenceLoading } = useQuery({
+    queryKey: ["notification-preferences", "default"],
+    queryFn: fetchDefaultNotificationPreference,
+  });
 
   // Derived from workspace snapshot
   const messages = snapshot?.messages ?? [];
@@ -200,6 +206,13 @@ export default function App() {
       formatZonedTime={formatZonedTime}
       channels={channels}
       onChannelsSaved={() => queryClient.invalidateQueries({ queryKey: ["channels"] })}
+      notificationPreference={notificationPreferenceData?.preference ?? null}
+      latestPrivateNotificationTargets={notificationPreferenceData?.latestPrivateTargets ?? []}
+      notificationPreferenceLoading={notificationPreferenceLoading}
+      bindNotificationPreference={async () => {
+        await bindDefaultNotificationPreference();
+        await queryClient.invalidateQueries({ queryKey: ["notification-preferences", "default"] });
+      }}
       agentType={agentType}
       setAgentType={setAgentType}
       providerRuntimes={providerRuntimes}

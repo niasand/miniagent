@@ -130,6 +130,7 @@ export function ScheduleDetail({
               </div>
             )}
             <Textarea inputSize="lg" value={scheduleText} onChange={(event) => setScheduleText(event.currentTarget.value)} placeholder="输入要发送的消息..." rows={4} />
+            <p className="schedule-delivery-note">将发送到 Web，并同步到默认 QQ/Telegram 私聊。</p>
             {scheduleError && <div className="schedule-error" role="alert">{scheduleError}</div>}
             <Button variant="primary" onClick={handleCreateSchedule} disabled={!selectedSessionId || createSchedulePending}>
               <CalendarClock className="h-4 w-4" />
@@ -208,6 +209,7 @@ export function ScheduleDetail({
                   </div>
                 )}
                 <Textarea inputSize="lg" value={editScheduleText} onChange={(event) => setEditScheduleText(event.currentTarget.value)} aria-label="编辑消息" rows={4} />
+                <p className="schedule-delivery-note">将发送到 Web，并同步到默认 QQ/Telegram 私聊。</p>
                 {editScheduleError && <div className="schedule-error" role="alert">{editScheduleError}</div>}
                 <div className="schedule-edit-actions">
                   <Button variant="default" onClick={() => setEditingScheduleId(null)}>取消</Button>

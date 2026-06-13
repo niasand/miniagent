@@ -1,6 +1,6 @@
 import type { AgentType, SkillMeta } from "../api/types.js";
 import type { ChannelInfo } from "../api/channels.js";
-import type { WorkspaceAgentRuntime, WorkspaceSchedule, WorkspaceScheduleKind, WorkspaceScheduleRun, WorkspaceSnapshot } from "../../shared/workspace.js";
+import type { NotificationPreference, WorkspaceAgentRuntime, WorkspaceSchedule, WorkspaceScheduleKind, WorkspaceScheduleNotificationTarget, WorkspaceScheduleRun, WorkspaceSnapshot } from "../../shared/workspace.js";
 import { NavBar } from "./nav-bar.js";
 import { ChatView, ScheduleDetail, ScheduleList, SessionList, SettingsDetail, SettingsList, SkillDetail, SkillList } from "./sections/index.js";
 
@@ -86,6 +86,10 @@ export function AppShell(props: {
   formatZonedTime: (value: string, timezone: string) => string;
   channels: ChannelInfo[];
   onChannelsSaved: () => void;
+  notificationPreference: NotificationPreference | null;
+  latestPrivateNotificationTargets: WorkspaceScheduleNotificationTarget[];
+  notificationPreferenceLoading: boolean;
+  bindNotificationPreference: () => Promise<void>;
   agentType: AgentType;
   setAgentType: (value: AgentType) => void;
   providerRuntimes: WorkspaceAgentRuntime[];
@@ -245,6 +249,10 @@ export function AppShell(props: {
             settingsSection={props.settingsSection}
             channels={props.channels}
             onChannelsSaved={props.onChannelsSaved}
+            notificationPreference={props.notificationPreference}
+            latestPrivateNotificationTargets={props.latestPrivateNotificationTargets}
+            notificationPreferenceLoading={props.notificationPreferenceLoading}
+            bindNotificationPreference={props.bindNotificationPreference}
             agentType={props.agentType}
             setAgentType={props.setAgentType}
             providerRuntimes={props.providerRuntimes}

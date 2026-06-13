@@ -9,6 +9,7 @@ import { WorkspaceService } from "../services/workspace.js";
 import { InboundService } from "../services/inbound.js";
 import { DeliveryWorker } from "../services/delivery.js";
 import { SchedulerService } from "../services/scheduler.js";
+import { NotificationPreferenceService } from "../services/notification-preferences.js";
 import { ContextService } from "../services/context.js";
 import { HandoffService } from "../services/handoff.js";
 import { ChannelConfigStore } from "../stores/channel-config-store.js";
@@ -25,10 +26,11 @@ import { RuntimeService } from "../runtime/service.js";
 import { WorkspacePolicy, WorkspacePolicyError } from "../security/workspace-policy.js";
 import { ChannelRegistry } from "../channels/registry.js";
 import { KnowledgeService } from "../services/knowledge.js";
-import type { WorkspaceSchedule, WorkspaceScheduleNotificationTarget, WorkspaceScheduleRun } from "../../shared/workspace.js";
+import type { NotificationPreference, WorkspaceSchedule, WorkspaceScheduleNotificationTarget, WorkspaceScheduleRun } from "../../shared/workspace.js";
 import type { ScheduleRecord } from "../stores/schedule-store.js";
 import type { ScheduleRunRecord } from "../stores/schedule-run-store.js";
 import type { AgentDefaultRecord } from "../stores/agent-default-store.js";
+import type { NotificationPreferenceRecord } from "../stores/notification-preference-store.js";
 import type { PermissionRequestRecord } from "../stores/permission-request-store.js";
 import type { JsonValue } from "../../shared/json.js";
 import { formatUtc8 } from "../../shared/time.js";
@@ -700,6 +702,21 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
     return c.json({ channels });
   });
 
+  app.get("/api/notification-preferences/default", (c) => {
+    const service = new NotificationPreferenceService(db);
+    const preference = service.getDefaultUserPreference();
+    return c.json({
+      preference: mapNotificationPreference(preference),
+      latestPrivateTargets: service.resolveLatestPrivateTargets(),
+    });
+  });
+
+  app.post("/api/notification-preferences/default/bind-latest-private", (c) => {
+    const service = new NotificationPreferenceService(db);
+    const preference = service.bindDefaultUserToLatestPrivateTargets();
+    return c.json({ preference: mapNotificationPreference(preference) });
+  });
+
   app.put("/api/channels/:channelId/config", async (c) => {
     const body = await c.req.json().catch(() => null);
     if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -1050,6 +1067,24 @@ function mapAgentDefault(record: AgentDefaultRecord) {
     params: record.params,
     updatedAt: record.updatedAt,
   };
+}
+
+function mapNotificationPreference(record: NotificationPreferenceRecord | null): NotificationPreference {
+  return record
+    ? {
+        id: record.id,
+        scopeType: "user",
+        scopeRef: record.scopeRef,
+        targets: record.targets,
+        updatedAt: record.updatedAt,
+      }
+    : {
+        id: null,
+        scopeType: "user",
+        scopeRef: "default",
+        targets: [],
+        updatedAt: null,
+      };
 }
 
 function mapPermissionRequest(record: PermissionRequestRecord) {

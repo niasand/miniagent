@@ -355,6 +355,27 @@ test("settings separates channel and provider details", async ({ page }) => {
   await expect(page.locator(".provider-capability-card").filter({ hasText: "Trae" })).toContainText("traecli 未在 PATH 中找到");
 });
 
+test("settings shows and binds default private notification targets", async ({ page }) => {
+  await page.addInitScript((id) => {
+    localStorage.setItem("sessionId", id);
+  }, sessionId);
+
+  await mockWorkspaceApis(page, createScrollableSnapshot(), {
+    latestPrivateNotificationTargets: [
+      { channelType: "qq", targetRef: "c2c:user1" },
+      { channelType: "telegram", targetRef: "private:42" },
+    ],
+  });
+
+  await page.goto("/#settings/channels");
+  await expect(page.getByRole("heading", { name: "默认通知私聊" })).toBeVisible();
+  await expect(page.locator(".notification-defaults")).toContainText("定时任务默认发送到你的 QQ/Telegram 私聊。");
+  await expect(page.locator(".notification-defaults")).toContainText("自动匹配");
+  await expect(page.locator(".notification-target-panel").filter({ hasText: "当前目标" })).toContainText("c2c:user1");
+  await page.getByRole("button", { name: "绑定最近私聊" }).click();
+  await expect(page.locator(".notification-defaults")).toContainText("已绑定");
+});
+
 test("channel cards show localized status labels", async ({ page }) => {
   await page.addInitScript((id) => {
     localStorage.setItem("sessionId", id);
@@ -660,10 +681,12 @@ async function mockWorkspaceApis(
     agentCommands?: Partial<Record<"claude" | "codex" | "trae", string>>;
     channels?: ChannelInfo[];
     channelTestResults?: Record<string, { ok: boolean; message: string }>;
+    latestPrivateNotificationTargets?: Array<{ channelType: "qq" | "telegram"; targetRef: string }>;
     skills?: SkillMeta[];
   },
 ) {
   let defaultAgentType: "claude" | "codex" | "trae" = "claude";
+  let boundNotificationTargets: Array<{ channelType: "qq" | "telegram"; targetRef: string }> = [];
 
   await page.route("**/api/workspace**", async (route) => {
     await route.fulfill({ json: snapshot });
@@ -759,6 +782,34 @@ async function mockWorkspaceApis(
           scopeRef: "default",
           agentType: defaultAgentType,
           params: {},
+          updatedAt: "2026-05-19T01:00:00.000Z",
+        },
+      },
+    });
+  });
+  await page.route("**/api/notification-preferences/default", async (route) => {
+    await route.fulfill({
+      json: {
+        preference: {
+          id: boundNotificationTargets.length ? "ntp_default" : null,
+          scopeType: "user",
+          scopeRef: "default",
+          targets: boundNotificationTargets,
+          updatedAt: boundNotificationTargets.length ? "2026-05-19T01:00:00.000Z" : null,
+        },
+        latestPrivateTargets: options?.latestPrivateNotificationTargets ?? [],
+      },
+    });
+  });
+  await page.route("**/api/notification-preferences/default/bind-latest-private", async (route) => {
+    boundNotificationTargets = options?.latestPrivateNotificationTargets ?? [];
+    await route.fulfill({
+      json: {
+        preference: {
+          id: "ntp_default",
+          scopeType: "user",
+          scopeRef: "default",
+          targets: boundNotificationTargets,
           updatedAt: "2026-05-19T01:00:00.000Z",
         },
       },

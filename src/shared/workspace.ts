@@ -257,6 +257,23 @@ export type WorkspaceScheduleNotificationTarget = {
   targetRef: string;
 };
 
+export type NotificationPreference = {
+  id: string | null;
+  scopeType: "user";
+  scopeRef: string;
+  targets: WorkspaceScheduleNotificationTarget[];
+  updatedAt: string | null;
+};
+
+export type GetDefaultNotificationPreferenceResponse = {
+  preference: NotificationPreference;
+  latestPrivateTargets: WorkspaceScheduleNotificationTarget[];
+};
+
+export type BindDefaultNotificationPreferenceResponse = {
+  preference: NotificationPreference;
+};
+
 export type WorkspaceScheduleRun = {
   id: string;
   scheduleId: string;
