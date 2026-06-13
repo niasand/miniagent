@@ -16,6 +16,8 @@ test("message copy button shows copied feedback", async ({ page }) => {
   await expect(copyButton).toBeVisible();
   await copyButton.click();
   await expect(copyButton).toHaveAttribute("title", "已复制");
+  await expect(copyButton).toHaveAttribute("data-copied", "true");
+  await expect(copyButton).toHaveCSS("color", "rgb(5, 150, 105)");
 });
 
 test("header and skill copy buttons show copied feedback", async ({ page }) => {
@@ -40,12 +42,16 @@ test("header and skill copy buttons show copied feedback", async ({ page }) => {
   await expect(sessionNameCopy).toBeVisible();
   await sessionNameCopy.click();
   await expect(sessionNameCopy).toHaveAttribute("title", "已复制");
+  await expect(sessionNameCopy).toHaveAttribute("data-copied", "true");
+  await expect(sessionNameCopy).toHaveCSS("color", "rgb(5, 150, 105)");
 
   await page.getByRole("button", { name: "技能" }).click();
   const skillPathCopy = page.locator(".copy-path-btn").first();
   await expect(skillPathCopy).toBeVisible();
   await skillPathCopy.click();
   await expect(skillPathCopy).toHaveAttribute("title", "已复制");
+  await expect(skillPathCopy).toHaveAttribute("data-copied", "true");
+  await expect(skillPathCopy).toHaveCSS("color", "rgb(5, 150, 105)");
 });
 
 test("clicking back to top after refresh is not overridden by initial auto-scroll", async ({ page }) => {

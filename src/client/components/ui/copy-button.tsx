@@ -18,12 +18,13 @@ export function CopyButton({ text, label, size = "sm", className, ...props }: Co
   return (
     <button
       className={cn(
-        "inline-flex items-center justify-center border-none bg-transparent p-0.5 flex-shrink-0 cursor-pointer rounded",
-        copied ? "text-emerald-600" : "text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]",
+        "copy-button inline-flex items-center justify-center border-none bg-transparent p-0.5 flex-shrink-0 cursor-pointer rounded",
+        !copied && "text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]",
         size === "sm" && "h-5 w-5",
         size === "md" && "h-6 w-6",
         className,
       )}
+      data-copied={copied ? "true" : "false"}
       title={copied ? "已复制" : `复制${label ?? ""}`}
       onClick={() => copy(text)}
       {...props}

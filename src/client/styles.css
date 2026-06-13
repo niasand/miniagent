@@ -46,6 +46,17 @@ body {
 button, textarea, input { font: inherit; letter-spacing: 0; }
 button { cursor: pointer; }
 
+.copy-button {
+  transition: background-color 140ms, border-color 140ms, color 140ms, box-shadow 140ms;
+}
+
+.copy-button[data-copied="true"] {
+  border-color: color-mix(in srgb, #10b981 48%, var(--color-border));
+  background: color-mix(in srgb, #10b981 12%, var(--color-surface));
+  color: #059669;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #10b981 18%, transparent);
+}
+
 /* ── Layout ── */
 
 .app-root {
@@ -360,12 +371,17 @@ button { cursor: pointer; }
   background: var(--color-muted);
   color: var(--color-muted-foreground);
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
 }
 
 .copy-path-btn:hover {
   color: var(--color-foreground);
   border-color: var(--color-foreground);
+}
+
+.copy-path-btn[data-copied="true"] {
+  border-color: color-mix(in srgb, #10b981 48%, var(--color-border));
+  background: color-mix(in srgb, #10b981 12%, var(--color-surface));
+  color: #059669;
 }
 
 .side-search-icon { color: var(--color-muted-foreground); }
