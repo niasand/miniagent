@@ -24,7 +24,14 @@ export class WorkspaceService {
 
   getSnapshot(selectedSessionId?: string | null): WorkspaceSnapshot {
     const { sessions } = this.sessions.listSessionsFiltered({ excludeCronOnly: true, limit: 50 });
-    const sessionId = selectedSessionId ?? sessions[0]?.id ?? null;
+    // Fallback must skip sessions bound to an active schedule: cron runs refresh
+    // their updated_at daily, so they monopolize sessions[0] and get wrongly
+    // picked as the default when no session is explicitly chosen (ISSUE-009).
+    const scheduledSessionIds = this.getActiveScheduleSessionIds();
+    const fallbackPool = scheduledSessionIds.size
+      ? sessions.filter((s) => !scheduledSessionIds.has(s.id))
+      : sessions;
+    const sessionId = selectedSessionId ?? fallbackPool[0]?.id ?? sessions[0]?.id ?? null;
     const firstUserMessages = this.getFirstUserMessages(sessions.map((session) => session.id));
 
     const sessionSummaries: WorkspaceSessionSummary[] = sessions.map((s) => ({
@@ -151,6 +158,13 @@ export class WorkspaceService {
       "SELECT * FROM agent_runs WHERE session_id = ? ORDER BY created_at DESC LIMIT 1"
     ).all(sessionId) as any[];
     return rows[0] ?? null;
+  }
+
+  private getActiveScheduleSessionIds(): Set<string> {
+    const rows = this.db.prepare(
+      "SELECT DISTINCT session_id FROM schedules WHERE status = 'active'"
+    ).all() as Array<{ session_id: string }>;
+    return new Set(rows.map((row) => row.session_id));
   }
 
   private getFirstUserMessages(sessionIds: string[]): Map<string, string> {
