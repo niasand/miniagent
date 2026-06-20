@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChannelRegistry } from "../src/server/channels/registry.js";
 import { WeChatChannel } from "../src/server/channels/wechat.js";
 import type { ChannelAdapter, ChannelMessage, SendResult, TestResult } from "../src/server/channels/types.js";
+import { ChannelConfigStore } from "../src/server/stores/channel-config-store.js";
 import { createTestDb, disposeTestDb } from "./helpers.js";
 
 describe("ChannelRegistry", () => {
@@ -64,6 +65,36 @@ describe("ChannelRegistry", () => {
       expect(current.stopCalls).toBe(1);
       expect(replacement.startCalls).toBe(1);
     } finally {
+      disposeTestDb(db);
+    }
+  });
+
+  it("retries failed channels until they recover", async () => {
+    vi.useFakeTimers();
+    const db = createTestDb();
+    try {
+      // Telegram must be configured or startAll() skips it (registry.ts)
+      new ChannelConfigStore(db).set("telegram", { bot_token: "x" });
+      const registry = new ChannelRegistry(db, () => {}, 1000);
+
+      let testCalls = 0;
+      mockAdapterFactory(registry, () => {
+        testCalls++;
+        return fakeAdapter("telegram", {
+          // First test fails (network down at startup); later ones succeed
+          testResult: testCalls === 1 ? { ok: false, message: "fetch failed" } : { ok: true, message: "ok" },
+        });
+      });
+
+      await registry.startAll();
+      expect(registry.get("telegram")).toBeNull(); // startup failed, not running
+
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(registry.get("telegram")).not.toBeNull(); // auto-recovered on retry
+
+      registry.stopAll();
+    } finally {
+      vi.useRealTimers();
       disposeTestDb(db);
     }
   });

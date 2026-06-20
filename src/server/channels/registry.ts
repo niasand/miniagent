@@ -11,16 +11,20 @@ import { DingTalkChannel } from "./dingtalk.js";
 
 const DEDUP_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const DEDUP_MAX_SIZE = 1000;
+const RETRY_INTERVAL_MS = 60_000; // retry failed channel startups every minute
 
 export type StartChannelResult = { ok: boolean; message: string };
 
 export class ChannelRegistry {
   private adapters = new Map<string, ChannelAdapter>();
   private dedupCache = new Map<string, number>(); // messageId → timestamp
+  private failedChannels = new Map<string, Record<string, string>>(); // channelId → config (startup failed, pending retry)
+  private retryTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private readonly db: SqliteDatabase,
     private readonly onMessage: (channelType: string, msg: ChannelMessage) => void,
+    private readonly retryIntervalMs: number = RETRY_INTERVAL_MS,
   ) {}
 
   async startAll(): Promise<void> {
@@ -34,7 +38,33 @@ export class ChannelRegistry {
       const result = await this.startChannel(ch.channelId, ch.config);
       if (!result.ok) {
         console.error(`[Channel] ${ch.channelId} failed to start:`, result.message);
+        this.failedChannels.set(ch.channelId, ch.config);
       }
+    }
+    this.scheduleRetry();
+  }
+
+  /** Schedule a background timer to retry channels that failed during startAll. */
+  private scheduleRetry(): void {
+    if (this.retryTimer || this.failedChannels.size === 0) return;
+    this.retryTimer = setInterval(() => { void this.retryFailed(); }, this.retryIntervalMs);
+    console.log(`[Channel] Will retry ${this.failedChannels.size} failed channel(s) every ${this.retryIntervalMs}ms`);
+  }
+
+  /** Retry every failed channel; drop the timer once all recover. */
+  private async retryFailed(): Promise<void> {
+    for (const [channelId, config] of [...this.failedChannels]) {
+      const result = await this.startChannel(channelId, config);
+      if (result.ok) {
+        this.failedChannels.delete(channelId);
+        console.log(`[Channel] ${channelId} recovered on retry`);
+      }
+      // Stay silent on continued failure — startAll already logged the cause.
+    }
+    if (this.failedChannels.size === 0 && this.retryTimer) {
+      clearInterval(this.retryTimer);
+      this.retryTimer = null;
+      console.log("[Channel] All channels running, retry timer stopped");
     }
   }
 
@@ -65,6 +95,10 @@ export class ChannelRegistry {
   }
 
   stopAll(): void {
+    if (this.retryTimer) {
+      clearInterval(this.retryTimer);
+      this.retryTimer = null;
+    }
     for (const [name, adapter] of this.adapters) {
       try {
         adapter.stop();
