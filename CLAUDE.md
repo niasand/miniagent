@@ -39,6 +39,21 @@ nohup npx tsx src/server/http/server.ts &   # 临时跑
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.miniagent.api.plist
 ```
 
+### 进程监控
+
+`scripts/monitor-api.sh`（launchd `com.miniagent.monitor`，每 20s）探测 `/api/health`，连续 3 次失败经 lark-cli 私发告警（DOWN），恢复也通知（RECOVERED）。去抖阈值避免 launchd 重启瞬间的误报；状态文件去重避免刷屏。
+
+```bash
+# 状态
+launchctl print gui/$(id -u)/com.miniagent.monitor
+# 停止监控
+launchctl bootout gui/$(id -u)/com.miniagent.monitor
+# 重新加载（改脚本后）
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.miniagent.monitor.plist
+```
+
+告警发到 `MONITOR_OPEN_ID`（脚本内默认 open_id，可经 plist 的 env 覆盖）；探测 URL、去抖阈值均可经 env 覆盖。
+
 ## 项目规则
 
 ### 知识库（IMPORTANT）
