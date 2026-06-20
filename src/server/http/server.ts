@@ -74,7 +74,7 @@ const deliveryTimer = setInterval(() => {
   });
 }, 2000);
 
-setInterval(() => {
+const schedulerTimer = setInterval(() => {
   try {
     const schedulerService = new SchedulerService(db, runtimeService);
     schedulerService.runDue();
@@ -90,10 +90,32 @@ const app = createApp(db, {
   channelRegistry,
 });
 
-serve({
+const server = serve({
   fetch: app.fetch,
   hostname: "127.0.0.1",
   port,
 });
 
 console.log(`MiniAgent API listening on http://127.0.0.1:${port}`);
+
+// Graceful shutdown: pm2 stop/restart and Ctrl-C send SIGTERM/SIGINT.
+// Stop channels (incl. retry timer), clear worker timers, close HTTP + DB.
+let shuttingDown = false;
+function gracefulShutdown(signal: string): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[Server] ${signal} received, shutting down gracefully...`);
+  clearInterval(deliveryTimer);
+  clearInterval(schedulerTimer);
+  channelRegistry.stopAll();
+  server.close(() => {
+    try { db.close(); } catch { /* ignore */ }
+    console.log("[Server] Channels stopped, HTTP closed. Bye.");
+    process.exit(0);
+  });
+  // Hard exit if graceful close stalls (e.g. lingering keep-alive sockets)
+  setTimeout(() => process.exit(1), 10_000).unref();
+}
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));

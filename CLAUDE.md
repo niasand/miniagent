@@ -2,33 +2,41 @@
 
 ## 启动方式
 
-两个进程：API（端口 7273）+ 前端 dev server（端口 7272）。**禁止使用 `vite preview`（4173）**。
+API（7273）和前端（7272）由 **launchd 托管**（macOS 原生服务管理）：`RunAtLoad` 开机自启 + `KeepAlive` 崩溃自愈。
+
+- `com.miniagent.api` → `scripts/start-api.sh`（tsx 跑源码），日志 `logs/api-out.log` / `api-error.log`
+- `com.miniagent.web` → `scripts/start-web.sh`，日志 `logs/web-out.log` / `web-error.log`
+- plist：`~/Library/LaunchAgents/com.miniagent.{api,web}.plist`
+
+**禁止 `vite preview`（4173）**；前端 dev server 用 vite（7272）。启动时自动 migrate + 恢复 zombie run（`[Recovery]` 日志）。
+
+### 管理（launchctl，gui 域）
 
 ```bash
-# 首次或 schema 变更后先执行
-npm run db:migrate
+DOMAIN=gui/$(id -u)
 
-# 启动 API（日志自动写入 logs/api-out.log 和 logs/api-error.log）
-nohup npx tsx src/server/http/server.ts &
+# 状态
+launchctl print $DOMAIN/com.miniagent.api
 
-# 启动前端
-nohup npx vite --host 127.0.0.1 &
+# 重启 API —— 改 server.ts 后用这个（kill 无效：KeepAlive 会立即拉起旧进程，反而 EADDRINUSE）
+launchctl kickstart -k $DOMAIN/com.miniagent.api
+
+# 完全停用（停止 + 不再自启）
+launchctl bootout $DOMAIN/com.miniagent.api
+
+# 重新加载（改了 plist 后）
+launchctl bootstrap $DOMAIN ~/Library/LaunchAgents/com.miniagent.api.plist
 ```
 
-- 前端访问：http://127.0.0.1:7272
-- API 端口可通过 `MINIAGENT_API_PORT` 环境变量覆盖
-- API 日志：`logs/api-out.log`（stdout）、`logs/api-error.log`（stderr）
-- 启动时自动恢复上次未完成的 zombie run（`[Recovery]` 日志）
+改 server.ts 后：`launchctl kickstart -k gui/$(id -u)/com.miniagent.api`（tsx 跑源码，无需 build）。API 端口改 plist 的 `MINIAGENT_API_PORT` 后 bootstrap 重载。
 
-### 重启
+### 手动临时调试（须先卸载 launchd，否则抢端口 EADDRINUSE）
 
 ```bash
-kill $(lsof -ti :7273) 2>/dev/null
-kill $(lsof -ti :7272) 2>/dev/null
-
-# 重新启动（同上）
-nohup npx tsx src/server/http/server.ts &
-nohup npx vite --host 127.0.0.1 &
+launchctl bootout gui/$(id -u)/com.miniagent.api
+nohup npx tsx src/server/http/server.ts &   # 临时跑
+# 调试完恢复托管
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.miniagent.api.plist
 ```
 
 ## 项目规则

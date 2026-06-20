@@ -37,6 +37,7 @@ pnpm-debug.log*
 # Dependencies and build outputs
 node_modules/
 dist/
+dist-server/
 build/
 coverage/
 playwright-report/
