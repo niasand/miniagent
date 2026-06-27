@@ -15,7 +15,8 @@ export type EntityPrefix =
   | "sch"
   | "ses"
   | "shr"
-  | "tsk";
+  | "tsk"
+  | "wfr";
 
 export function createId(prefix?: EntityPrefix): string {
   const id = createUuidV7();

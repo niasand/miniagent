@@ -35,12 +35,16 @@ import type { NotificationPreferenceRecord } from "../stores/notification-prefer
 import type { PermissionRequestRecord } from "../stores/permission-request-store.js";
 import type { JsonValue } from "../../shared/json.js";
 import { formatUtc8 } from "../../shared/time.js";
+import { WorkflowOrchestrator } from "../workflows/orchestrator.js";
+import { createWorkflowRoutes } from "../workflows/http.js";
 
 export type AppOptions = {
   workspacePolicy: WorkspacePolicy;
   runtimeRegistry: RuntimeAdapterRegistry;
   runtimeSupervisor: RuntimeSupervisor;
   channelRegistry: ChannelRegistry;
+  /** Optional shared orchestrator so the caller can also drive the reconciler tick. */
+  workflowOrchestrator?: WorkflowOrchestrator;
 };
 
 export function createApp(db: SqliteDatabase, options: AppOptions) {
@@ -55,6 +59,7 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
 
   const eventStore = new EventStore(db);
   const sessionStore = new SessionStore(db, eventStore);
+  const workflowOrchestrator = options.workflowOrchestrator ?? new WorkflowOrchestrator(db);
   const permissionRequests = new PermissionRequestStore(db);
   const knowledgeService = new KnowledgeService();
   const runtimeService = new RuntimeService(db, runtimeSupervisor, workspacePolicy, knowledgeService);
@@ -73,6 +78,9 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
   app.get("/api/health", (c) =>
     c.json({ ok: true }),
   );
+
+  // ── Workflows (DAG + humanGate) ──
+  app.route("/api/workflows", createWorkflowRoutes(workflowOrchestrator));
 
   // ── Workspace ──
 

@@ -13,6 +13,7 @@ import { SchedulerService } from "../services/scheduler.js";
 import { OutboxStore } from "../stores/outbox-store.js";
 import { SessionStore } from "../stores/session-store.js";
 import { EventStore } from "../stores/event-store.js";
+import { WorkflowOrchestrator } from "../workflows/orchestrator.js";
 
 const port = Number(process.env.MINIAGENT_API_PORT ?? 7273);
 initFileLogging(process.cwd());
@@ -83,11 +84,23 @@ const schedulerTimer = setInterval(() => {
   }
 }, 30_000);
 
+// Workflow reconciler — re-advances non-terminal runs (recovers after restart)
+const workflowOrchestrator = new WorkflowOrchestrator(db);
+workflowOrchestrator.advanceAllDue();
+const workflowTimer = setInterval(() => {
+  try {
+    workflowOrchestrator.advanceAllDue();
+  } catch (err) {
+    console.error("[Workflow] tick failed:", err);
+  }
+}, 5_000);
+
 const app = createApp(db, {
   workspacePolicy,
   runtimeRegistry,
   runtimeSupervisor,
   channelRegistry,
+  workflowOrchestrator,
 });
 
 const server = serve({
@@ -107,6 +120,7 @@ function gracefulShutdown(signal: string): void {
   console.log(`[Server] ${signal} received, shutting down gracefully...`);
   clearInterval(deliveryTimer);
   clearInterval(schedulerTimer);
+  clearInterval(workflowTimer);
   channelRegistry.stopAll();
   server.close(() => {
     try { db.close(); } catch { /* ignore */ }
