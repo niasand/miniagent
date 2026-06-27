@@ -6,6 +6,7 @@ import { EventStore } from "../src/server/stores/event-store.js";
 import { MessageStore } from "../src/server/stores/message-store.js";
 import { PermissionRequestStore } from "../src/server/stores/permission-request-store.js";
 import { OutboxStore } from "../src/server/stores/outbox-store.js";
+import { ContextBudgetStore } from "../src/server/stores/context-budget-store.js";
 import { RuntimeSupervisor } from "../src/server/runtime/supervisor.js";
 import { RuntimeAdapterRegistry } from "../src/server/runtime/registry.js";
 import type {
@@ -326,5 +327,67 @@ describe("RuntimeSupervisor permission auto-approve", () => {
       ["telegram", "private:456"],
     ]);
     expect(items.every((item) => (item.viewModel as { text?: string }).text?.includes("Scheduled result"))).toBe(true);
+  });
+});
+
+describe("RuntimeSupervisor token usage", () => {
+  let db: SqliteDatabase;
+  let sessions: SessionStore;
+  let events: EventStore;
+
+  beforeEach(() => {
+    db = createTestDb();
+    events = new EventStore(db);
+    sessions = new SessionStore(db, events);
+    new MessageStore(db);
+    new PermissionRequestStore(db);
+    new OutboxStore(db);
+  });
+
+  afterEach(() => disposeTestDb(db));
+
+  it("persists accumulated token usage to agent_runs on finish", () => {
+    const { supervisor, fakeDriver } = setupSupervisor(db);
+    const { session, task } = createSessionAndTask(sessions, events, "web");
+    const started = supervisor.startTask({ sessionId: session.id, taskId: task.id });
+
+    fakeDriver.emit([
+      { type: "usage_report", payload: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 1000 } },
+      { type: "usage_report", payload: { inputTokens: 30, outputTokens: 20 } },
+    ]);
+    fakeDriver.exit({ exitCode: 0, signal: null, message: null, exitedAt: new Date().toISOString() });
+
+    const run = sessions.getRun(started.run.id)!;
+    expect(run.inputTokens).toBe(130);
+    expect(run.outputTokens).toBe(70);
+  });
+
+  it("updates context budget with real token usage as usage_report arrives", () => {
+    const { supervisor, fakeDriver } = setupSupervisor(db);
+    const { session, task } = createSessionAndTask(sessions, events, "web");
+    supervisor.startTask({ sessionId: session.id, taskId: task.id });
+
+    fakeDriver.emit({
+      type: "usage_report",
+      payload: { inputTokens: 100, outputTokens: 50, cacheReadTokens: 1000 },
+    });
+
+    const budget = new ContextBudgetStore(db).get(session.id);
+    expect(budget).not.toBeNull();
+    // 100 input + 50 output + 1000 cache_read
+    expect(budget!.tokenEstimate).toBe(1150);
+    expect(budget!.usageRatio).toBeCloseTo(1150 / 200_000, 5);
+    expect(budget!.status).toBe("healthy");
+  });
+
+  it("does not create a budget record when no usage_report arrives", () => {
+    const { supervisor, fakeDriver } = setupSupervisor(db);
+    const { session, task } = createSessionAndTask(sessions, events, "web");
+    supervisor.startTask({ sessionId: session.id, taskId: task.id });
+
+    fakeDriver.emit({ type: "text_delta", payload: { text: "hi", receivedAt: new Date().toISOString() } });
+
+    const budget = new ContextBudgetStore(db).get(session.id);
+    expect(budget).toBeNull();
   });
 });

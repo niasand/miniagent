@@ -50,6 +50,8 @@ type ActiveRun = {
   cancelTimer: ReturnType<typeof setTimeout> | null;
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
 };
 
 export class RuntimeSupervisor {
@@ -194,6 +196,8 @@ export class RuntimeSupervisor {
         cancelTimer: null,
         inputTokens: 0,
         outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
       };
       this.activeRuns.set(run.id, activeRun);
 
@@ -278,6 +282,9 @@ export class RuntimeSupervisor {
         const payload = draft.payload as Record<string, unknown>;
         if (typeof payload.inputTokens === "number") activeRun.inputTokens += payload.inputTokens;
         if (typeof payload.outputTokens === "number") activeRun.outputTokens += payload.outputTokens;
+        if (typeof payload.cacheReadTokens === "number") activeRun.cacheReadTokens += payload.cacheReadTokens;
+        if (typeof payload.cacheCreationTokens === "number") activeRun.cacheCreationTokens += payload.cacheCreationTokens;
+        this.updateContextBudget(activeRun);
         continue;
       }
       if (draft.type === "text_delta") {
@@ -344,6 +351,22 @@ export class RuntimeSupervisor {
       console.log(`[Supervisor] Context at ${pct}%, auto-compact for session ${activeRun.sessionId}`);
     } catch (err) {
       console.error(`[Supervisor] Failed to auto-compact at ${pct}%:`, err instanceof Error ? err.message : err);
+    }
+  }
+
+  /** Feed real accumulated token usage into the context budget so thresholds become live. */
+  private updateContextBudget(activeRun: ActiveRun): void {
+    try {
+      const tokenEstimate =
+        activeRun.inputTokens + activeRun.outputTokens +
+        activeRun.cacheReadTokens + activeRun.cacheCreationTokens;
+      if (tokenEstimate <= 0) return;
+      new ContextBudgetStore(this.db).upsert({
+        sessionId: activeRun.sessionId,
+        tokenEstimate,
+      });
+    } catch (err) {
+      console.error("[Runtime] Failed to update context budget:", err instanceof Error ? err.message : err);
     }
   }
 

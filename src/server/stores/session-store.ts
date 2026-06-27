@@ -72,6 +72,8 @@ export type AgentRunRecord = {
   exitCode: number | null;
   stopReason: string | null;
   errorClass: string | null;
+  inputTokens: number;
+  outputTokens: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -162,6 +164,7 @@ type AgentRunRow = {
   first_global_seq: number | null; last_global_seq: number | null;
   heartbeat_at: string | null; started_at: string | null; stopped_at: string | null;
   exit_code: number | null; stop_reason: string | null; error_class: string | null;
+  input_tokens: number; output_tokens: number;
   created_at: string; updated_at: string;
 };
 
@@ -502,11 +505,13 @@ export class SessionStore {
       this.db.prepare(
         `UPDATE agent_runs SET status = @status, last_global_seq = @lastGlobalSeq,
           stopped_at = @stoppedAt, exit_code = @exitCode, stop_reason = @stopReason,
-          error_class = @errorClass, updated_at = @updatedAt WHERE id = @runId`
+          error_class = @errorClass, input_tokens = @inputTokens, output_tokens = @outputTokens,
+          updated_at = @updatedAt WHERE id = @runId`
       ).run({
         runId: run.id, status: input.status, lastGlobalSeq: event.globalSeq,
         stoppedAt: timestamp, exitCode: input.exitCode ?? null,
         stopReason: input.stopReason ?? null, errorClass: input.errorClass ?? null,
+        inputTokens: input.inputTokens ?? 0, outputTokens: input.outputTokens ?? 0,
         updatedAt: timestamp,
       });
 
@@ -693,6 +698,7 @@ function mapAgentRunRow(row: AgentRunRow): AgentRunRecord {
     heartbeatAt: row.heartbeat_at, startedAt: row.started_at,
     stoppedAt: row.stopped_at, exitCode: row.exit_code,
     stopReason: row.stop_reason, errorClass: row.error_class,
+    inputTokens: row.input_tokens, outputTokens: row.output_tokens,
     createdAt: row.created_at, updatedAt: row.updated_at,
   };
 }

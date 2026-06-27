@@ -626,29 +626,51 @@ function quoteShell(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-function extractUsage(result: JsonValue): { inputTokens?: number; outputTokens?: number } | null {
+const usageMissedKeysLogged = new Set<string>();
+
+function pickNum(obj: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = obj[key];
+    if (typeof value === "number") return value;
+  }
+  return undefined;
+}
+
+type ExtractedUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+};
+
+export function extractUsage(result: JsonValue): ExtractedUsage | null {
   if (!result || typeof result !== "object" || Array.isArray(result)) return null;
   const obj = result as Record<string, unknown>;
 
-  // Try common ACP usage field shapes
+  // Prefer a nested usage object if present, otherwise read top-level fields.
   const usage = obj.usage ?? obj.tokenUsage ?? obj.tokens;
-  if (usage && typeof usage === "object" && !Array.isArray(usage)) {
-    const u = usage as Record<string, unknown>;
-    return {
-      inputTokens: typeof u.inputTokens === "number" ? u.inputTokens : typeof u.input_tokens === "number" ? u.input_tokens : undefined,
-      outputTokens: typeof u.outputTokens === "number" ? u.outputTokens : typeof u.output_tokens === "number" ? u.output_tokens : undefined,
-    };
+  const source = usage && typeof usage === "object" && !Array.isArray(usage)
+    ? (usage as Record<string, unknown>)
+    : obj;
+
+  const extracted: ExtractedUsage = {
+    inputTokens: pickNum(source, ["inputTokens", "input_tokens"]),
+    outputTokens: pickNum(source, ["outputTokens", "output_tokens"]),
+    cacheReadTokens: pickNum(source, ["cacheReadTokens", "cache_read_tokens", "cacheReadInputTokens", "cache_read_input_tokens"]),
+    cacheCreationTokens: pickNum(source, ["cacheCreationTokens", "cache_creation_tokens", "cacheCreationInputTokens", "cache_creation_input_tokens"]),
+  };
+
+  // Require at least an input or output figure so we never emit an empty usage_report.
+  if (extracted.inputTokens === undefined && extracted.outputTokens === undefined) {
+    // Diagnostic: log top-level keys once per unique shape so we can see what the CLI reports.
+    const keys = Object.keys(obj).sort().join(",");
+    if (!usageMissedKeysLogged.has(keys)) {
+      usageMissedKeysLogged.add(keys);
+      console.debug(`[extractUsage] no usage found in session/prompt result; top-level keys: ${keys || "(empty)"}`);
+    }
+    return null;
   }
 
-  // Try top-level fields
-  const input = obj.inputTokens ?? obj.input_tokens;
-  const output = obj.outputTokens ?? obj.output_tokens;
-  if (typeof input === "number" || typeof output === "number") {
-    return {
-      inputTokens: typeof input === "number" ? input : undefined,
-      outputTokens: typeof output === "number" ? output : undefined,
-    };
-  }
-
-  return null;
+  console.debug(`[extractUsage] captured usage: ${JSON.stringify(extracted)}`);
+  return extracted;
 }
