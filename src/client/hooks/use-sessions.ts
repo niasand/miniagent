@@ -165,6 +165,14 @@ export function useSessions({ activeSection, agentType, onNewSession }: UseSessi
         localStorage.removeItem(SESSION_STORAGE_KEY);
       }
       exitSelectionMode();
+      // Clear the search filter + infinite-scroll extras so the list reflects the
+      // deletion immediately. Without this: a deleted session loaded via pagination
+      // lingers in extraSessions, and a search filter that matched only deleted
+      // sessions leaves the list blank until the user manually clears the search.
+      setSessionsQuery("");
+      setSessionsPage(1);
+      setExtraSessions([]);
+      setSessionsHasMore(true);
       queryClient.invalidateQueries({ queryKey: ["workspace"] });
     } finally {
       setDeleting(false);
