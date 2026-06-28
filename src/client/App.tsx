@@ -254,6 +254,8 @@ export default function App() {
       setWorkflowRunId={workflows.setSelectedRunId}
       resolveWorkflowGate={workflows.resolveGate}
       workflowResolving={workflows.resolving}
+      onCreateWorkflow={workflows.createRun}
+      workflowCreating={workflows.creating}
     />
   );
 }

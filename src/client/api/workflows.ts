@@ -47,3 +47,16 @@ export async function resolveWorkflowGate(
     throw new Error(body?.error ?? `resolveGate failed: ${res.status}`);
   }
 }
+
+export async function createWorkflowRun(definition: unknown): Promise<{ runId: string; sessionId: string }> {
+  const res = await fetch("/api/workflows/runs", {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ definition }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(body?.error ?? `createWorkflowRun failed: ${res.status}`);
+  }
+  return (await res.json()) as { runId: string; sessionId: string };
+}

@@ -122,6 +122,8 @@ export function AppShell(props: {
   setWorkflowRunId: (id: string | null) => void;
   resolveWorkflowGate: (input: { runId: string; nodeId: string; decision: "approve" | "reject" }) => void;
   workflowResolving: boolean;
+  onCreateWorkflow: (definition: unknown) => void;
+  workflowCreating: boolean;
 }) {
   return (
     <main className="app-root">
@@ -194,6 +196,8 @@ export function AppShell(props: {
             runs={props.workflowRuns}
             selectedRun={props.selectedWorkflowRun}
             setSelectedRunId={props.setWorkflowRunId}
+            onCreateWorkflow={props.onCreateWorkflow}
+            creating={props.workflowCreating}
           />
         )}
       </aside>

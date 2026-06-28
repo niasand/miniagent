@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { listWorkflowRuns, resolveWorkflowGate, type WorkflowRun } from "../api/workflows.js";
+import { createWorkflowRun, listWorkflowRuns, resolveWorkflowGate, type WorkflowRun } from "../api/workflows.js";
 
 export type ResolveInput = { runId: string; nodeId: string; decision: "approve" | "reject" };
 
@@ -23,6 +23,11 @@ export function useWorkflows(activeSection: string) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workflows"] }),
   });
 
+  const createMutation = useMutation({
+    mutationFn: (definition: unknown) => createWorkflowRun(definition),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workflows"] }),
+  });
+
   return {
     runs,
     selectedRun,
@@ -30,5 +35,7 @@ export function useWorkflows(activeSection: string) {
     setSelectedRunId,
     resolveGate: resolveMutation.mutate,
     resolving: resolveMutation.isPending,
+    createRun: createMutation.mutate,
+    creating: createMutation.isPending,
   };
 }
