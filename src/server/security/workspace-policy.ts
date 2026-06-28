@@ -103,5 +103,14 @@ function expandHome(value: string): string {
 
 function containsPath(root: string, child: string): boolean {
   const distance = relative(root, child);
-  return distance === "" || (!distance.startsWith("..") && !isAbsolute(distance));
+  if (distance === "" || (!distance.startsWith("..") && !isAbsolute(distance))) {
+    return true;
+  }
+  // Case-insensitive fallback for case-preserving-but-insensitive filesystems
+  // (macOS APFS, Windows NTFS): /Users/Foo and /Users/foo are the same directory
+  // there, so an allowlist set from process.cwd() must match a caller's differently-
+  // cased path. On case-sensitive FS (Linux) collisions are rare and the allowlist
+  // is admin-controlled, so the extra blast radius is minimal.
+  const lowerDistance = relative(root.toLowerCase(), child.toLowerCase());
+  return lowerDistance === "" || (!lowerDistance.startsWith("..") && !isAbsolute(lowerDistance));
 }
