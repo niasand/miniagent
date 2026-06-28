@@ -13,6 +13,7 @@
   --color-ink: #111827;
   --color-ring: #14b8a6;
   --shadow-elevated: 0 16px 42px rgba(15, 23, 42, 0.09);
+  --color-scrim: rgba(0, 0, 0, 0.4);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -29,6 +30,7 @@
     --color-ink: #edf4f2;
     --color-ring: #5eead4;
     --shadow-elevated: 0 16px 42px rgba(0, 0, 0, 0.34);
+    --color-scrim: rgba(0, 0, 0, 0.55);
   }
 }
 
@@ -1661,3 +1663,31 @@ button { cursor: pointer; }
   }
 
 }
+
+/* ── ConfirmDialog: modal confirmation that replaces window.confirm ── */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--color-scrim, rgba(0, 0, 0, 0.4));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+.confirm-card {
+  background: var(--color-surface, #ffffff);
+  color: var(--color-foreground, #171a1f);
+  border: 1px solid var(--color-border, #dde3e8);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  max-width: 24rem;
+  width: 100%;
+  box-shadow: var(--shadow-elevated, 0 10px 25px rgba(0, 0, 0, 0.15));
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.confirm-title { margin: 0; font-size: 1rem; font-weight: 600; }
+.confirm-desc { margin: 0; font-size: 0.85rem; color: var(--color-muted-foreground, #667085); }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.25rem; }
