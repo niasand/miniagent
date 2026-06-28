@@ -2,9 +2,10 @@ import type { AgentType, SkillMeta } from "../api/types.js";
 import type { ChannelInfo } from "../api/channels.js";
 import type { NotificationPreference, WorkspaceAgentRuntime, WorkspaceSchedule, WorkspaceScheduleKind, WorkspaceScheduleNotificationTarget, WorkspaceScheduleRun, WorkspaceSnapshot } from "../../shared/workspace.js";
 import { NavBar } from "./nav-bar.js";
-import { ChatView, ScheduleDetail, ScheduleList, SessionList, SettingsDetail, SettingsList, SkillDetail, SkillList } from "./sections/index.js";
+import { ChatView, ScheduleDetail, ScheduleList, SessionList, SettingsDetail, SettingsList, SkillDetail, SkillList, WorkflowDetail, WorkflowList } from "./sections/index.js";
+import type { WorkflowRun } from "../api/workflows.js";
 
-type AppSection = "workspace" | "skills" | "tasks" | "settings";
+type AppSection = "workspace" | "skills" | "tasks" | "workflows" | "settings";
 type SettingsSection = "channels" | "provider";
 
 export function AppShell(props: {
@@ -116,6 +117,11 @@ export function AppShell(props: {
   setDraft: (value: string) => void;
   handleKeyDown: (event: React.KeyboardEvent) => void;
   handleSend: () => void;
+  workflowRuns: WorkflowRun[];
+  selectedWorkflowRun: WorkflowRun | null;
+  setWorkflowRunId: (id: string | null) => void;
+  resolveWorkflowGate: (input: { runId: string; nodeId: string; decision: "approve" | "reject" }) => void;
+  workflowResolving: boolean;
 }) {
   return (
     <main className="app-root">
@@ -181,6 +187,13 @@ export function AppShell(props: {
             settingsSection={props.settingsSection}
             setSettingsSection={props.setSettingsSection}
             agentType={props.agentType}
+          />
+        )}
+        {props.activeSection === "workflows" && (
+          <WorkflowList
+            runs={props.workflowRuns}
+            selectedRun={props.selectedWorkflowRun}
+            setSelectedRunId={props.setWorkflowRunId}
           />
         )}
       </aside>
@@ -270,6 +283,13 @@ export function AppShell(props: {
             providerRuntimes={props.providerRuntimes}
             providerSavePending={props.providerSavePending}
             providerError={props.providerError}
+          />
+        )}
+        {props.activeSection === "workflows" && (
+          <WorkflowDetail
+            run={props.selectedWorkflowRun}
+            resolveGate={props.resolveWorkflowGate}
+            resolving={props.workflowResolving}
           />
         )}
       </section>

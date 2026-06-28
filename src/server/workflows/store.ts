@@ -59,6 +59,13 @@ export class WorkflowRunStore {
     return rows.map(mapRow);
   }
 
+  listRecent(limit = 50): WorkflowRunRecord[] {
+    const rows = this.db
+      .prepare("SELECT * FROM workflow_runs ORDER BY created_at DESC LIMIT ?")
+      .all(limit) as WorkflowRunRow[];
+    return rows.map(mapRow);
+  }
+
   /** All fields are set explicitly so callers can clear a value by passing null. */
   updateStatus(
     id: string,

@@ -66,6 +66,10 @@ export class WorkflowOrchestrator {
     return this.runs.get(runId);
   }
 
+  listRuns(): WorkflowRunRecord[] {
+    return this.runs.listRecent();
+  }
+
   startRun(input: { definition: WorkflowDefinition; input?: JsonValue }): { runId: string; sessionId: string } {
     const validation = validateWorkflow(input.definition);
     if (!validation.ok) {

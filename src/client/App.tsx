@@ -13,6 +13,7 @@ import { useSchedules } from "./hooks/use-schedules.js";
 import { useChatStream } from "./hooks/use-chat-stream.js";
 import { useChatScroll } from "./hooks/use-chat-scroll.js";
 import { useChatInput } from "./hooks/use-chat-input.js";
+import { useWorkflows } from "./hooks/use-workflows.js";
 
 export default function App() {
   const queryClient = useQueryClient();
@@ -48,6 +49,7 @@ export default function App() {
 
   // Hook 5: Schedules (CRUD, preview, runs)
   const schedules = useSchedules({ selectedSessionId, activeSection });
+  const workflows = useWorkflows(activeSection);
 
   // Channels query (stays at App level — only used by SettingsDetail)
   const { data: channelsData } = useQuery({
@@ -247,6 +249,11 @@ export default function App() {
       setDraft={setDraft}
       handleKeyDown={handleKeyDown}
       handleSend={handleSend}
+      workflowRuns={workflows.runs}
+      selectedWorkflowRun={workflows.selectedRun}
+      setWorkflowRunId={workflows.setSelectedRunId}
+      resolveWorkflowGate={workflows.resolveGate}
+      workflowResolving={workflows.resolving}
     />
   );
 }

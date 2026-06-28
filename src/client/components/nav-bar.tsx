@@ -1,6 +1,6 @@
-import { CalendarClock, Clock, Settings, Sparkles } from "lucide-react";
+import { CalendarClock, Clock, Settings, Sparkles, Workflow } from "lucide-react";
 
-type AppSection = "workspace" | "skills" | "tasks" | "settings";
+type AppSection = "workspace" | "skills" | "tasks" | "workflows" | "settings";
 
 interface NavBarProps {
   activeSection: AppSection;
@@ -22,6 +22,10 @@ export function NavBar({ activeSection, setActiveSection }: NavBarProps) {
       <button className={`nav-item ${activeSection === "tasks" ? "active" : ""}`} onClick={() => setActiveSection("tasks")}>
         <CalendarClock className="h-4 w-4" />
         <span>任务</span>
+      </button>
+      <button className={`nav-item ${activeSection === "workflows" ? "active" : ""}`} onClick={() => setActiveSection("workflows")}>
+        <Workflow className="h-4 w-4" />
+        <span>工作流</span>
       </button>
       <button className={`nav-item ${activeSection === "settings" ? "active" : ""}`} onClick={() => setActiveSection("settings")}>
         <Settings className="h-4 w-4" />

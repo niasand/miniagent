@@ -6,3 +6,5 @@ export { ChatView } from "./chat-view.js";
 export { SkillDetail } from "./skill-detail.js";
 export { ScheduleDetail } from "./schedule-detail.js";
 export { SettingsDetail } from "./settings-detail.js";
+export { WorkflowList } from "./workflow-list.js";
+export { WorkflowDetail } from "./workflow-detail.js";

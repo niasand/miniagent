@@ -24,6 +24,10 @@ export function createWorkflowRoutes(orchestrator: WorkflowOrchestrator): Hono {
     }
   });
 
+  app.get("/runs", (c) => {
+    return c.json({ runs: orchestrator.listRuns() });
+  });
+
   app.get("/runs/:runId", (c) => {
     const run = orchestrator.getRun(c.req.param("runId"));
     if (!run) return c.json({ error: "not found" }, 404);

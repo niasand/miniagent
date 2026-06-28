@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-export type AppSection = "workspace" | "skills" | "tasks" | "settings";
+export type AppSection = "workspace" | "skills" | "tasks" | "workflows" | "settings";
 export type SettingsSection = "channels" | "provider";
 
 function getNavigationStateFromHash(): { activeSection: AppSection; settingsSection: SettingsSection } {
@@ -11,6 +11,7 @@ function getNavigationStateFromHash(): { activeSection: AppSection; settingsSect
   const rawHash = window.location.hash.replace(/^#/, "");
   if (rawHash === "skills") return { activeSection: "skills", settingsSection: "channels" };
   if (rawHash === "tasks") return { activeSection: "tasks", settingsSection: "channels" };
+  if (rawHash === "workflows") return { activeSection: "workflows", settingsSection: "channels" };
   if (rawHash.startsWith("settings")) {
     const detail = rawHash.split("/")[1];
     return {
