@@ -1,7 +1,9 @@
 import { CheckSquare, Loader2, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import { useState } from "react";
 import type { WorkspaceSnapshot } from "../../../shared/workspace.js";
 import { Badge } from "../ui/badge.js";
 import { Button } from "../ui/button.js";
+import { ConfirmDialog } from "../ui/confirm-dialog.js";
 import { Input } from "../ui/input.js";
 
 /** Map session status to Badge tone */
@@ -76,6 +78,7 @@ export function SessionList({
   formatSessionUpdatedAt,
   formatSessionChannel,
 }: SessionListProps) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const q = sessionsQuery.trim().toLowerCase();
   const filteredSessions = q
     ? sessions.filter((session) => session.name.toLowerCase().includes(q) || session.id.includes(q))
@@ -187,9 +190,7 @@ export function SessionList({
             disabled={selectedIds.size === 0 || deleting}
             onClick={() => {
               if (selectedIds.size === 0) return;
-              if (window.confirm(`确认删除选中的 ${selectedIds.size} 个会话？`)) {
-                void deleteSelected();
-              }
+              setConfirmOpen(true);
             }}
           >
             <Trash2 className="h-4 w-4" />
@@ -197,6 +198,18 @@ export function SessionList({
           </Button>
         </div>
       )}
+      <ConfirmDialog
+        open={confirmOpen}
+        title={`确认删除选中的 ${selectedIds.size} 个会话？`}
+        description="会话将被归档，从列表移除（数据保留在 EventStore）。"
+        confirmLabel="删除"
+        variant="danger"
+        onConfirm={() => {
+          setConfirmOpen(false);
+          void deleteSelected();
+        }}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </>
   );
 }
