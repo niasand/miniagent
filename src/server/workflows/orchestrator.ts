@@ -1,6 +1,7 @@
 import type { SqliteDatabase } from "../db/migrate.js";
 import { EventStore } from "../stores/event-store.js";
 import { SessionStore } from "../stores/session-store.js";
+import { MessageStore } from "../stores/message-store.js";
 import { createId } from "../../shared/ids.js";
 import { nowIso } from "../../shared/time.js";
 import type { JsonValue } from "../../shared/json.js";
@@ -15,13 +16,16 @@ import { WorkflowRunStore, type WorkflowRunRecord, type WorkflowRunStatus } from
 import type { NodeHandler, NodeExecContext } from "./nodes/types.js";
 import { echoHandler } from "./nodes/echo.js";
 import { humanGateHandler } from "./nodes/human-gate.js";
+import type { RuntimeService } from "../runtime/service.js";
 
-type NodeStateStatus = "pending" | "succeeded" | "failed" | "waiting_gate";
+type NodeStateStatus = "pending" | "running" | "succeeded" | "failed" | "waiting_gate";
 
 interface NodeState {
   status: NodeStateStatus;
   output?: JsonValue;
   error?: string;
+  /** agent_task only: the agent run id launched for this node. */
+  agentRunId?: string;
 }
 
 interface RunState {
@@ -38,21 +42,24 @@ interface RunState {
 /**
  * Event-driven DAG workflow engine. Workflow facts live in the EventStore as wf.*
  * events; this class replays them to derive state and advances runs to a fixpoint.
- * append → synchronous advance is the main path; advanceAllDue is a restart-recovery tick.
+ * append → synchronous advance is the main path; advanceAllDue is a restart-recovery
+ * tick that also drains completed agent_task runs.
  */
 export class WorkflowOrchestrator {
   private readonly events: EventStore;
   private readonly sessions: SessionStore;
   private readonly runs: WorkflowRunStore;
+  private readonly messages: MessageStore;
   private readonly handlers: Partial<Record<NodeType, NodeHandler>> = {
     echo: echoHandler,
     human_gate: humanGateHandler,
   };
 
-  constructor(private readonly db: SqliteDatabase) {
+  constructor(private readonly db: SqliteDatabase, private readonly runtimeService?: RuntimeService) {
     this.events = new EventStore(db);
     this.sessions = new SessionStore(db, this.events);
     this.runs = new WorkflowRunStore(db);
+    this.messages = new MessageStore(db);
   }
 
   getRun(runId: string): WorkflowRunRecord | null {
@@ -119,11 +126,12 @@ export class WorkflowOrchestrator {
     }
   }
 
-  /** Reconciler tick: re-advance non-terminal runs (recovers runs left waiting after a restart). */
+  /** Reconciler tick: drain finished agent_task runs, then re-advance non-terminal runs. */
   advanceAllDue(): void {
     const due = this.runs.listByStatus(["running", "waiting_gate"]);
     for (const run of due) {
       try {
+        this.checkAgentTasks(run.id);
         this.advance(run.id);
       } catch (err) {
         console.error(`[Workflow] advanceAllDue failed for ${run.id}:`, err instanceof Error ? err.message : err);
@@ -154,7 +162,7 @@ export class WorkflowOrchestrator {
       let acted = false;
       for (const nodeId of state.topoOrder) {
         const ns = state.nodes.get(nodeId);
-        if (!ns || ns.status !== "pending") continue;
+        if (!ns || ns.status !== "pending") continue; // skip running/succeeded/failed
         const node = state.definition.nodes.find((n) => n.id === nodeId);
         if (!node) continue;
         const deps = node.dependsOn ?? [];
@@ -184,6 +192,10 @@ export class WorkflowOrchestrator {
   }
 
   private executeNode(state: RunState, node: NodeDefinition): void {
+    if (node.type === "agent_task") {
+      this.executeAgentTask(state, node);
+      return;
+    }
     const handler = this.handlers[node.type];
     const ctx: NodeExecContext = {
       runId: state.runId,
@@ -200,10 +212,83 @@ export class WorkflowOrchestrator {
     handler.execute(ctx);
   }
 
+  /** Launch a real agent run in an independent session; emits agent_run_started (no succeeded yet). */
+  private executeAgentTask(state: RunState, node: NodeDefinition): void {
+    if (!this.runtimeService) {
+      this.emit(state.sessionId, state.runId, "wf.node_failed", {
+        nodeId: node.id, error: "runtimeService not configured (cannot run agent_task)", errorClass: "no_runtime",
+      });
+      return;
+    }
+    try {
+      const agentSession = this.sessions.createSession({
+        title: `workflow agent_task: ${node.id}`,
+        agentType: node.agentType ?? "claude",
+        // Default to the API process cwd (always in the workspace allowlist) so agent_task
+        // works without an explicit workspacePath; nodes can override with an allowed path.
+        workspacePath: node.workspacePath || process.cwd(),
+        channelType: "web",
+      });
+      this.sessions.createTask({
+        sessionId: agentSession.id,
+        sourceType: "system",
+        type: "message",
+        input: { text: node.prompt ?? "" },
+      });
+      // startNextQueuedTask asserts WorkspacePolicy internally and spawns + feeds the run.
+      const result = this.runtimeService.startNextQueuedTask(agentSession.id);
+      if (!result) {
+        this.emit(state.sessionId, state.runId, "wf.node_failed", {
+          nodeId: node.id, error: "failed to start agent run", errorClass: "start_failed",
+        });
+        return;
+      }
+      this.emit(state.sessionId, state.runId, "wf.agent_run_started", {
+        nodeId: node.id, agentRunId: result.run.id, agentSessionId: agentSession.id,
+      });
+    } catch (err) {
+      this.emit(state.sessionId, state.runId, "wf.node_failed", {
+        nodeId: node.id, error: err instanceof Error ? err.message : "agent_task start failed", errorClass: "start_failed",
+      });
+    }
+  }
+
+  /** Poll running agent_task nodes; if their agent run finished, emit succeeded/failed. */
+  private checkAgentTasks(runId: string): void {
+    const state = this.buildRunState(runId);
+    if (!state) return;
+    for (const [nodeId, ns] of state.nodes) {
+      if (ns.status !== "running" || !ns.agentRunId) continue;
+      const agentRun = this.sessions.getRun(ns.agentRunId);
+      if (!agentRun) continue;
+      if (agentRun.status === "succeeded") {
+        const text = this.collectAgentOutput(agentRun.sessionId, ns.agentRunId);
+        this.emit(state.sessionId, runId, "wf.node_succeeded", {
+          nodeId, output: { text, agentRunId: ns.agentRunId },
+        });
+      } else if (agentRun.status === "failed" || agentRun.status === "cancelled" || agentRun.status === "overflowed") {
+        this.emit(state.sessionId, runId, "wf.node_failed", {
+          nodeId, error: agentRun.errorClass ?? agentRun.stopReason ?? "agent run failed",
+          errorClass: agentRun.errorClass ?? "agent_failed",
+        });
+      }
+      // still running: leave alone, tick again later
+    }
+  }
+
+  private collectAgentOutput(sessionId: string, runId: string): string {
+    const msgs = this.messages.listBySession(sessionId);
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === "assistant" && msgs[i].runId === runId) return msgs[i].content;
+    }
+    return "";
+  }
+
   private tryComplete(runId: string): void {
     const state = this.buildRunState(runId);
     if (!state) return;
     if (state.completed) return;
+    // A run is settled only when every node is succeeded/failed (running agent_tasks block).
     const allSettled = [...state.nodes.values()].every((n) => n.status === "succeeded" || n.status === "failed");
     if (!allSettled) return;
     const failed = [...state.nodes.entries()].find(([, n]) => n.status === "failed");
@@ -240,6 +325,16 @@ export class WorkflowOrchestrator {
       const p = (e.payload ?? {}) as Record<string, unknown>;
       const nodeId = typeof p.nodeId === "string" ? p.nodeId : null;
       switch (e.type) {
+        case "wf.node_dispatched": {
+          const ns = nodeId ? nodes.get(nodeId) : null;
+          if (ns && ns.status === "pending") ns.status = "running";
+          break;
+        }
+        case "wf.agent_run_started": {
+          const ns = nodeId ? nodes.get(nodeId) : null;
+          if (ns && typeof p.agentRunId === "string") ns.agentRunId = p.agentRunId;
+          break;
+        }
         case "wf.node_succeeded": {
           const ns = nodeId ? nodes.get(nodeId) : null;
           if (ns) { ns.status = "succeeded"; ns.output = p.output as JsonValue | undefined; }

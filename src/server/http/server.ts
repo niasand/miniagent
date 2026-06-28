@@ -85,7 +85,7 @@ const schedulerTimer = setInterval(() => {
 }, 30_000);
 
 // Workflow reconciler — re-advances non-terminal runs (recovers after restart)
-const workflowOrchestrator = new WorkflowOrchestrator(db);
+const workflowOrchestrator = new WorkflowOrchestrator(db, runtimeService);
 workflowOrchestrator.advanceAllDue();
 const workflowTimer = setInterval(() => {
   try {

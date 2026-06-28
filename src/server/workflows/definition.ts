@@ -10,8 +10,12 @@ export interface NodeDefinition {
   dependsOn?: string[];
   /** echo: text emitted as the node output. */
   message?: string;
-  /** human_gate: prompt shown to the approver in the Web UI. */
+  /** human_gate: prompt shown to approver. agent_task: prompt sent to the agent. */
   prompt?: string;
+  /** agent_task: agent CLI to run (claude/codex/...). Defaults to "claude". */
+  agentType?: string;
+  /** agent_task: workspace path for the agent run (subject to WorkspacePolicy). */
+  workspacePath?: string;
   input?: JsonValue;
 }
 
@@ -59,8 +63,8 @@ export function validateWorkflow(def: WorkflowDefinition): ValidationResult {
     if (node.type === "human_gate" && !node.prompt) {
       errors.push(`human_gate node "${node.id}" is missing a prompt`);
     }
-    if (node.type === "agent_task") {
-      errors.push(`agent_task node "${node.id}" is not implemented in this spike`);
+    if (node.type === "agent_task" && !node.prompt) {
+      errors.push(`agent_task node "${node.id}" is missing a prompt`);
     }
   }
 
