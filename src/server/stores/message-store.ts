@@ -37,6 +37,8 @@ export class MessageStore {
     content: string;
     metadata?: JsonValue;
     sourceEventId: string;
+    /** Override created_at (defaults to now) — used by the history importer. */
+    createdAt?: string;
   }): MessageRecord {
     const row = this.db.prepare(
       `INSERT INTO messages (id, session_id, run_id, role, content, metadata_json, source_event_id, created_at)
@@ -50,7 +52,7 @@ export class MessageStore {
       content: input.content,
       metadataJson: stringifyJson(input.metadata ?? {}),
       sourceEventId: input.sourceEventId,
-      createdAt: nowIso(),
+      createdAt: input.createdAt ?? nowIso(),
     }) as MessageRow;
 
     return mapMessageRow(row);

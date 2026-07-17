@@ -34,7 +34,6 @@ export function useSessions({ activeSection, agentType, onNewSession }: UseSessi
   const [extraSessions, setExtraSessions] = useState<WorkspaceSnapshot["sessions"]>([]);
   const sessionsSearchRef = useRef<HTMLInputElement>(null);
   const sessionsSentinelRef = useRef<HTMLDivElement | null>(null);
-  const stableSessionOrderRef = useRef<string[]>([]);
 
   // Workspace query — session list comes from here
   const { data: snapshot } = useQuery({
@@ -56,23 +55,17 @@ export function useSessions({ activeSection, agentType, onNewSession }: UseSessi
   const sessions = snapshot?.sessions ?? [];
 
   const orderedSessions = useMemo(() => {
-    const allSessions = [...sessions];
     const snapshotIds = new Set(sessions.map((s) => s.id));
+    const allSessions = [...sessions];
     for (const extra of extraSessions) {
       if (!snapshotIds.has(extra.id)) allSessions.push(extra);
     }
-    const nextIds = allSessions.map((session) => session.id);
-    const existing = stableSessionOrderRef.current.filter((id) => nextIds.includes(id));
-    const unseen = nextIds.filter((id) => !existing.includes(id));
-    // New sessions (unseen) go to the TOP — snapshot already returns them in
-    // updated_at DESC order, so the newest lands first. existing keeps its
-    // relative order to stop list items jittering on 3s poll. Reversing the
-    // old [...existing, ...unseen] (which buried new sessions at the bottom).
-    const nextOrder = [...unseen, ...existing];
-    stableSessionOrderRef.current = nextOrder;
-    return nextOrder
-      .map((id) => allSessions.find((session) => session.id === id) ?? null)
-      .filter((session): session is NonNullable<typeof session> => session !== null);
+    // Pure updated_at DESC (newest first). The snapshot is already ordered this
+    // way server-side; sorting the merged set (incl. paginated extra sessions)
+    // puts imported/loaded sessions at their true time position instead of
+    // forcing them to the top. A row may shift when its updated_at changes on
+    // poll — that is the intended "newest first" behavior.
+    return allSessions.sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
   }, [sessions, extraSessions]);
 
   const selectedSessionId = sessionId ?? snapshot?.selectedSessionId ?? null;

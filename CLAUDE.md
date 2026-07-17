@@ -2,13 +2,13 @@
 
 ## 启动方式
 
-API（7273）和前端（7272）由 **launchd 托管**（macOS 原生服务管理）：`RunAtLoad` 开机自启 + `KeepAlive` 崩溃自愈。
+API（7273）和前端（4173）由 **launchd 托管**（macOS 原生服务管理）：`RunAtLoad` 开机自启 + `KeepAlive` 崩溃自愈。
 
 - `com.miniagent.api` → `scripts/start-api.sh`（tsx 跑源码），日志 `logs/api-out.log` / `api-error.log`
 - `com.miniagent.web` → `scripts/start-web.sh`，日志 `logs/web-out.log` / `web-error.log`
 - plist：`~/Library/LaunchAgents/com.miniagent.{api,web}.plist`
 
-**禁止 `vite preview`（4173）**；前端 dev server 用 vite（7272）。启动时自动 migrate + 恢复 zombie run（`[Recovery]` 日志）。
+前端用 `vite preview`（4173，production build of `dist/`）。**改前端代码后必须 `npm run build` 再重启 preview**——preview 无 HMR，不 build 则 4173 仍服务旧 dist（曾造成"改了没生效"的假 bug）。启动时自动 migrate + 恢复 zombie run（`[Recovery]` 日志）。
 
 ### 管理（launchctl，gui 域）
 
@@ -29,6 +29,8 @@ launchctl bootstrap $DOMAIN ~/Library/LaunchAgents/com.miniagent.api.plist
 ```
 
 改 server.ts 后：`launchctl kickstart -k gui/$(id -u)/com.miniagent.api`（tsx 跑源码，无需 build）。API 端口改 plist 的 `MINIAGENT_API_PORT` 后 bootstrap 重载。
+
+改前端代码后：`npm run build && launchctl kickstart -k gui/$(id -u)/com.miniagent.web`（preview 服务 `dist/`，必须先 build）。前端端口改 `scripts/start-web.sh` 的 `--port` 后 kickstart 重载。
 
 ### 手动临时调试（须先卸载 launchd，否则抢端口 EADDRINUSE）
 

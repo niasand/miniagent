@@ -258,6 +258,13 @@ async function importSessions(dryRun: boolean): Promise<ImportStats> {
               updatedAt: stoppedAt,
             });
 
+            // Backfill session timestamps to the conversation's real time.
+            // createSession stamps now(); the card stream sorts by sessions.updated_at,
+            // so without this every imported session clusters at "today".
+            db.prepare(
+              "UPDATE sessions SET created_at = @createdAt, updated_at = @updatedAt WHERE id = @sessionId"
+            ).run({ sessionId: session.id, createdAt: startedAt, updatedAt: stoppedAt });
+
             // Insert messages
             for (const msg of messages) {
               messageStore.insert({
