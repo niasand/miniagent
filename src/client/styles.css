@@ -1702,7 +1702,12 @@ button { cursor: pointer; }
   margin: 0 auto;
   height: 100%;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
 }
+.session-cards::-webkit-scrollbar { width: 8px; }
+.session-cards::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 4px; }
+.session-cards::-webkit-scrollbar-track { background: transparent; }
 .session-cards--empty {
   color: var(--color-muted-foreground);
   text-align: center;

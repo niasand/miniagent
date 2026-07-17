@@ -116,7 +116,7 @@ export function AppShell(props: {
     if (props.activeSection !== "workspace" || !props.selectedSessionId) return;
     const node = document.getElementById(`card-${props.selectedSessionId}`);
     if (!node) return;
-    node.scrollIntoView({ behavior: "smooth", block: "start" });
+    node.scrollIntoView({ behavior: "auto", block: "start" });
     node.classList.add("session-card--flash");
     const timer = window.setTimeout(() => node.classList.remove("session-card--flash"), 1200);
     return () => window.clearTimeout(timer);

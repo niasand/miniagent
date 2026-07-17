@@ -1,3 +1,4 @@
+import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
@@ -6,13 +7,12 @@ import { CopyButton } from "../ui/copy-button.js";
 import { cn } from "../../lib/utils.js";
 import { formatMessageTime } from "./format-message-time.js";
 
-export function MessageBubble({
-  message,
-  isFocusedRun,
-}: {
+type MessageBubbleProps = {
   message: WorkspaceSnapshot["messages"][number];
   isFocusedRun: boolean;
-}) {
+};
+
+function MessageBubbleImpl({ message, isFocusedRun }: MessageBubbleProps) {
   return (
     <div
       className={cn(
@@ -39,3 +39,18 @@ export function MessageBubble({
     </div>
   );
 }
+
+/**
+ * Memoized with a custom comparator: re-renders only when the message content
+ * (id + markdown + author + time) or isFocusedRun actually changes. The 5s
+ * poll in useSessionMessages returns fresh array references even when content
+ * is identical; without this comparator every bubble (each running ReactMarkdown
+ * + syntax highlighting) would re-render on every poll.
+ */
+export const MessageBubble = memo(MessageBubbleImpl, (a, b) =>
+  a.isFocusedRun === b.isFocusedRun &&
+  a.message.id === b.message.id &&
+  a.message.markdown === b.message.markdown &&
+  a.message.author === b.message.author &&
+  a.message.time === b.message.time,
+);

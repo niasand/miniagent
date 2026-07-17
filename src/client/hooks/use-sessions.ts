@@ -35,21 +35,18 @@ export function useSessions({ activeSection, agentType, onNewSession }: UseSessi
   const sessionsSearchRef = useRef<HTMLInputElement>(null);
   const sessionsSentinelRef = useRef<HTMLDivElement | null>(null);
 
-  // Workspace query — session list comes from here
+  // Workspace query — session LIST only (sidebar). Keyed without sessionId:
+  // the list does not depend on which session is open, so switching sessions
+  // must NOT refetch the whole workspace (that re-sorted the list and caused
+  // jitter on every click). Detail messages load via useSessionMessages.
   const { data: snapshot } = useQuery({
-    queryKey: ["workspace", sessionId],
+    queryKey: ["workspace"],
     queryFn: async () => {
-      const qs = sessionId ? `?sessionId=${sessionId}` : "";
-      const res = await fetch(`/api/workspace${qs}`);
+      const res = await fetch("/api/workspace");
       if (!res.ok) throw new Error("加载失败");
       return res.json() as Promise<WorkspaceSnapshot>;
     },
-    refetchInterval: 3_000,
-    // NOTE: do NOT add placeholderData here. Across session switches the
-    // previous snapshot belongs to a different session; placeholderData would
-    // leak the old session's messages into the new session UI. Same-key
-    // refetch (3s poll) keeps its data by default, so there's no flicker to
-    // guard against. See ISSUE-009.
+    refetchInterval: 5_000,
   });
 
   const sessions = snapshot?.sessions ?? [];
@@ -60,12 +57,14 @@ export function useSessions({ activeSection, agentType, onNewSession }: UseSessi
     for (const extra of extraSessions) {
       if (!snapshotIds.has(extra.id)) allSessions.push(extra);
     }
-    // Pure updated_at DESC (newest first). The snapshot is already ordered this
-    // way server-side; sorting the merged set (incl. paginated extra sessions)
-    // puts imported/loaded sessions at their true time position instead of
-    // forcing them to the top. A row may shift when its updated_at changes on
-    // poll — that is the intended "newest first" behavior.
-    return allSessions.sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+    // Stable sort: updated_at DESC, tie-break by id ASC. Equal timestamps
+    // (e.g. sessions imported in the same instant) keep a fixed order across
+    // refetches, so the list never reshuffles on poll. Without the tie-break
+    // JS sort is unstable on equal keys and rows jump every 5s.
+    return allSessions.sort((a, b) => {
+      const byTime = (b.updatedAt || "").localeCompare(a.updatedAt || "");
+      return byTime !== 0 ? byTime : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    });
   }, [sessions, extraSessions]);
 
   const selectedSessionId = sessionId ?? snapshot?.selectedSessionId ?? null;
@@ -175,7 +174,11 @@ export function useSessions({ activeSection, agentType, onNewSession }: UseSessi
   const selectSession = (id: string) => {
     setSessionId(id);
     localStorage.setItem(SESSION_STORAGE_KEY, id);
-    queryClient.invalidateQueries({ queryKey: ["workspace", id] });
+    // Intentionally no workspace invalidation: the sidebar list (["workspace"])
+    // is independent of the open session, and detail messages load via
+    // useSessionMessages (keyed by sessionId → auto-fetches on change).
+    // Invalidating here forced a full workspace refetch + re-sort → the list
+    // jittered on every click.
   };
 
   const handleNewSession = async () => {

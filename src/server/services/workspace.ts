@@ -4,7 +4,7 @@ import { MessageStore, type MessageRecord } from "../stores/message-store.js";
 import { EventStore } from "../stores/event-store.js";
 import { ContextBudgetStore } from "../stores/context-budget-store.js";
 import type { RuntimeSupervisor } from "../runtime/supervisor.js";
-import type { WorkspaceSnapshot, WorkspaceSessionSummary, WorkspaceMessage, WorkspaceRunStats, WorkspaceContextBudget, WorkspaceRuntimeSummary } from "../../shared/workspace.js";
+import type { WorkspaceSnapshot, WorkspaceSessionSummary, WorkspaceMessage } from "../../shared/workspace.js";
 
 export class WorkspaceService {
   private sessions: SessionStore;
@@ -51,66 +51,30 @@ export class WorkspaceService {
       handoff: undefined,
     }));
 
-    let messages: WorkspaceMessage[] = [];
-    let runStats: WorkspaceRunStats = { durationSeconds: null, tokensUsed: null, tokensTotal: null };
-    let outboxRows: Array<[string, string, string]> = [];
-    let keyEvents: Array<[string, string, string]> = [];
-
-    if (sessionId) {
-      messages = mapMessages(this.messages.getLatestBySession(sessionId, 1000));
-
-      // Get run stats from latest run
-      const latestRun = this.getLatestRun(sessionId);
-      if (latestRun) {
-        const firstSeq = latestRun.first_global_seq || latestRun.firstGlobalSeq || 0;
-        const events = this.events.listAfterGlobalSeq({ sessionId, afterGlobalSeq: firstSeq - 1, limit: 500 });
-        const textDeltas = events.filter((e) => e.type === "text_delta");
-        let tokensUsed = 0;
-        for (const e of textDeltas) {
-          const p = e.payload as { tokenEstimate?: number };
-          tokensUsed += p.tokenEstimate ?? 0;
-        }
-        const startedAt = latestRun.started_at ?? latestRun.startedAt;
-        const stoppedAt = latestRun.stopped_at ?? latestRun.stoppedAt;
-        const duration = startedAt && stoppedAt
-          ? Math.round((new Date(stoppedAt).getTime() - new Date(startedAt).getTime()) / 1000)
-          : null;
-        runStats = { durationSeconds: duration, tokensUsed: tokensUsed || null, tokensTotal: null };
-      }
-    }
-
-    const budget = sessionId ? this.contextBudgets.get(sessionId) : null;
-    const contextBudget: WorkspaceContextBudget = {
-      status: budget?.status ?? "healthy",
-      tokenEstimate: budget?.tokenEstimate ?? 0,
-      budgetTokens: budget?.budgetTokens ?? 200_000,
-      usagePercent: budget ? Math.round(budget.usageRatio * 100) : 0,
-      warningPercent: Math.round((budget?.warningThreshold ?? 0.70) * 100),
-      criticalPercent: Math.round((budget?.criticalThreshold ?? 0.85) * 100),
-      overflowPercent: Math.round((budget?.overflowThreshold ?? 0.95) * 100),
-      currentContextPackId: budget?.currentContextPackId ?? null,
-      lastCompactedAt: budget?.lastCompactedAt ?? null,
-    };
-
-    const activeRun = this.supervisor?.getActiveRunBySession(sessionId ?? "");
-    const runtime: WorkspaceRuntimeSummary = {
-      activeRunId: activeRun?.runId ?? null,
-      status: activeRun ? "running" : "idle",
-      pid: activeRun?.pid ?? null,
-      agentType: null,
-      runtimeKind: null,
-      startedAt: null,
-    };
-
+    // Detail messages load lazily via GET /api/sessions/:id/messages
+    // (useSessionMessages). The snapshot carries only the session list + the
+    // fallback selection; the heavy fields (messages, runStats, contextBudget,
+    // runtime) are returned empty/default so the 5s poll stays cheap — it used
+    // to load 1000 messages and scan 500 events for token totals every cycle.
     return {
       selectedSessionId: sessionId,
       sessions: sessionSummaries,
-      messages,
-      runStats,
-      outboxRows,
-      keyEvents,
-      contextBudget,
-      runtime,
+      messages: [],
+      runStats: { durationSeconds: null, tokensUsed: null, tokensTotal: null },
+      outboxRows: [],
+      keyEvents: [],
+      contextBudget: {
+        status: "healthy",
+        tokenEstimate: 0,
+        budgetTokens: 200_000,
+        usagePercent: 0,
+        warningPercent: 70,
+        criticalPercent: 85,
+        overflowPercent: 95,
+        currentContextPackId: null,
+        lastCompactedAt: null,
+      },
+      runtime: { activeRunId: null, status: "idle", pid: null, agentType: null, runtimeKind: null, startedAt: null },
     };
   }
 

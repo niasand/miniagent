@@ -247,7 +247,7 @@ describe("WorkspaceService", () => {
     expect(snapshot.sessions[0].name).toBe("Please summarize this repository");
   });
 
-  it("returns messages for selected session", () => {
+  it("returns messages for a session via getSessionMessages (snapshot stays slim)", () => {
     const s1 = sessions.createSession({ title: "1", agentType: "claude", workspacePath: "/tmp" });
     const s2 = sessions.createSession({ title: "2", agentType: "claude", workspacePath: "/tmp" });
     const { task } = sessions.createTask({ sessionId: s1.id, sourceType: "web", type: "message", input: {} });
@@ -262,56 +262,20 @@ describe("WorkspaceService", () => {
     messages.insert({ sessionId: s2.id, role: "user", content: "other", sourceEventId: evt3.id });
 
     const service = new WorkspaceService(db);
+    // Detail messages now load via getSessionMessages; getSnapshot dropped its
+    // copy so the 5s poll stays cheap. Verify the lazy loader still maps roles.
+    const msgs = service.getSessionMessages(s1.id);
+    expect(msgs).toHaveLength(2);
+    expect(msgs[0].role).toBe("user");
+    expect(msgs[0].markdown).toBe("hi");
+    expect(msgs[1].role).toBe("agent");
+    expect(msgs[1].runId).toBe(run.id);
+    expect(msgs[1].markdown).toBe("there");
+
+    // And the snapshot itself no longer carries these heavy fields.
     const snapshot = service.getSnapshot(s1.id);
-
-    expect(snapshot.messages).toHaveLength(2);
-    expect(snapshot.messages[0].role).toBe("user");
-    expect(snapshot.messages[0].markdown).toBe("hi");
-    expect(snapshot.messages[1].role).toBe("agent");
-    expect(snapshot.messages[1].runId).toBe(run.id);
-    expect(snapshot.messages[1].markdown).toBe("there");
-  });
-
-  it("computes run stats from events", () => {
-    const session = sessions.createSession({ title: "T", agentType: "claude", workspacePath: "/tmp" });
-    const { task } = sessions.createTask({ sessionId: session.id, sourceType: "web", type: "message", input: {} });
-
-    const startedAt = new Date(Date.now() - 5000).toISOString();
-    const stoppedAt = new Date().toISOString();
-    const { run } = sessions.startRun({ sessionId: session.id, taskId: task.id, startedAt });
-    sessions.finishRun({ runId: run.id, status: "succeeded", stoppedAt });
-
-    // Add text_delta events
-    events.append({ sessionId: session.id, runId: run.id, type: "text_delta", payload: { text: "a", tokenEstimate: 100 } });
-    events.append({ sessionId: session.id, runId: run.id, type: "text_delta", payload: { text: "b", tokenEstimate: 200 } });
-
-    const service = new WorkspaceService(db);
-    const snapshot = service.getSnapshot(session.id);
-
-    expect(snapshot.runStats.durationSeconds).toBe(5);
-    expect(snapshot.runStats.tokensUsed).toBe(300);
-  });
-
-  it("returns context budget info", () => {
-    const session = sessions.createSession({ title: "T", agentType: "claude", workspacePath: "/tmp" });
-
-    const budgets = new ContextBudgetStore(db);
-    const result = budgets.upsert({ sessionId: session.id, budgetTokens: 100_000, tokenEstimate: 30_000 });
-    expect(result).not.toBeNull();
-    expect(result.budgetTokens).toBe(100_000);
-
-    // Verify read-back
-    const fetched = budgets.get(session.id);
-    expect(fetched).not.toBeNull();
-    expect(fetched!.budgetTokens).toBe(100_000);
-
-    const service = new WorkspaceService(db);
-    const snapshot = service.getSnapshot(session.id);
-
-    expect(snapshot.contextBudget.status).toBe("healthy");
-    expect(snapshot.contextBudget.budgetTokens).toBe(100_000);
-    expect(snapshot.contextBudget.tokenEstimate).toBe(30_000);
-    expect(snapshot.contextBudget.usagePercent).toBe(30);
+    expect(snapshot.messages).toEqual([]);
+    expect(snapshot.runStats.tokensUsed).toBeNull();
   });
 
   it("selects first session when none specified", () => {
