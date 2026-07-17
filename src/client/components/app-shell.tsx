@@ -204,7 +204,6 @@ export function AppShell(props: {
           <SessionCards
             sessions={props.sessions}
             selectedSessionId={props.selectedSessionId}
-            onSelectSession={props.selectSession}
             sessionsQuery={props.sessionsQuery}
             renderHighlightedSessionName={props.renderHighlightedSessionName}
             formatSessionUpdatedAt={props.formatSessionUpdatedAt}
