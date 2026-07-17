@@ -1,6 +1,6 @@
 import type { SqliteDatabase } from "../db/migrate.js";
 import { SessionStore } from "../stores/session-store.js";
-import { MessageStore } from "../stores/message-store.js";
+import { MessageStore, type MessageRecord } from "../stores/message-store.js";
 import { EventStore } from "../stores/event-store.js";
 import { ContextBudgetStore } from "../stores/context-budget-store.js";
 import type { RuntimeSupervisor } from "../runtime/supervisor.js";
@@ -32,7 +32,9 @@ export class WorkspaceService {
       ? sessions.filter((s) => !scheduledSessionIds.has(s.id))
       : sessions;
     const sessionId = selectedSessionId ?? fallbackPool[0]?.id ?? sessions[0]?.id ?? null;
-    const firstUserMessages = this.getFirstUserMessages(sessions.map((session) => session.id));
+    const sessionIds = sessions.map((session) => session.id);
+    const firstUserMessages = this.getFirstUserMessages(sessionIds);
+    const externalSessionIds = this.sessions.getLatestExternalSessionIds(sessionIds);
 
     const sessionSummaries: WorkspaceSessionSummary[] = sessions.map((s) => ({
       id: s.id,
@@ -42,6 +44,7 @@ export class WorkspaceService {
       agent: (s.agentType.charAt(0).toUpperCase() + s.agentType.slice(1)) as any,
       initials: s.agentType.slice(0, 2).toUpperCase(),
       workspace: s.workspacePath,
+      externalSessionId: externalSessionIds.get(s.id) ?? null,
       channelType: s.channelType as any,
       status: this.mapSessionStatus(s.status),
       updatedAt: s.updatedAt,
@@ -54,17 +57,7 @@ export class WorkspaceService {
     let keyEvents: Array<[string, string, string]> = [];
 
     if (sessionId) {
-      const msgs = this.messages.getLatestBySession(sessionId, 1000);
-      messages = msgs.map((m) => ({
-        id: m.id,
-        runId: m.runId,
-        role: this.mapRole(m.role),
-        author: m.role === "user" ? "You" : m.role === "assistant" ? "Agent" : m.role,
-        time: m.createdAt,
-        createdAt: m.createdAt,
-        badge: undefined,
-        markdown: m.content,
-      }));
+      messages = mapMessages(this.messages.getLatestBySession(sessionId, 1000));
 
       // Get run stats from latest run
       const latestRun = this.getLatestRun(sessionId);
@@ -129,7 +122,9 @@ export class WorkspaceService {
     const limit = options.limit ?? 50;
     const offset = (page - 1) * limit;
     const { sessions, total } = this.sessions.listSessionsFiltered({ excludeCronOnly: true, limit, offset });
-    const firstUserMessages = this.getFirstUserMessages(sessions.map((s) => s.id));
+    const sessionIds = sessions.map((s) => s.id);
+    const firstUserMessages = this.getFirstUserMessages(sessionIds);
+    const externalSessionIds = this.sessions.getLatestExternalSessionIds(sessionIds);
 
     const sessionSummaries: WorkspaceSessionSummary[] = sessions.map((s) => ({
       id: s.id,
@@ -139,6 +134,7 @@ export class WorkspaceService {
       agent: (s.agentType.charAt(0).toUpperCase() + s.agentType.slice(1)) as any,
       initials: s.agentType.slice(0, 2).toUpperCase(),
       workspace: s.workspacePath,
+      externalSessionId: externalSessionIds.get(s.id) ?? null,
       channelType: s.channelType as any,
       status: this.mapSessionStatus(s.status),
       updatedAt: s.updatedAt,
@@ -151,6 +147,11 @@ export class WorkspaceService {
       page,
       hasMore: offset + sessions.length < total,
     };
+  }
+
+  /** Lazy-load a session's messages for the read-only card stream. */
+  getSessionMessages(sessionId: string, limit = 1000): WorkspaceMessage[] {
+    return mapMessages(this.messages.getLatestBySession(sessionId, limit));
   }
 
   private getLatestRun(sessionId: string) {
@@ -192,11 +193,25 @@ export class WorkspaceService {
     return status as any;
   }
 
-  private mapRole(role: string): "user" | "agent" | "tool" | "system" {
-    if (role === "assistant") return "agent";
-    if (role === "user" || role === "system" || role === "tool") return role;
-    return "system";
-  }
+}
+
+function mapRole(role: string): "user" | "agent" | "tool" | "system" {
+  if (role === "assistant") return "agent";
+  if (role === "user" || role === "system" || role === "tool") return role;
+  return "system";
+}
+
+function mapMessages(records: MessageRecord[]): WorkspaceMessage[] {
+  return records.map((m) => ({
+    id: m.id,
+    runId: m.runId,
+    role: mapRole(m.role),
+    author: m.role === "user" ? "You" : m.role === "assistant" ? "Agent" : m.role,
+    time: m.createdAt,
+    createdAt: m.createdAt,
+    badge: undefined,
+    markdown: m.content,
+  }));
 }
 
 function getSessionName(persistedName: string, title: string, agentType: string, firstUserMessage?: string): string {

@@ -371,3 +371,54 @@ describe("ContextBudgetStore", () => {
     expect(fetched!.tokenEstimate).toBe(30_000);
   });
 });
+
+// ── getLatestExternalSessionIds ──
+let runCounter = 0;
+function insertRun(row: { sessionId: string; externalSessionId: string | null; startedAt: string }) {
+  const id = `run_test_${String(++runCounter).padStart(4, "0")}`;
+  db.prepare(
+    `INSERT INTO agent_runs (id, session_id, task_id, agent_type, status, launch_spec_json, pid,
+      runtime_kind, external_session_id, checkpoint_id, protocol_state_json, cancel_state,
+      context_pack_id, heartbeat_at, started_at, created_at, updated_at)
+     VALUES (@id, @sessionId, NULL, 'claude', 'running', '{}', NULL,
+      'acp', @externalSessionId, NULL, '{}', NULL,
+      NULL, @startedAt, @startedAt, @startedAt, @startedAt)`
+  ).run({ id, sessionId: row.sessionId, externalSessionId: row.externalSessionId, startedAt: row.startedAt });
+}
+
+describe("SessionStore.getLatestExternalSessionIds", () => {
+  it("returns an empty map for empty input (no IN() error)", () => {
+    expect(sessions.getLatestExternalSessionIds([]).size).toBe(0);
+  });
+
+  it("picks the latest non-null external_session_id per session", () => {
+    const s1 = sessions.createSession({ title: "s1", agentType: "claude", workspacePath: "/a" });
+    const s2 = sessions.createSession({ title: "s2", agentType: "claude", workspacePath: "/b" });
+    insertRun({ sessionId: s1.id, externalSessionId: "ext-A", startedAt: "2026-01-01T00:00:00Z" });
+    insertRun({ sessionId: s1.id, externalSessionId: "ext-B", startedAt: "2026-02-01T00:00:00Z" });
+    insertRun({ sessionId: s2.id, externalSessionId: null, startedAt: "2026-01-01T00:00:00Z" });
+    insertRun({ sessionId: s2.id, externalSessionId: "ext-C", startedAt: "2026-02-01T00:00:00Z" });
+
+    const map = sessions.getLatestExternalSessionIds([s1.id, s2.id]);
+    expect(map.get(s1.id)).toBe("ext-B");
+    expect(map.get(s2.id)).toBe("ext-C");
+    expect(map.size).toBe(2);
+  });
+
+  it("omits sessions whose runs all have null external_session_id", () => {
+    const s = sessions.createSession({ title: "s", agentType: "claude", workspacePath: "/a" });
+    insertRun({ sessionId: s.id, externalSessionId: null, startedAt: "2026-01-01T00:00:00Z" });
+    const map = sessions.getLatestExternalSessionIds([s.id]);
+    expect(map.has(s.id)).toBe(false);
+  });
+
+  it("ignores sessions not in the input list", () => {
+    const s1 = sessions.createSession({ title: "s1", agentType: "claude", workspacePath: "/a" });
+    const s2 = sessions.createSession({ title: "s2", agentType: "claude", workspacePath: "/b" });
+    insertRun({ sessionId: s1.id, externalSessionId: "ext-1", startedAt: "2026-01-01T00:00:00Z" });
+    insertRun({ sessionId: s2.id, externalSessionId: "ext-2", startedAt: "2026-01-01T00:00:00Z" });
+    const map = sessions.getLatestExternalSessionIds([s1.id]);
+    expect(map.get(s1.id)).toBe("ext-1");
+    expect(map.has(s2.id)).toBe(false);
+  });
+});

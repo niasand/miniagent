@@ -15,6 +15,8 @@ export type WorkspaceSessionSummary = {
   agent: WorkspaceAgentLabel;
   initials: string;
   workspace: string;
+  /** Latest non-null external_session_id from agent_runs (e.g. Claude session id for `claude resume`). */
+  externalSessionId: string | null;
   channelType: WorkspaceChannelType;
   status: WorkspaceSessionStatus;
   updatedAt: string;

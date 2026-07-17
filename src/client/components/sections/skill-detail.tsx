@@ -1,14 +1,11 @@
-import { Sparkles } from "lucide-react";
 import type { SkillMeta } from "../../api/types.js";
 import { CopyButton } from "../ui/copy-button.js";
-import { Button } from "../ui/button.js";
 
 interface SkillDetailProps {
   selectedSkill: SkillMeta | null;
-  useSkillInWorkspace: (skill: SkillMeta) => void;
 }
 
-export function SkillDetail({ selectedSkill, useSkillInWorkspace }: SkillDetailProps) {
+export function SkillDetail({ selectedSkill }: SkillDetailProps) {
   return (
     <div className="detail-scroll">
       {selectedSkill ? (
@@ -21,10 +18,6 @@ export function SkillDetail({ selectedSkill, useSkillInWorkspace }: SkillDetailP
                 <CopyButton text={selectedSkill!.name} label="技能名称" size="sm" />
               </div>
             </div>
-            <Button variant="primary" onClick={() => useSkillInWorkspace(selectedSkill!)}>
-              <Sparkles className="h-4 w-4" />
-              使用技能
-            </Button>
           </div>
           <div className="detail-section">
             <h2>说明</h2>

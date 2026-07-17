@@ -5,6 +5,4 @@ export { useProvider } from "./use-provider.js";
 export { useSkills } from "./use-skills.js";
 export { useSessions } from "./use-sessions.js";
 export { useSchedules } from "./use-schedules.js";
-export { useChatStream } from "./use-chat-stream.js";
-export { useChatScroll } from "./use-chat-scroll.js";
-export { useChatInput } from "./use-chat-input.js";
+export { useSessionMessages } from "./use-session-messages.js";

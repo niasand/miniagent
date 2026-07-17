@@ -1,5 +1,4 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
 import { fetchChannels } from "./api/channels.js";
 import { fetchDefaultNotificationPreference } from "./api/notification-preferences.js";
 import { AppShell } from "./components/app-shell.js";
@@ -10,9 +9,6 @@ import { useProvider } from "./hooks/use-provider.js";
 import { useSkills } from "./hooks/use-skills.js";
 import { useSessions } from "./hooks/use-sessions.js";
 import { useSchedules } from "./hooks/use-schedules.js";
-import { useChatStream } from "./hooks/use-chat-stream.js";
-import { useChatScroll } from "./hooks/use-chat-scroll.js";
-import { useChatInput } from "./hooks/use-chat-input.js";
 import { useWorkflows } from "./hooks/use-workflows.js";
 
 export default function App() {
@@ -33,16 +29,14 @@ export default function App() {
     sessionsSearchRef, sessionsHasMore, sessionsLoadingMore, sessionsSentinelRef,
     handleNewSession: rawHandleNewSession,
     isCreatingSession,
-    resetInfiniteScroll,
     selectionMode, setSelectionMode, selectedIds, toggleSelected, exitSelectionMode, deleteSelected, deleting,
     editingSessionId, editingSessionName, setEditingSessionName,
     renameSessionError, renameSessionPending, startSessionRename, submitSessionRename, cancelSessionRename,
-    selectSession, selectedSessionId, selectedSessionName, snapshot,
+    selectSession, selectedSessionId, selectedSessionName,
   } = useSessions({
     activeSection,
     agentType,
     onNewSession: () => {
-      setDraft("");
       setActiveSection("workspace");
     },
   });
@@ -63,79 +57,15 @@ export default function App() {
     queryFn: fetchDefaultNotificationPreference,
   });
 
-  // Derived from workspace snapshot.
-  // Guard: only trust a snapshot's messages when it actually belongs to the
-  // currently selected session. Without this, switching sessions (e.g. after
-  // clicking "+") can briefly render the *previous* session's messages — the
-  // old snapshot leaks into the new (empty) session UI until the fresh fetch
-  // lands. See ISSUE-009.
-  const snapshotMatchesSession =
-    snapshot !== undefined && snapshot.selectedSessionId === selectedSessionId;
-  const messages = snapshotMatchesSession ? snapshot.messages : [];
-  const hasWorkspaceSnapshot = snapshotMatchesSession;
-  const runStats = snapshotMatchesSession
-    ? snapshot.runStats
-    : { durationSeconds: null, tokensUsed: null, tokensTotal: null };
-
-  // Hook 6: Chat stream (SSE — highest risk)
-  const {
-    isStreaming, setIsStreaming, isStreamingRef,
-    streamingText, setStreamingText, streamingTextRef,
-    streamStartCountRef,
-  } = useChatStream(sessionId);
-
-  // Stream completion: when agent message appears, stop streaming
-  useEffect(() => {
-    if (isStreamingRef.current && messages.length > streamStartCountRef.current) {
-      const last = messages[messages.length - 1];
-      if (last?.role === "agent") {
-        streamingTextRef.current = "";
-        setStreamingText("");
-        isStreamingRef.current = false;
-        setIsStreaming(false);
-      }
-    }
-  }, [messages]);
-
-  // Hook 7: Chat scroll (auto-scroll, user intent, focus target)
-  const {
-    messagesContainerRef, scrollMessagesToTop, scrollMessagesToBottom,
-    focusedScheduleTarget, setFocusedScheduleTarget, messagesSessionKey, messagesSettling,
-  } = useChatScroll({
-    activeSection,
-    sessionId,
-    selectedSessionId,
-    messages,
-    hasWorkspaceSnapshot,
-    streamingText,
-  });
-
-  // Hook 8: Chat input (draft, send, keydown, skill-in-workspace)
-  const { draft, setDraft, draftInputRef, handleKeyDown, handleSend, sendMessagePending, useSkillInWorkspace } = useChatInput({
-    sessionId,
-    setSessionId,
-    agentType,
-    messages,
-    isStreamingRef,
-    setIsStreaming,
-    streamingTextRef,
-    setStreamingText,
-    streamStartCountRef,
-    scrollMessagesToBottom,
-    onSendSuccess: () => {
-      resetInfiniteScroll();
-    },
-  });
-
-  // Compose handleNewSession to also clear draft + switch section
+  // Compose handleNewSession: the raw hook already switches to workspace.
   const handleNewSession = rawHandleNewSession;
 
-  // Schedule run click: navigate to session + optionally scroll to run
-  const openScheduleRun = (run: WorkspaceScheduleRun, focusOutput: boolean) => {
+  // Schedule run click: navigate to the session's card. Scrolling + flash is
+  // handled by the AppShell effect that watches selectedSessionId.
+  const openScheduleRun = (run: WorkspaceScheduleRun, _focusOutput: boolean) => {
     setSessionId(run.sessionId);
     localStorage.setItem("sessionId", run.sessionId);
     setActiveSection("workspace");
-    setFocusedScheduleTarget(focusOutput && run.runId ? { sessionId: run.sessionId, runId: run.runId } : null);
     queryClient.invalidateQueries({ queryKey: ["workspace", run.sessionId] });
   };
 
@@ -180,7 +110,6 @@ export default function App() {
       filteredSkills={filteredSkills}
       selectedSkill={selectedSkill}
       handleSkillSelect={handleSkillSelect}
-      useSkillInWorkspace={useSkillInWorkspace}
       selectedSessionName={selectedSessionName}
       schedules={schedules.schedules}
       selectedSchedule={schedules.selectedSchedule}
@@ -234,21 +163,6 @@ export default function App() {
       providerRuntimes={providerRuntimes}
       providerSavePending={providerSavePending}
       providerError={providerError}
-      messages={messages}
-      messagesSettling={messagesSettling}
-      messagesContainerRef={messagesContainerRef}
-      runStats={runStats}
-      focusedRunId={focusedScheduleTarget?.runId ?? null}
-      sendMessagePending={sendMessagePending}
-      isStreaming={isStreaming}
-      streamingText={streamingText}
-      scrollMessagesToTop={scrollMessagesToTop}
-      scrollMessagesToBottom={scrollMessagesToBottom}
-      draftInputRef={draftInputRef}
-      draft={draft}
-      setDraft={setDraft}
-      handleKeyDown={handleKeyDown}
-      handleSend={handleSend}
       workflowRuns={workflows.runs}
       selectedWorkflowRun={workflows.selectedRun}
       setWorkflowRunId={workflows.setSelectedRunId}

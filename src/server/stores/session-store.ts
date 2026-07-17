@@ -552,6 +552,30 @@ export class SessionStore {
     return row?.external_session_id ?? null;
   }
 
+  /**
+   * Batch variant: latest non-null external_session_id per session_id.
+   * A session has a fixed agent_type inherited by all its runs, so partitioning
+   * by session_id alone is correct and avoids a join to `sessions`.
+   * One windowed query — mirrors the pattern in WorkspaceService.getFirstUserMessages.
+   */
+  getLatestExternalSessionIds(sessionIds: string[]): Map<string, string> {
+    if (sessionIds.length === 0) return new Map();
+    const placeholders = sessionIds.map(() => "?").join(",");
+    const rows = this.db.prepare(
+      `SELECT session_id, external_session_id FROM (
+         SELECT session_id, external_session_id,
+           row_number() OVER (
+             PARTITION BY session_id
+             ORDER BY COALESCE(started_at, created_at) DESC, id DESC
+           ) AS rn
+         FROM agent_runs
+         WHERE external_session_id IS NOT NULL AND session_id IN (${placeholders})
+       )
+       WHERE rn = 1`
+    ).all(...sessionIds) as Array<{ session_id: string; external_session_id: string }>;
+    return new Map(rows.map((row) => [row.session_id, row.external_session_id]));
+  }
+
   updateRunProcess(runId: string, pid: number | null): AgentRunRecord {
     const now = nowIso();
     this.db.prepare(

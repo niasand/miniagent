@@ -1,8 +1,9 @@
+import { useEffect } from "react";
 import type { AgentType, SkillMeta } from "../api/types.js";
 import type { ChannelInfo } from "../api/channels.js";
 import type { NotificationPreference, WorkspaceAgentRuntime, WorkspaceSchedule, WorkspaceScheduleKind, WorkspaceScheduleNotificationTarget, WorkspaceScheduleRun, WorkspaceSnapshot } from "../../shared/workspace.js";
 import { NavBar } from "./nav-bar.js";
-import { ChatView, ScheduleDetail, ScheduleList, SessionList, SettingsDetail, SettingsList, SkillDetail, SkillList, WorkflowDetail, WorkflowList } from "./sections/index.js";
+import { ScheduleDetail, ScheduleList, SessionCards, SessionList, SettingsDetail, SettingsList, SkillDetail, SkillList, WorkflowDetail, WorkflowList } from "./sections/index.js";
 import type { WorkflowRun } from "../api/workflows.js";
 
 type AppSection = "workspace" | "skills" | "tasks" | "workflows" | "settings";
@@ -48,7 +49,6 @@ export function AppShell(props: {
   filteredSkills: SkillMeta[];
   selectedSkill: SkillMeta | null;
   handleSkillSelect: (skill: SkillMeta) => void;
-  useSkillInWorkspace: (skill: SkillMeta) => void;
   selectedSessionName: string;
   schedules: WorkspaceSchedule[];
   selectedSchedule: WorkspaceSchedule | null;
@@ -102,21 +102,6 @@ export function AppShell(props: {
   providerRuntimes: WorkspaceAgentRuntime[];
   providerSavePending: boolean;
   providerError: string | null;
-  messages: WorkspaceSnapshot["messages"];
-  messagesSettling: boolean;
-  messagesContainerRef: React.RefObject<HTMLDivElement | null>;
-  runStats: { durationSeconds: number | null; tokensUsed: number | null; tokensTotal: number | null };
-  focusedRunId: string | null;
-  sendMessagePending: boolean;
-  isStreaming: boolean;
-  streamingText: string;
-  scrollMessagesToTop: () => void;
-  scrollMessagesToBottom: (behavior: ScrollBehavior) => void;
-  draftInputRef: React.RefObject<HTMLTextAreaElement | null>;
-  draft: string;
-  setDraft: (value: string) => void;
-  handleKeyDown: (event: React.KeyboardEvent) => void;
-  handleSend: () => void;
   workflowRuns: WorkflowRun[];
   selectedWorkflowRun: WorkflowRun | null;
   setWorkflowRunId: (id: string | null) => void;
@@ -125,6 +110,18 @@ export function AppShell(props: {
   onCreateWorkflow: (definition: unknown) => void;
   workflowCreating: boolean;
 }) {
+  // When the selected session changes (sidebar click, schedule run, deep link),
+  // scroll the matching card into view and flash-highlight it briefly.
+  useEffect(() => {
+    if (props.activeSection !== "workspace" || !props.selectedSessionId) return;
+    const node = document.getElementById(`card-${props.selectedSessionId}`);
+    if (!node) return;
+    node.scrollIntoView({ behavior: "smooth", block: "start" });
+    node.classList.add("session-card--flash");
+    const timer = window.setTimeout(() => node.classList.remove("session-card--flash"), 1200);
+    return () => window.clearTimeout(timer);
+  }, [props.activeSection, props.selectedSessionId]);
+
   return (
     <main className="app-root">
       <NavBar activeSection={props.activeSection} setActiveSection={props.setActiveSection} />
@@ -204,30 +201,18 @@ export function AppShell(props: {
 
       <section className={`detail-pane detail-pane--${props.activeSection}`}>
         {props.activeSection === "workspace" && (
-          <ChatView
-            sessionId={props.sessionId}
+          <SessionCards
             sessions={props.sessions}
-            messages={props.messages}
-            messagesSettling={props.messagesSettling}
-            messagesContainerRef={props.messagesContainerRef}
-            runStats={props.runStats}
-            focusedRunId={props.focusedRunId}
-            sendMessagePending={props.sendMessagePending}
-            isStreaming={props.isStreaming}
-            streamingText={props.streamingText}
-            scrollMessagesToTop={props.scrollMessagesToTop}
-            scrollMessagesToBottom={props.scrollMessagesToBottom}
-            draftInputRef={props.draftInputRef}
-            draft={props.draft}
-            setDraft={props.setDraft}
-            handleKeyDown={props.handleKeyDown}
-            handleSend={props.handleSend}
+            selectedSessionId={props.selectedSessionId}
+            sessionsQuery={props.sessionsQuery}
+            renderHighlightedSessionName={props.renderHighlightedSessionName}
+            formatSessionUpdatedAt={props.formatSessionUpdatedAt}
+            formatSessionChannel={props.formatSessionChannel}
           />
         )}
         {props.activeSection === "skills" && (
           <SkillDetail
             selectedSkill={props.selectedSkill}
-            useSkillInWorkspace={props.useSkillInWorkspace}
           />
         )}
         {props.activeSection === "tasks" && (

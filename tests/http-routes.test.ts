@@ -9,6 +9,7 @@ import { ChannelRegistry } from "../src/server/channels/registry.js";
 import { OutboxStore } from "../src/server/stores/outbox-store.js";
 import { EventStore } from "../src/server/stores/event-store.js";
 import { SessionStore } from "../src/server/stores/session-store.js";
+import { MessageStore } from "../src/server/stores/message-store.js";
 import type { Hono } from "hono";
 
 let db: SqliteDatabase;
@@ -824,5 +825,79 @@ describe("GET /api/skills", () => {
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.skills).toBeInstanceOf(Array);
+  });
+});
+
+// ── Session messages (read-only card stream) ──
+let msgRunCounter = 0;
+function insertAgentRun(sessionId: string, externalSessionId: string | null) {
+  const id = `run_test_${String(++msgRunCounter).padStart(4, "0")}`;
+  const ts = "2026-02-01T00:00:00Z";
+  db.prepare(
+    `INSERT INTO agent_runs (id, session_id, task_id, agent_type, status, launch_spec_json, pid,
+      runtime_kind, external_session_id, checkpoint_id, protocol_state_json, cancel_state,
+      context_pack_id, heartbeat_at, started_at, created_at, updated_at)
+     VALUES (@id, @sessionId, NULL, 'claude', 'running', '{}', NULL,
+      'acp', @externalSessionId, NULL, '{}', NULL, NULL, @ts, @ts, @ts, @ts)`
+  ).run({ id, sessionId, externalSessionId, ts });
+}
+
+describe("GET /api/sessions/:sessionId/messages", () => {
+  it("returns 404 for an unknown session", async () => {
+    const res = await request("/api/sessions/ses_unknown/messages");
+    expect(res.status).toBe(404);
+  });
+
+  it("returns messages in order with role mapping (assistant → agent)", async () => {
+    const sessionStore = new SessionStore(db, new EventStore(db));
+    const messageStore = new MessageStore(db);
+    const session = sessionStore.createSession({ title: "msgs", agentType: "claude", workspacePath: "/a" });
+    messageStore.insert({ sessionId: session.id, role: "user", content: "hello", sourceEventId: "e1" });
+    messageStore.insert({ sessionId: session.id, role: "assistant", content: "hi there", sourceEventId: "e2" });
+
+    const res = await request(`/api/sessions/${session.id}/messages`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.messages).toHaveLength(2);
+    expect(body.messages[0]).toMatchObject({ role: "user", markdown: "hello" });
+    expect(body.messages[1]).toMatchObject({ role: "agent", markdown: "hi there" });
+  });
+
+  it("clamps invalid limit to 1000 without error", async () => {
+    const sessionStore = new SessionStore(db, new EventStore(db));
+    const session = sessionStore.createSession({ title: "lim", agentType: "claude", workspacePath: "/a" });
+    for (const limit of ["0", "-5", "abc", "99999"]) {
+      const res = await request(`/api/sessions/${session.id}/messages?limit=${limit}`);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.messages).toEqual([]);
+    }
+  });
+});
+
+describe("GET /api/workspace externalSessionId", () => {
+  it("exposes the latest external_session_id per session", async () => {
+    const sessionStore = new SessionStore(db, new EventStore(db));
+    const session = sessionStore.createSession({ title: "ext", agentType: "claude", workspacePath: "/proj/app" });
+    insertAgentRun(session.id, "ext-old");
+    insertAgentRun(session.id, "ext-new"); // same startedAt → higher padded id wins via ORDER BY id DESC
+
+    const res = await request("/api/workspace");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const found = body.sessions.find((s: { id: string }) => s.id === session.id);
+    expect(found).toBeTruthy();
+    expect(found.externalSessionId).toBe("ext-new");
+  });
+
+  it("returns null externalSessionId when no run has one", async () => {
+    const sessionStore = new SessionStore(db, new EventStore(db));
+    const session = sessionStore.createSession({ title: "noext", agentType: "claude", workspacePath: "/a" });
+    insertAgentRun(session.id, null);
+
+    const res = await request("/api/workspace");
+    const body = await res.json();
+    const found = body.sessions.find((s: { id: string }) => s.id === session.id);
+    expect(found.externalSessionId).toBeNull();
   });
 });

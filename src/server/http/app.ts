@@ -296,6 +296,17 @@ export function createApp(db: SqliteDatabase, options: AppOptions) {
 
   // ── Messages ──
 
+  // Lazy-load a session's messages for the read-only card stream.
+  app.get("/api/sessions/:sessionId/messages", (c) => {
+    const sessionId = c.req.param("sessionId");
+    const rawLimit = Number(c.req.query("limit") ?? 1000);
+    const limit = Number.isInteger(rawLimit) && rawLimit > 0 && rawLimit <= 1000 ? rawLimit : 1000;
+    const session = sessionStore.getSession(sessionId);
+    if (!session) return c.json({ error: `Session not found: ${sessionId}` }, 404);
+    const workspaceService = new WorkspaceService(db, runtimeSupervisor);
+    return c.json({ messages: workspaceService.getSessionMessages(sessionId, limit) });
+  });
+
   app.post("/api/sessions/:sessionId/messages", async (c) => {
     const body = await c.req.json().catch(() => null);
     if (!body || typeof body !== "object" || Array.isArray(body)) {
