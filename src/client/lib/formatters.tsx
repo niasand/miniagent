@@ -36,8 +36,20 @@ export function formatZonedTime(value: string, timezone: string): string {
   }).format(date);
 }
 
-/** Thin wrapper — session updated-at uses the same format as message time. */
-export const formatSessionUpdatedAt = formatMessageTime;
+/** Session updated-at: always show full year/month/day + time (used in the card stream). */
+export function formatSessionUpdatedAt(value?: string): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
 
 /** Map channel type enum to display label. */
 export function formatSessionChannel(

@@ -5,7 +5,7 @@ describe("buildResumeCommand", () => {
   it("builds the resume command for a claude session with workspace + external id", () => {
     const result = buildResumeCommand({ agentType: "claude", externalSessionId: "abc-123", workspace: "/proj/app" });
     expect(result).toEqual({
-      command: `cd "/proj/app" && claude resume abc-123`,
+      command: `cd /proj/app && claude resume abc-123`,
       enabled: true,
       disabledReason: null,
     });
