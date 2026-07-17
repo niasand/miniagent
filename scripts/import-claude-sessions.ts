@@ -6,10 +6,11 @@
  *   --dry-run: Scan and report without writing to DB
  *   (no args): Perform actual import
  *
- * Data source: ~/.claude/projects/*/*.jsonl (each file = one session)
+ * Data source: ~/.claude/projects (each jsonl file = one session)
  */
 
-import { openDatabase, type SqliteDatabase as SqliteDatabaseType } from "../src/server/db/migrate.js";
+import { openDatabase } from "../src/server/db/migrate.js";
+type SqliteDatabase = ReturnType<typeof openDatabase>;
 import { SessionStore } from "../src/server/stores/session-store.js";
 import { MessageStore } from "../src/server/stores/message-store.js";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
@@ -138,7 +139,8 @@ function findJsonlFiles(): string[] {
     return [];
   }
 
-  const files: string[] = const projectDirs = readdirSync(projectsDir, { withFileTypes: true });
+  const files: string[] = [];
+  const projectDirs = readdirSync(projectsDir, { withFileTypes: true });
 
   for (const dir of projectDirs) {
     if (!dir.isDirectory()) {
@@ -165,7 +167,7 @@ function findJsonlFiles(): string[] {
 // Main import logic
 async function importSessions(dryRun: boolean): Promise<ImportStats> {
   const dbPath = process.env.MINIAGENT_DB_PATH || "data/miniagent.sqlite";
-  const db: SqliteDatabaseType = openDatabase(dbPath);
+  const db = openDatabase(dbPath);
 
   const sessionStore = new SessionStore(db);
   const messageStore = new MessageStore(db);
