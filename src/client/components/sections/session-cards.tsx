@@ -6,6 +6,7 @@ import { SessionCardMessages } from "./session-card-messages.js";
 interface SessionCardsProps {
   sessions: WorkspaceSnapshot["sessions"];
   selectedSessionId: string | null;
+  onSelectSession: (id: string) => void;
   sessionsQuery: string;
   renderHighlightedSessionName: (text: string, query: string) => React.ReactNode;
   formatSessionUpdatedAt: (value?: string) => string;
@@ -21,6 +22,7 @@ interface SessionCardsProps {
 export function SessionCards({
   sessions,
   selectedSessionId,
+  onSelectSession,
   sessionsQuery,
   renderHighlightedSessionName,
   formatSessionUpdatedAt,
@@ -47,6 +49,7 @@ export function SessionCards({
             id={`card-${session.id}`}
             className={`session-card${isActive ? " session-card--active" : ""}`}
             data-session-id={session.id}
+            onClick={() => onSelectSession(session.id)}
           >
             <header className="session-card-head">
               <div className="session-card-title" title={name}>
@@ -68,9 +71,11 @@ export function SessionCards({
                 title={resume.enabled ? "复制恢复命令" : (resume.disabledReason ?? undefined)}
               />
             </header>
-            <div className="session-card-messages">
-              <SessionCardMessages sessionId={session.id} limit={messageLimit} />
-            </div>
+            {isActive && (
+              <div className="session-card-messages">
+                <SessionCardMessages sessionId={session.id} limit={messageLimit} />
+              </div>
+            )}
           </section>
         );
       })}

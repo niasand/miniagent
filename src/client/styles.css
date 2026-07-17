@@ -1700,6 +1700,8 @@ button { cursor: pointer; }
   padding: 1.25rem;
   max-width: 920px;
   margin: 0 auto;
+  height: 100%;
+  overflow-y: auto;
 }
 .session-cards--empty {
   color: var(--color-muted-foreground);
