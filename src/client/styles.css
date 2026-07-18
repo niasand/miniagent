@@ -1735,11 +1735,17 @@ button { cursor: pointer; }
   100% { box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04); }
 }
 .session-card-head {
+  position: sticky;
+  top: 0;
+  z-index: 4;
   display: flex;
   align-items: center;
   gap: 0.75rem;
   flex-wrap: wrap;
-  margin-bottom: 0.75rem;
+  margin: -1rem -1.25rem 0.75rem;
+  padding: 1rem 1.25rem;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
 }
 .session-card-title {
   font-weight: 600;
@@ -1786,9 +1792,9 @@ button { cursor: pointer; }
 
 /* Floating top/bottom jump buttons in the detail scroll container */
 .session-scroll-controls {
-  position: absolute;
-  right: 1.25rem;
-  bottom: 1.25rem;
+  position: fixed;
+  right: 1.5rem;
+  bottom: 1.5rem;
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
