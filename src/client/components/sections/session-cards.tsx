@@ -28,7 +28,7 @@ export function SessionCards({
   renderHighlightedSessionName,
   formatSessionUpdatedAt,
   formatSessionChannel,
-  messageLimit = 200,
+  messageLimit = 1000,
 }: SessionCardsProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const session = sessions.find((s) => s.id === selectedSessionId) ?? null;
