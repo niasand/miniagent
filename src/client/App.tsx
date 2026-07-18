@@ -30,7 +30,7 @@ export default function App() {
     handleNewSession: rawHandleNewSession,
     isCreatingSession,
     selectionMode, setSelectionMode, selectedIds, toggleSelected, exitSelectionMode, deleteSelected, deleting,
-    selectAll: selectAllSessions, deleteOne: deleteOneSession,
+    deleteOne: deleteOneSession,
     editingSessionId, editingSessionName, setEditingSessionName,
     renameSessionError, renameSessionPending, startSessionRename, submitSessionRename, cancelSessionRename,
     selectSession, selectedSessionId, selectedSessionName,
@@ -93,7 +93,6 @@ export default function App() {
       exitSelectionMode={exitSelectionMode}
       deleteSelected={deleteSelected}
       deleting={deleting}
-      sessionSelectAll={selectAllSessions}
       deleteOneSession={deleteOneSession}
       editingSessionId={editingSessionId}
       editingSessionName={editingSessionName}

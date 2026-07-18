@@ -33,7 +33,6 @@ interface SessionListProps {
   exitSelectionMode: () => void;
   deleteSelected: () => Promise<void> | void;
   deleting: boolean;
-  selectAll: () => void;
   deleteOne: (id: string) => void;
   editingSessionId: string | null;
   editingSessionName: string;
@@ -67,7 +66,6 @@ export function SessionList({
   exitSelectionMode,
   deleteSelected,
   deleting,
-  selectAll,
   deleteOne,
   editingSessionId,
   editingSessionName,
@@ -204,14 +202,6 @@ export function SessionList({
       {selectionMode && (
         <div className="session-bulk-bar">
           <span className="session-bulk-count">已选 {selectedIds.size} 个</span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={filteredSessions.length === 0}
-            onClick={() => (selectedIds.size === filteredSessions.length && filteredSessions.length > 0 ? exitSelectionMode() : selectAll())}
-          >
-            {selectedIds.size === filteredSessions.length && filteredSessions.length > 0 ? "取消全选" : "全选"}
-          </Button>
           <Button
             variant="primary"
             size="sm"

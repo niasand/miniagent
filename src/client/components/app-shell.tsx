@@ -31,7 +31,6 @@ export function AppShell(props: {
   exitSelectionMode: () => void;
   deleteSelected: () => Promise<void> | void;
   deleting: boolean;
-  sessionSelectAll: () => void;
   deleteOneSession: (id: string) => void;
   editingSessionId: string | null;
   editingSessionName: string;
@@ -157,7 +156,6 @@ export function AppShell(props: {
             exitSelectionMode={props.exitSelectionMode}
             deleteSelected={props.deleteSelected}
             deleting={props.deleting}
-            selectAll={props.sessionSelectAll}
             deleteOne={props.deleteOneSession}
             editingSessionId={props.editingSessionId}
             editingSessionName={props.editingSessionName}
