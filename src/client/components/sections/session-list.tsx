@@ -88,10 +88,8 @@ export function SessionList({
     if (!ctxMenu) return;
     const close = () => setCtxMenu(null);
     document.addEventListener("click", close);
-    document.addEventListener("contextmenu", close);
     return () => {
       document.removeEventListener("click", close);
-      document.removeEventListener("contextmenu", close);
     };
   }, [ctxMenu]);
 
