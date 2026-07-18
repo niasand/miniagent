@@ -48,6 +48,19 @@ export async function resolveWorkflowGate(
   }
 }
 
+export async function generateWorkflowDefinition(prompt: string): Promise<{ definition: { name: string; nodes: WorkflowNode[] } }> {
+  const res = await fetch("/api/workflows/generate", {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null) as { error?: string } | null;
+    throw new Error(body?.error ?? `generateWorkflowDefinition failed: ${res.status}`);
+  }
+  return (await res.json()) as { definition: { name: string; nodes: WorkflowNode[] } };
+}
+
 export async function createWorkflowRun(definition: unknown): Promise<{ runId: string; sessionId: string }> {
   const res = await fetch("/api/workflows/runs", {
     method: "POST",

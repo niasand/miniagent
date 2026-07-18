@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { WorkflowOrchestrator } from "./orchestrator.js";
 import type { WorkflowDefinition } from "./definition.js";
+import { generateWorkflow } from "./generate.js";
 
 /**
  * HTTP surface for the workflow engine. Web frontend subscribes to wf.* events via the
@@ -9,6 +10,17 @@ import type { WorkflowDefinition } from "./definition.js";
  */
 export function createWorkflowRoutes(orchestrator: WorkflowOrchestrator): Hono {
   const app = new Hono();
+
+  app.post("/generate", async (c) => {
+    const body = await c.req.json().catch(() => null) as { prompt?: string } | null;
+    if (!body?.prompt?.trim()) return c.json({ error: "prompt required" }, 400);
+    try {
+      const definition = await generateWorkflow(body.prompt);
+      return c.json({ definition }, 200);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : "generate failed" }, 500);
+    }
+  });
 
   app.post("/runs", async (c) => {
     const body = await c.req.json().catch(() => null) as { definition?: WorkflowDefinition; input?: unknown } | null;

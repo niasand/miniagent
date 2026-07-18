@@ -901,3 +901,15 @@ describe("GET /api/workspace externalSessionId", () => {
     expect(found.externalSessionId).toBeNull();
   });
 });
+
+describe("POST /api/workflows/generate", () => {
+  it("rejects an empty prompt with 400", async () => {
+    const res = await postJson("/api/workflows/generate", { prompt: "   " });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a missing prompt with 400", async () => {
+    const res = await postJson("/api/workflows/generate", {});
+    expect(res.status).toBe(400);
+  });
+});

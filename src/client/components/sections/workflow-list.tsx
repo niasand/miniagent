@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { generateWorkflowDefinition } from "../../api/workflows.js";
 import type { WorkflowRun, WorkflowRunStatus } from "../../api/workflows.js";
 import { Badge } from "../ui/badge.js";
 import { Button } from "../ui/button.js";
@@ -41,6 +42,24 @@ interface WorkflowListProps {
 export function WorkflowList({ runs, selectedRun, setSelectedRunId, onCreateWorkflow, creating }: WorkflowListProps) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [nlPrompt, setNlPrompt] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+
+  const handleGenerate = async () => {
+    if (!nlPrompt.trim() || generating) return;
+    setGenerating(true);
+    setGenError(null);
+    try {
+      const { definition } = await generateWorkflowDefinition(nlPrompt);
+      setDraft(JSON.stringify(definition, null, 2));
+      setNlPrompt("");
+    } catch (e) {
+      setGenError(e instanceof Error ? e.message : "生成失败");
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const handleCreate = () => {
     setError(null);
@@ -65,6 +84,20 @@ export function WorkflowList({ runs, selectedRun, setSelectedRunId, onCreateWork
             <strong>新建 workflow</strong>
             <Button variant="ghost" size="xs" onClick={() => setDraft(SAMPLE)}>填示例</Button>
           </div>
+          <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+            <input
+              style={{ flex: 1, minWidth: 0, height: "1.8rem", fontSize: "0.75rem", padding: "0 0.5rem", borderRadius: "0.375rem", border: "1px solid var(--color-border)", background: "var(--color-background)", color: "var(--color-foreground)" }}
+              placeholder="或自然语言描述，让 AI 生成（如：总结昨日 git 提交，审批后发飞书）"
+              value={nlPrompt}
+              onChange={(e) => setNlPrompt(e.currentTarget.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void handleGenerate(); } }}
+              disabled={generating}
+            />
+            <Button variant="outline" size="sm" disabled={generating || !nlPrompt.trim()} onClick={() => void handleGenerate()}>
+              {generating ? "生成中…" : "✨ 生成"}
+            </Button>
+          </div>
+          {genError && <span style={{ color: "#ef4444", fontSize: "0.72rem" }}>{genError}</span>}
           <textarea
             style={{ width: "100%", minHeight: "5rem", fontFamily: "monospace", fontSize: "0.72rem", padding: "0.4rem", borderRadius: "0.375rem", border: "1px solid var(--border, #ddd)", resize: "vertical" }}
             placeholder='粘贴 workflow 定义 JSON'
