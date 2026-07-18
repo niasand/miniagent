@@ -28,7 +28,7 @@ export function buildResumeCommand(input: {
     return { command: "", enabled: false, disabledReason: "无工作目录" };
   }
   return {
-    command: `cd ${input.workspace} && claude resume ${input.externalSessionId}`,
+    command: `cd ${input.workspace} && claude --resume ${input.externalSessionId}`,
     enabled: true,
     disabledReason: null,
   };
