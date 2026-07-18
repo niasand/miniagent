@@ -31,6 +31,8 @@ export function AppShell(props: {
   exitSelectionMode: () => void;
   deleteSelected: () => Promise<void> | void;
   deleting: boolean;
+  sessionSelectAll: () => void;
+  deleteOneSession: (id: string) => void;
   editingSessionId: string | null;
   editingSessionName: string;
   setEditingSessionName: (value: string) => void;
@@ -116,6 +118,8 @@ export function AppShell(props: {
   exitWorkflowSelectionMode: () => void;
   deleteWorkflowSelected: () => void;
   workflowDeleting: boolean;
+  workflowSelectAll: () => void;
+  workflowDeleteOne: (id: string) => void;
 }) {
   // When the selected session changes (sidebar click, schedule run, deep link),
   // scroll the matching card into view and flash-highlight it briefly.
@@ -153,6 +157,8 @@ export function AppShell(props: {
             exitSelectionMode={props.exitSelectionMode}
             deleteSelected={props.deleteSelected}
             deleting={props.deleting}
+            selectAll={props.sessionSelectAll}
+            deleteOne={props.deleteOneSession}
             editingSessionId={props.editingSessionId}
             editingSessionName={props.editingSessionName}
             setEditingSessionName={props.setEditingSessionName}
@@ -209,6 +215,8 @@ export function AppShell(props: {
             exitSelectionMode={props.exitWorkflowSelectionMode}
             deleteSelected={props.deleteWorkflowSelected}
             deleting={props.workflowDeleting}
+            selectAll={props.workflowSelectAll}
+            deleteOne={props.workflowDeleteOne}
           />
         )}
       </aside>

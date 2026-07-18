@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CheckSquare, Trash2, X } from "lucide-react";
 import { generateWorkflowDefinition } from "../../api/workflows.js";
 import type { WorkflowRun, WorkflowRunStatus } from "../../api/workflows.js";
@@ -46,6 +46,8 @@ interface WorkflowListProps {
   exitSelectionMode: () => void;
   deleteSelected: () => void;
   deleting: boolean;
+  selectAll: () => void;
+  deleteOne: (id: string) => void;
 }
 
 export function WorkflowList({
@@ -61,6 +63,8 @@ export function WorkflowList({
   exitSelectionMode,
   deleteSelected,
   deleting,
+  selectAll,
+  deleteOne,
 }: WorkflowListProps) {
   const [draft, setDraft] = useState(SAMPLE);
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +72,19 @@ export function WorkflowList({
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [singleDeleteId, setSingleDeleteId] = useState<string | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; id: string } | null>(null);
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    document.addEventListener("click", close);
+    document.addEventListener("contextmenu", close);
+    return () => {
+      document.removeEventListener("click", close);
+      document.removeEventListener("contextmenu", close);
+    };
+  }, [ctxMenu]);
 
   const handleGenerate = async () => {
     if (!nlPrompt.trim() || generating) return;
@@ -142,6 +159,7 @@ export function WorkflowList({
             key={run.id}
             className={`schedule-item ${selectedRun?.id === run.id ? "schedule-item--active" : ""}`}
             style={selectionMode ? { cursor: "default" } : undefined}
+            onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, id: run.id }); }}
           >
             {selectionMode && (
               <input
@@ -173,6 +191,14 @@ export function WorkflowList({
         <div className="session-bulk-bar">
           <span className="session-bulk-count">已选 {selectedIds.size} 个</span>
           <Button
+            variant="outline"
+            size="sm"
+            disabled={runs.length === 0}
+            onClick={() => (selectedIds.size === runs.length && runs.length > 0 ? exitSelectionMode() : selectAll())}
+          >
+            {selectedIds.size === runs.length && runs.length > 0 ? "取消全选" : "全选"}
+          </Button>
+          <Button
             variant="primary"
             size="sm"
             title="删除选中 workflow"
@@ -192,6 +218,25 @@ export function WorkflowList({
         variant="danger"
         onConfirm={() => { setConfirmOpen(false); deleteSelected(); }}
         onCancel={() => setConfirmOpen(false)}
+      />
+      {ctxMenu && (
+        <div className="ctx-menu" style={{ left: ctxMenu.x, top: ctxMenu.y }}>
+          <button
+            className="ctx-menu-item"
+            onClick={() => { const id = ctxMenu.id; setCtxMenu(null); setSingleDeleteId(id); }}
+          >
+            删除
+          </button>
+        </div>
+      )}
+      <ConfirmDialog
+        open={singleDeleteId !== null}
+        title="确认删除该 workflow？"
+        description="workflow 运行记录将从列表移除。"
+        confirmLabel="删除"
+        variant="danger"
+        onConfirm={() => { const id = singleDeleteId; setSingleDeleteId(null); if (id) deleteOne(id); }}
+        onCancel={() => setSingleDeleteId(null)}
       />
     </>
   );

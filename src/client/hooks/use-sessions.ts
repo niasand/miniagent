@@ -171,6 +171,26 @@ export function useSessions({ activeSection, agentType, onNewSession }: UseSessi
     }
   };
 
+  const selectAll = () => setSelectedIds(new Set(orderedSessions.map((s) => s.id)));
+  const deleteOne = async (id: string) => {
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      await batchDeleteSessions([id]);
+      if (sessionId === id) {
+        setSessionId(null);
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+      }
+      setSessionsQuery("");
+      setSessionsPage(1);
+      setExtraSessions([]);
+      setSessionsHasMore(true);
+      queryClient.invalidateQueries({ queryKey: ["workspace"] });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const selectSession = (id: string) => {
     setSessionId(id);
     localStorage.setItem(SESSION_STORAGE_KEY, id);
@@ -248,6 +268,8 @@ export function useSessions({ activeSection, agentType, onNewSession }: UseSessi
     exitSelectionMode,
     deleteSelected,
     deleting,
+    selectAll,
+    deleteOne,
     editingSessionId,
     editingSessionName,
     setEditingSessionName,

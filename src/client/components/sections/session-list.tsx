@@ -1,5 +1,5 @@
 import { CheckSquare, Loader2, Pencil, Plus, Search, Trash2, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { WorkspaceSnapshot } from "../../../shared/workspace.js";
 import { Badge } from "../ui/badge.js";
 import { Button } from "../ui/button.js";
@@ -33,6 +33,8 @@ interface SessionListProps {
   exitSelectionMode: () => void;
   deleteSelected: () => Promise<void> | void;
   deleting: boolean;
+  selectAll: () => void;
+  deleteOne: (id: string) => void;
   editingSessionId: string | null;
   editingSessionName: string;
   setEditingSessionName: (value: string) => void;
@@ -65,6 +67,8 @@ export function SessionList({
   exitSelectionMode,
   deleteSelected,
   deleting,
+  selectAll,
+  deleteOne,
   editingSessionId,
   editingSessionName,
   setEditingSessionName,
@@ -79,6 +83,20 @@ export function SessionList({
   formatSessionChannel,
 }: SessionListProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [singleDeleteId, setSingleDeleteId] = useState<string | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; id: string } | null>(null);
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    document.addEventListener("click", close);
+    document.addEventListener("contextmenu", close);
+    return () => {
+      document.removeEventListener("click", close);
+      document.removeEventListener("contextmenu", close);
+    };
+  }, [ctxMenu]);
+
   const q = sessionsQuery.trim().toLowerCase();
   const filteredSessions = q
     ? sessions.filter((session) => session.name.toLowerCase().includes(q) || session.id.includes(q))
@@ -120,7 +138,11 @@ export function SessionList({
           const sessionName = session.name || session.title || "未命名会话";
           const isEditing = editingSessionId === session.id;
           return (
-            <div key={session.id} className={`session-item ${session.id === sessionId ? "session-item--active" : ""}`}>
+            <div
+              key={session.id}
+              className={`session-item ${session.id === sessionId ? "session-item--active" : ""}`}
+              onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, id: session.id }); }}
+            >
               {isEditing ? (
                 <form className="session-edit" onSubmit={(event) => { event.preventDefault(); submitSessionRename(session.id); }}>
                   <div className="session-edit-row">
@@ -183,6 +205,14 @@ export function SessionList({
         <div className="session-bulk-bar">
           <span className="session-bulk-count">已选 {selectedIds.size} 个</span>
           <Button
+            variant="outline"
+            size="sm"
+            disabled={filteredSessions.length === 0}
+            onClick={() => (selectedIds.size === filteredSessions.length && filteredSessions.length > 0 ? exitSelectionMode() : selectAll())}
+          >
+            {selectedIds.size === filteredSessions.length && filteredSessions.length > 0 ? "取消全选" : "全选"}
+          </Button>
+          <Button
             variant="primary"
             size="sm"
             title="删除选中会话"
@@ -208,6 +238,25 @@ export function SessionList({
           void deleteSelected();
         }}
         onCancel={() => setConfirmOpen(false)}
+      />
+      {ctxMenu && (
+        <div className="ctx-menu" style={{ left: ctxMenu.x, top: ctxMenu.y }}>
+          <button
+            className="ctx-menu-item"
+            onClick={() => { const id = ctxMenu.id; setCtxMenu(null); setSingleDeleteId(id); }}
+          >
+            删除
+          </button>
+        </div>
+      )}
+      <ConfirmDialog
+        open={singleDeleteId !== null}
+        title="确认删除该会话？"
+        description="会话将被归档，从列表移除（数据保留在 EventStore）。"
+        confirmLabel="删除"
+        variant="danger"
+        onConfirm={() => { const id = singleDeleteId; setSingleDeleteId(null); if (id) void deleteOne(id); }}
+        onCancel={() => setSingleDeleteId(null)}
       />
     </>
   );

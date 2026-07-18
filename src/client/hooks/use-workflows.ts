@@ -54,6 +54,8 @@ export function useWorkflows(activeSection: string) {
     if (ids.length === 0) return;
     deleteMutation.mutate(ids);
   };
+  const selectAll = () => setSelectedIds(new Set(runs.map((r) => r.id)));
+  const deleteOne = (id: string) => deleteMutation.mutate([id]);
 
   return {
     runs,
@@ -71,5 +73,7 @@ export function useWorkflows(activeSection: string) {
     exitSelectionMode,
     deleteSelected,
     deleting: deleteMutation.isPending,
+    selectAll,
+    deleteOne,
   };
 }

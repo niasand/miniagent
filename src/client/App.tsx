@@ -30,6 +30,7 @@ export default function App() {
     handleNewSession: rawHandleNewSession,
     isCreatingSession,
     selectionMode, setSelectionMode, selectedIds, toggleSelected, exitSelectionMode, deleteSelected, deleting,
+    selectAll: selectAllSessions, deleteOne: deleteOneSession,
     editingSessionId, editingSessionName, setEditingSessionName,
     renameSessionError, renameSessionPending, startSessionRename, submitSessionRename, cancelSessionRename,
     selectSession, selectedSessionId, selectedSessionName,
@@ -92,6 +93,8 @@ export default function App() {
       exitSelectionMode={exitSelectionMode}
       deleteSelected={deleteSelected}
       deleting={deleting}
+      sessionSelectAll={selectAllSessions}
+      deleteOneSession={deleteOneSession}
       editingSessionId={editingSessionId}
       editingSessionName={editingSessionName}
       setEditingSessionName={setEditingSessionName}
@@ -177,6 +180,8 @@ export default function App() {
       exitWorkflowSelectionMode={workflows.exitSelectionMode}
       deleteWorkflowSelected={workflows.deleteSelected}
       workflowDeleting={workflows.deleting}
+      workflowSelectAll={workflows.selectAll}
+      workflowDeleteOne={workflows.deleteOne}
     />
   );
 }
