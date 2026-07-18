@@ -61,6 +61,19 @@ export async function generateWorkflowDefinition(prompt: string): Promise<{ defi
   return (await res.json()) as { definition: { name: string; nodes: WorkflowNode[] } };
 }
 
+export async function batchDeleteWorkflowRuns(runIds: string[]): Promise<{ count: number }> {
+  const res = await fetch("/api/workflows/runs/batch-delete", {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ runIds }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null) as { error?: string } | null;
+    throw new Error(body?.error ?? `batchDeleteWorkflowRuns failed: ${res.status}`);
+  }
+  return (await res.json()) as { count: number };
+}
+
 export async function createWorkflowRun(definition: unknown): Promise<{ runId: string; sessionId: string }> {
   const res = await fetch("/api/workflows/runs", {
     method: "POST",

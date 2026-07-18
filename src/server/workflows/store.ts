@@ -85,6 +85,10 @@ export class WorkflowRunStore {
       )
       .run({ id, ...fields, updatedAt: nowIso() });
   }
+
+  delete(id: string): void {
+    this.db.prepare("DELETE FROM workflow_runs WHERE id = ?").run(id);
+  }
 }
 
 function mapRow(row: WorkflowRunRow): WorkflowRunRecord {

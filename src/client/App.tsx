@@ -170,6 +170,13 @@ export default function App() {
       workflowResolving={workflows.resolving}
       onCreateWorkflow={workflows.createRun}
       workflowCreating={workflows.creating}
+      workflowSelectionMode={workflows.selectionMode}
+      setWorkflowSelectionMode={workflows.setSelectionMode}
+      workflowSelectedIds={workflows.selectedIds}
+      toggleWorkflowSelected={workflows.toggleSelected}
+      exitWorkflowSelectionMode={workflows.exitSelectionMode}
+      deleteWorkflowSelected={workflows.deleteSelected}
+      workflowDeleting={workflows.deleting}
     />
   );
 }

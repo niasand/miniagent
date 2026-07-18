@@ -70,6 +70,10 @@ export class WorkflowOrchestrator {
     return this.runs.listRecent();
   }
 
+  deleteRun(runId: string): void {
+    this.runs.delete(runId);
+  }
+
   startRun(input: { definition: WorkflowDefinition; input?: JsonValue }): { runId: string; sessionId: string } {
     const validation = validateWorkflow(input.definition);
     if (!validation.ok) {

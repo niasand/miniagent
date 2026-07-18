@@ -109,6 +109,13 @@ export function AppShell(props: {
   workflowResolving: boolean;
   onCreateWorkflow: (definition: unknown) => void;
   workflowCreating: boolean;
+  workflowSelectionMode: boolean;
+  setWorkflowSelectionMode: (mode: boolean) => void;
+  workflowSelectedIds: Set<string>;
+  toggleWorkflowSelected: (id: string) => void;
+  exitWorkflowSelectionMode: () => void;
+  deleteWorkflowSelected: () => void;
+  workflowDeleting: boolean;
 }) {
   // When the selected session changes (sidebar click, schedule run, deep link),
   // scroll the matching card into view and flash-highlight it briefly.
@@ -195,6 +202,13 @@ export function AppShell(props: {
             setSelectedRunId={props.setWorkflowRunId}
             onCreateWorkflow={props.onCreateWorkflow}
             creating={props.workflowCreating}
+            selectionMode={props.workflowSelectionMode}
+            setSelectionMode={props.setWorkflowSelectionMode}
+            selectedIds={props.workflowSelectedIds}
+            toggleSelected={props.toggleWorkflowSelected}
+            exitSelectionMode={props.exitWorkflowSelectionMode}
+            deleteSelected={props.deleteWorkflowSelected}
+            deleting={props.workflowDeleting}
           />
         )}
       </aside>

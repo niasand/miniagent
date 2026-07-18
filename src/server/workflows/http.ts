@@ -40,6 +40,19 @@ export function createWorkflowRoutes(orchestrator: WorkflowOrchestrator): Hono {
     return c.json({ runs: orchestrator.listRuns() });
   });
 
+  app.post("/runs/batch-delete", async (c) => {
+    const body = await c.req.json().catch(() => null) as { runIds?: string[] } | null;
+    if (!Array.isArray(body?.runIds)) return c.json({ error: "runIds required" }, 400);
+    const deleted: string[] = [];
+    for (const id of body.runIds) {
+      if (orchestrator.getRun(id)) {
+        orchestrator.deleteRun(id);
+        deleted.push(id);
+      }
+    }
+    return c.json({ deleted, count: deleted.length }, 200);
+  });
+
   app.get("/runs/:runId", (c) => {
     const run = orchestrator.getRun(c.req.param("runId"));
     if (!run) return c.json({ error: "not found" }, 404);
