@@ -265,20 +265,31 @@ async function importSessions(dryRun: boolean): Promise<ImportStats> {
               "UPDATE sessions SET created_at = @createdAt, updated_at = @updatedAt WHERE id = @sessionId"
             ).run({ sessionId: session.id, createdAt: startedAt, updatedAt: stoppedAt });
 
-            // Insert messages
+            // Insert messages — skip individual failures so one bad record can't
+            // truncate the whole session. Previously a single throw here lost the
+            // remainder: a session with 221 text messages ended up with only 128
+            // because record #129 threw (FTS trigger on some content) and aborted.
+            let inserted = 0;
+            let failedMsgs = 0;
             for (const msg of messages) {
-              messageStore.insert({
-                sessionId: session.id,
-                role: msg.role as "user" | "assistant",
-                content: msg.content,
-                sourceEventId: msg.uuid,
-                createdAt: msg.timestamp,
-              });
+              try {
+                messageStore.insert({
+                  sessionId: session.id,
+                  role: msg.role as "user" | "assistant",
+                  content: msg.content,
+                  sourceEventId: msg.uuid,
+                  createdAt: msg.timestamp,
+                });
+                inserted++;
+              } catch (msgErr) {
+                failedMsgs++;
+                console.warn(`  skip message ${msg.uuid} in ${sessionId}: ${msgErr instanceof Error ? msgErr.message : msgErr}`);
+              }
             }
 
             stats.imported++;
-            stats.totalMessages += messages.length;
-            console.log(`  Imported: ${sessionId} -> ${session.id} (${messages.length} messages)`);
+            stats.totalMessages += inserted;
+            console.log(`  Imported: ${sessionId} -> ${session.id} (${inserted}/${messages.length} messages${failedMsgs ? `, ${failedMsgs} skipped` : ""})`);
             break;
           } catch (err: unknown) {
             attempts++;
