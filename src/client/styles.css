@@ -1694,6 +1694,7 @@ button { cursor: pointer; }
 
 /* ── Session card stream (read-only browsing of every session) ── */
 .session-cards {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -1782,3 +1783,29 @@ button { cursor: pointer; }
   padding: 1rem 0;
 }
 .session-card-error { color: #dc2626; }
+
+/* Floating top/bottom jump buttons in the detail scroll container */
+.session-scroll-controls {
+  position: absolute;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  z-index: 5;
+}
+.session-scroll-btn {
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-foreground);
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12);
+  padding: 0;
+}
+.session-scroll-btn:hover { background: var(--color-muted); }

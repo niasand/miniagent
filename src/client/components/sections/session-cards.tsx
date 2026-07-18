@@ -1,3 +1,5 @@
+import { useRef } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import type { WorkspaceSnapshot, WorkspaceSessionSummary } from "../../../shared/workspace.js";
 import { buildResumeCommand } from "../../lib/session-resume.js";
 import { CopyButton } from "../ui/copy-button.js";
@@ -16,8 +18,8 @@ interface SessionCardsProps {
 /**
  * Detail pane for the selected session: a single card with the resume-command
  * copy button in the head and the full conversation below. The session *list*
- * lives in the sidebar (SessionList); this pane only shows the chosen one, so
- * there is no duplicated list.
+ * lives in the sidebar (SessionList); this pane only shows the chosen one.
+ * Floating ↑/↓ buttons jump the scroll container to top/bottom.
  */
 export function SessionCards({
   sessions,
@@ -28,7 +30,14 @@ export function SessionCards({
   formatSessionChannel,
   messageLimit = 200,
 }: SessionCardsProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
   const session = sessions.find((s) => s.id === selectedSessionId) ?? null;
+
+  const scrollToTop = () => scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  const scrollToBottom = () => {
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  };
 
   if (!session) {
     return <div className="session-cards session-cards--empty">从左侧选择一个会话查看详情</div>;
@@ -42,7 +51,7 @@ export function SessionCards({
   });
 
   return (
-    <div className="session-cards">
+    <div className="session-cards" ref={scrollRef}>
       <section
         id={`card-${session.id}`}
         className="session-card session-card--active"
@@ -72,6 +81,15 @@ export function SessionCards({
           <SessionCardMessages sessionId={session.id} limit={messageLimit} />
         </div>
       </section>
+
+      <div className="session-scroll-controls">
+        <button className="session-scroll-btn" onClick={scrollToTop} title="回到顶部" aria-label="回到顶部">
+          <ChevronUp className="h-4 w-4" />
+        </button>
+        <button className="session-scroll-btn" onClick={scrollToBottom} title="回到底部" aria-label="回到底部">
+          <ChevronDown className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   );
 }

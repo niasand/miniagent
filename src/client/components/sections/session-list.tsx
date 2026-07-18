@@ -87,7 +87,6 @@ export function SessionList({
   return (
     <>
       <div className="side-header">
-        <span className="side-eyebrow">工作台</span>
         <h2>会话列表</h2>
         <Button
           variant="ghost"
